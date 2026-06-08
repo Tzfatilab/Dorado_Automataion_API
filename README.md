@@ -15,16 +15,125 @@ The workflow supports:
 
 ---
 
-## GUI integration
+## Graphical User Interface (GUI)
 
-In addition to the command-line interface provided in this repository, the pipeline can also be executed through the **`dorado_api` GUI application** used in the lab.
+The Dorado Automation API is also available through the **Telomere Analyzer** graphical interface, providing a user-friendly way to configure and execute Oxford Nanopore sequencing workflows without requiring command-line interaction.
 
-The GUI acts as a front-end that calls the same workflow logic implemented here. This allows users who are less comfortable with command-line tools to run the full sequencing pipeline through a graphical interface while still relying on the same backend processing code.
+* <img width="2864" height="1662" alt="image" src="https://github.com/user-attachments/assets/fb120896-465c-4378-aa5c-a7c28a899c16" />
 
-In other words:
+### Main Features
 
-* **This repository** provides the processing engine.
-* **`dorado_api`** provides the graphical interface that interacts with it.
+#### Input Data Selection
+
+The GUI supports multiple starting points in the sequencing workflow:
+
+* **POD5 (Raw Signals)** – Perform Dorado basecalling from raw nanopore signals.
+* **BAM (Basecalled)** – Continue analysis from existing basecalled BAM files.
+* **FASTQ** – Run downstream analysis using existing FASTQ files.
+
+#### Pipeline Configuration
+
+Users can configure:
+
+* Input and output directories
+* Organism-specific reference settings
+* Analysis workflow components
+* Basecalling parameters
+* NanoTel telomere analysis options
+
+#### Analysis Modules
+
+The interface provides access to the following workflow stages:
+
+##### Basecalling
+
+* Dorado basecalling from POD5 files
+* Optional modified-base detection:
+
+  * CpG (5mC)
+  * CpG + Hydroxymethylation (5hmC)
+* Optional chromosome mapping during basecalling
+
+##### NanoTel Analysis
+
+* Telomere repeat analysis
+* TVR (Telomere Variant Repeat) detection
+* Preset or custom TVR configurations
+* Adjustable filtering parameters:
+
+  * Minimum read length
+  * Minimum density threshold
+  * Edge distance settings
+
+#### Workflow Execution
+
+Once configured, users can launch the workflow directly from the GUI. The application automatically executes the selected analysis stages and organizes outputs into the configured project directory structure.
+
+### Benefits
+
+* No command-line experience required
+* Centralized configuration management
+* Simplified workflow execution
+* Consistent analysis settings
+* Reduced risk of user input errors
+* Seamless integration with the Dorado Automation backend
+
+The GUI serves as a front-end for the Dorado Automation API, ensuring that both graphical and command-line executions rely on the same validated workflow engine.
+
+### Structure
+
+```text
+dorado_gui/
+│
+├── main.py                         # Application entry point
+│
+├── core/                           # Core application logic
+│   ├── __init__.py
+│   ├── stream_to_gui.py            # Redirect console output to GUI
+│   ├── validators.py               # Input and configuration validation
+│   └── workflow_constants.py       # Shared workflow constants
+│
+├── gui/                            # User interface components
+│   ├── __init__.py
+│   ├── app_window.py               # Main application window
+│   ├── ui_styles.py                # Global styling and themes
+│   │
+│   ├── sections/                   # Major GUI sections
+│   │   ├── action_section.py       # Run / Cancel controls
+│   │   ├── advanced_section.py     # Advanced workflow options
+│   │   ├── config_section.py       # Organism and configuration settings
+│   │   ├── input_section.py        # Input data selection
+│   │   ├── output_section.py       # Output path configuration
+│   │   ├── sidebar_section.py      # Navigation sidebar
+│   │   └── workflow_section.py     # Workflow step selection
+│   │
+│   └── widgets/                    # Reusable GUI widgets
+│       ├── __init__.py
+│       └── selection_widgets.py
+│
+├── services/                       # Backend service layer
+│   ├── __init__.py
+│   └── pipeline_runner.py          # Executes Dorado Automation workflows
+│
+├── workers/                        # Background execution threads
+│   ├── __init__.py
+│   └── worker_thread.py            # Prevents GUI blocking during analysis
+│
+└── icons/                          # Application icons and graphical assets
+```
+
+### Architecture Overview
+
+The GUI follows a modular architecture that separates the user interface from workflow execution logic.
+
+* **GUI Layer (`gui/`)** – Responsible for user interaction, workflow configuration, and visual presentation.
+* **Core Layer (`core/`)** – Provides validation, constants, and utility functions shared across the application.
+* **Service Layer (`services/`)** – Acts as the bridge between the graphical interface and the Dorado Automation API backend.
+* **Worker Layer (`workers/`)** – Runs long analyses in background threads, keeping the interface responsive.
+* **Assets (`icons/`)** – Stores application icons and visual resources.
+
+This structure makes the application easier to maintain, extend, and test while keeping workflow execution logic independent from the graphical interface.
+
 
 ---
 
