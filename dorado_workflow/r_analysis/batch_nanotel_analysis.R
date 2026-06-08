@@ -42,12 +42,16 @@ main_nanotel_analysis <- function(config_file) {
   # Set default parameters
   density_threshold <- config$density_threshold %||% 0.75
   max_telomere_start <- config$max_telomere_start %||% 150
+  min_read_length <- config$read_length %||% NULL
 
   log_message("Configuration loaded successfully")
   log_message(paste("Input directory:", config$input_dir))
   log_message(paste("Output directory:", config$output_dir))
   log_message(paste("Density threshold:", density_threshold))
   log_message(paste("Max telomere start:", max_telomere_start))
+  if (!is.null(min_read_length)) {
+    log_message(paste("Minimum read length:", min_read_length))
+  }
 
   # Find NanoTel summary files
   nanotel_files <- find_nanotel_summary_files(config$input_dir)
@@ -63,7 +67,8 @@ main_nanotel_analysis <- function(config_file) {
     input_files = nanotel_files,
     output_dir = config$output_dir,
     density_threshold = density_threshold,
-    max_telomere_start = max_telomere_start
+    max_telomere_start = max_telomere_start,
+    min_read_length = min_read_length
   )
 
   if (length(processed_data) == 0) {

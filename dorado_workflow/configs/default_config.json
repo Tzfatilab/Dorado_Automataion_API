@@ -7,19 +7,19 @@
 
   "paths": {
     "references": {
-      "mouse": "/home/tzfati/Documents/Mouse-assembly/mouse.241018.v1.1.0.-40k_edges-telo-trimmed-Y-included.fasta",
-      "human": "/home/tzfati/Documents/Human/T2T-CHM13-150KchrHeadTail-Yincluded-telo-trimmed.fasta",
-      "zebrafish" : "/home/tzfati/Documents/Zebrafish/danRer11.fasta"
+      "mouse": "data/references/Mouse/mouse.241018.v1.1.0.-40k_edges-telo-trimmed-Y-included.fasta",
+      "human": "data/references/Human/T2T-CHM13-150KchrHeadTail-Yincluded-telo-trimmed.fasta",
+      "zebrafish" : "data/references/ZebraFish/GCF_049306965.1_GRCz12tu_genomic.fasta"
     },
-    "dorado_model": "/home/tzfati/dna_r10.4.1_e8.2_400bps_sup@v5.2.0",
-    "nanotel_script": "/home/tzfati/Telomere-Analyzer/NanoTel.R",
-    "default_output_base": "/home/tzfati/Desktop/minknow_runs"
+    "dorado_model": "data/dna_r10.4.1_e8.2_400bps_sup@v5.2.0",
+    "nanotel_script": "data/NanoTel.R",
+    "default_output_base": "~/minknow_runs"
   },
 
   "basecalling": {
     "min_qscore": 9,
     "modified_bases": "5mCG_5hmCG",
-    "kit_name": "SQK-NBD114-24",
+    "kit_name": null,
     "no_trim": true,
     "recursive": true,
     "emit_summary": true
@@ -37,7 +37,20 @@
     "min_density": 0.5,
     "use_filter": true,
     "density_threshold": 0.75,
-    "max_telomere_start": 150
+    "max_telomere_start": 150,
+    "tvr_patterns": [
+      "TTAGGG",
+      "TCAGGG",
+      "TGAGGG",
+      "TTGGGG",
+      "CGAGGG",
+      "CTAGGG",
+      "CTGGGG",
+      "TAAGGG",
+      "TCCGGG",
+      "TTCGGG",
+      "CTAGG"
+    ]
   },
 
   "alignment": {
@@ -50,7 +63,7 @@
     "run_mapping_analysis": true,
     "run_methylation_analysis": true,
     "stop_on_error": true,
-    
+
     "mapping": {
       "min_mapq": 10,
       "head_max_start": 5000,
@@ -59,16 +72,16 @@
       "filter_threshold_g": 0.75,
       "mod_threshold_m": 0.75
     },
-    
+
     "methylation": {
       "head_max_pos": 5000,
       "tail_min_pos": 145000,
       "reference_length": 150000,
       "create_plots": true,
       "create_shiny_app": true,
-      "create_original_interactive": true,  
-      "plot_width": 12,                     
-      "plot_height": 8 
+      "create_original_interactive": true,
+      "plot_width": 12,
+      "plot_height": 8
     }
   },
 
@@ -76,17 +89,51 @@
     "mouse": {
       "reference_length": 150000,
       "tail_min_end": 35000,
-      "tail_min_pos": 145000
+      "tail_min_pos": 145000,
+      "tvr_patterns": [
+        "TTAGGG",
+        "TCAGGG",
+        "TGAGGG",
+        "TTGGGG",
+        "CGAGGG",
+        "CTAGGG",
+        "CTGGGG",
+        "TAAGGG",
+        "TCCGGG",
+        "TTCGGG",
+        "CTAGG"
+      ]
     },
     "human": {
       "reference_length": 150000,
       "tail_min_end": 35000,
-      "tail_min_pos": 145000
+      "tail_min_pos": 145000,
+      "tvr_patterns": [
+        "TTAGGG",
+        "TCAGGG",
+        "TGAGGG",
+        "TTGGGG",
+        "CGAGGG",
+        "CTAGGG",
+        "CTGGGG",
+        "TAAGGG",
+        "TCCGGG",
+        "TTCGGG",
+        "CTAGG"
+      ]
     },
     "zebrafish": {
       "reference_length": 150000,
       "tail_min_end": 35000,
-      "tail_min_pos": 145000
+      "tail_min_pos": 145000,
+      "tvr_patterns": [
+        "CCCCTAGTTCGCTCTA",
+        "CCCCTAGTTGACTA",
+        "CCCCTAGGACTCTTA",
+        "CCCCTAGTACGCTCTA",
+        "CCCCTAGAACTCTTA",
+        "CCCCTAGTTGACTCTA"
+      ]
     }
   },
 
@@ -110,7 +157,7 @@
     "nanotel_output": "nanotel_output",
     "aligned": "aligned",
     "r_analysis": "r_analysis",
-    "mapping_output": "mapping_output",      
+    "mapping_output": "mapping_output",
     "methylation_output": "methylation_output",
     "logs": "logs"
   }

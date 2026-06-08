@@ -9,7 +9,7 @@ Automatically locates config file in the package's configs directory.
 import json
 from pathlib import Path
 from typing import Dict, Any, Optional
-
+import os
 
 class ConfigManager:
     """
@@ -174,16 +174,27 @@ class ConfigManager:
 
     # ==================== Organism Management ====================
 
+    def _normalize_organism(self, organism: str) -> str:
+        """Normalize common organism labels to config keys."""
+        if organism is None:
+            return self._current_organism
+
+        normalized = str(organism).strip().lower()
+        if normalized in {"fish", "zabra fish", "zebra fish", "zebrafish"}:
+            return "zebrafish"
+        return normalized
+
     def set_organism(self, organism: str) -> None:
         """
         Set the current organism and update merged config.
 
         Args:
-            organism: 'mouse' or 'human'
+            organism: organism key or alias such as 'mouse', 'human', or 'fish'
 
         Raises:
             ValueError: If organism not found in config
         """
+        organism = self._normalize_organism(organism)
         available_organisms = list(self.config.get('organism_specific', {}).keys())
 
         if organism not in available_organisms:
@@ -206,31 +217,44 @@ class ConfigManager:
         Get reference genome path for specified organism.
 
         Args:
-            organism: 'mouse' or 'human'. If None, uses current organism.
+            organism: organism label or alias. If None, uses current organism.
 
         Returns:
             Path to reference genome
         """
         org = organism or self._current_organism
-        return self.config['paths']['references'][org]
+        return self._resolve_path(self.config['paths']['references'][org])
 
     def get_dorado_model_path(self) -> str:
         """Get path to Dorado model."""
-        return self.config['paths']['dorado_model']
+        return  self._resolve_path(self.config['paths']['dorado_model'])
 
     def get_nanotel_script_path(self) -> str:
         """Get path to NanoTel R script."""
-        return self.config['paths']['nanotel_script']
+        return  self._resolve_path(self.config['paths']['nanotel_script'])
 
     def get_default_output_base(self) -> str:
-        """Get default base output directory."""
-        return self.config['paths']['default_output_base']
+        """Get default base output directory (created if missing)."""
+        base = Path(self._resolve_path(self.config['paths']['default_output_base']))
+        base.mkdir(parents=True, exist_ok=True)
+        return str(base)
 
     # ==================== Stage-Specific Config Access ====================
 
     def get_basecalling_params(self) -> Dict[str, Any]:
         """Get basecalling parameters."""
         return self.config.get('basecalling', {})
+
+    def update_basecalling_params(self, params: Dict[str, Any]) -> None:
+        """Apply run-specific basecalling parameter overrides."""
+        if not params:
+            return
+
+        if 'basecalling' not in self.config:
+            self.config['basecalling'] = {}
+
+        self.config['basecalling'].update(params)
+        self._update_merged_config()
 
     def get_demuxing_params(self) -> Dict[str, Any]:
         """Get demuxing parameters."""
@@ -239,6 +263,25 @@ class ConfigManager:
     def get_nanotel_params(self) -> Dict[str, Any]:
         """Get NanoTel parameters."""
         return self.config.get('nanotel', {})
+
+    def update_nanotel_params(self, params: Dict[str, Any]) -> None:
+        """Apply run-specific NanoTel parameter overrides."""
+        if not params:
+            return
+
+        if 'nanotel' not in self.config:
+            self.config['nanotel'] = {}
+
+        self.config['nanotel'].update(params)
+        self._update_merged_config()
+
+    def get_tvr_patterns(self, organism: Optional[str] = None) -> list:
+        """Get TVR patterns configured for NanoTel/R analysis."""
+        org = self._normalize_organism(organism or self._current_organism)
+        organism_config = self.config.get('organism_specific', {}).get(org, {})
+        if organism_config.get('tvr_patterns'):
+            return organism_config.get('tvr_patterns', [])
+        return self.config.get('nanotel', {}).get('tvr_patterns', [])
 
     def get_alignment_params(self) -> Dict[str, Any]:
         """Get alignment parameters."""
@@ -307,6 +350,22 @@ class ConfigManager:
 
         with open(output_path, 'w') as f:
             json.dump(self._merged_config, f, indent=2)
+
+    @property
+    def package_root(self) -> Path:
+        """Root of the dorado_workflow package (parent of configs/, data/, etc.)."""
+        return Path(__file__).parent.parent
+
+    def _resolve_path(self, path_str: str) -> str:
+        """
+        Resolve a config path against the package root.
+        Absolute paths are returned unchanged; relative paths are
+        resolved relative to the package, not the current directory.
+        """
+        p = Path(path_str).expanduser()
+        if p.is_absolute():
+            return str(p)
+        return str((self.package_root / p).resolve())
 
     def __repr__(self) -> str:
         """String representation of ConfigManager."""

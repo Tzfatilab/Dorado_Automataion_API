@@ -45,7 +45,7 @@ class BasecallerProcessor(ProcessorBase):
         # Define output directory
         self.output_dir = self.context.path_manager.get_rebasecalled_dir()
 
-    def validate_inputs(self, pod5_input: str, organism: str = "mouse") -> bool:
+    def validate_inputs(self, pod5_input: str, organism: str = "mouse", align : bool = False) -> bool:
         """
         Validate that all prerequisites for basecalling are met.
 
@@ -92,13 +92,20 @@ class BasecallerProcessor(ProcessorBase):
             self.context.logger.error(f"Reference genome not found: {reference_path}")
             return False
 
+        # A reference is required only when aligning during basecalling.
+        if align:
+            reference_path = self.context.config_manager.get_reference_path(organism)
+            if not Path(reference_path).exists():
+                self.context.logger.error(f"Reference genome not found: {reference_path}")
+                return False
+
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.context.logger.info("✓ All basecalling prerequisites validated")
         return True
 
-    def execute(self, pod5_input: str, organism: str = "mouse") -> ProcessorResult:
+    def execute(self, pod5_input: str, organism: str = "mouse", align : bool = False) -> ProcessorResult:
         """
         Execute the basecalling process.
 
@@ -112,7 +119,7 @@ class BasecallerProcessor(ProcessorBase):
         self.log_start()
 
         # Validate inputs first
-        if not self.validate_inputs(pod5_input, organism):
+        if not self.validate_inputs(pod5_input, organism, align):
             result = ProcessorResult(
                 success=False,
                 error="Input validation failed"
@@ -122,7 +129,7 @@ class BasecallerProcessor(ProcessorBase):
 
         try:
             # Build the basecalling command
-            command, expected_output = self._build_command(pod5_input, organism)
+            command, expected_output = self._build_command(pod5_input, organism, align)
 
             # Execute basecalling
             self.context.logger.info(f"Starting basecalling for: {pod5_input}")
@@ -167,7 +174,7 @@ class BasecallerProcessor(ProcessorBase):
             self.log_complete(result)
             return result
 
-    def _build_command(self, pod5_input: str, organism: str) -> tuple[str, Path]:
+    def _build_command(self, pod5_input: str, organism: str, align : bool = False) -> tuple[str, Path]:
         """
         Build the dorado basecalling command.
 
@@ -213,9 +220,13 @@ class BasecallerProcessor(ProcessorBase):
         if kit_name:
             cmd_parts.append(f"--kit-name {kit_name}")
 
+        if align:
+            reference = config.get_reference_path(organism)
+            cmd_parts.append(f"--reference {reference}")
+
         # Add reference and output
         cmd_parts.extend([
-            f"--reference {reference}",
+            #f"--reference {reference}",
             f"--output-dir {self.output_dir}",
             model,
             f'"{pod5_input}"'
@@ -228,20 +239,16 @@ class BasecallerProcessor(ProcessorBase):
         return command, output_file
 
     def _find_output_bam(self) -> Optional[Path]:
-        """
-        Find the basecalled BAM file in the output directory.
-        Returns the most recently created BAM file.
-
-        Returns:
-            Path to BAM file if found, None otherwise
-        """
-        bam_files = list(self.output_dir.glob("*.bam"))
+        # Look for any BAM file (not per-barcode, so exclude barcode subdirs)
+        bam_files = [
+            f for f in self.output_dir.rglob("*.bam")
+            if 'barcode' not in f.parent.name and 'unclassified' not in f.parent.name
+        ]
 
         if not bam_files:
             self.context.logger.warning("No BAM files found in output directory")
             return None
 
-        # Return the most recently modified BAM file
         latest_bam = max(bam_files, key=lambda x: x.stat().st_mtime)
         self.context.logger.info(f"Found output BAM: {latest_bam}")
         return latest_bam

@@ -21,7 +21,8 @@ from .demuxer import DemuxProcessor
 from .aligner import AlignmentProcessor
 from .nanotel import NanoTelProcessor
 from .r_analyzer import RAnalyzer
+from .bam_to_fastq import BamToFastqProcessor
 
 __all__ = ['ProcessorBase', 'ProcessorResult', 'WorkflowContext',
            'BasecallerProcessor', 'DemuxProcessor', 'AlignmentProcessor',
-           'NanoTelProcessor', 'RAnalyzer']
+           'NanoTelProcessor', 'RAnalyzer', 'BamToFastqProcessor']

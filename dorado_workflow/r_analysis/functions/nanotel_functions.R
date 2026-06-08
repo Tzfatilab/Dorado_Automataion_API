@@ -31,6 +31,7 @@ if (!exists("log_message", mode = "function")) {
 process_nanotel_barcode <- function(nanotel_csv_path,
                                     density_threshold = 0.75,
                                     max_telomere_start = 150,
+                                    min_read_length = NULL,
                                     min_mapq = 10) {
 
   log_message(paste("Processing NanoTel file:", basename(nanotel_csv_path)))
@@ -66,6 +67,14 @@ process_nanotel_barcode <- function(nanotel_csv_path,
 
   log_message(paste("Applied density and start position filters:",
                     original_count, "->", nrow(filtered_data), "reads"))
+
+  if (!is.null(min_read_length) && !is.na(min_read_length)) {
+    before_length_filter <- nrow(filtered_data)
+    filtered_data <- filtered_data %>%
+      filter(sequence_length >= min_read_length)
+    log_message(paste("Applied minimum read length filter:",
+                      before_length_filter, "->", nrow(filtered_data), "reads"))
+  }
 
   if (nrow(filtered_data) == 0) {
     warning("No reads passed filters for barcode: ", barcode)
@@ -106,7 +115,8 @@ process_nanotel_barcode <- function(nanotel_csv_path,
 batch_process_nanotel_files <- function(input_files,
                                         output_dir,
                                         density_threshold = 0.75,
-                                        max_telomere_start = 150) {
+                                        max_telomere_start = 150,
+                                        min_read_length = NULL) {
 
   log_message(paste("Starting batch processing of", length(input_files), "NanoTel files"))
 
@@ -123,7 +133,8 @@ batch_process_nanotel_files <- function(input_files,
       processed_data <- process_nanotel_barcode(
         file_path,
         density_threshold = density_threshold,
-        max_telomere_start = max_telomere_start
+        max_telomere_start = max_telomere_start,
+        min_read_length = min_read_length
       )
 
       if (nrow(processed_data) > 0) {
@@ -138,6 +149,7 @@ batch_process_nanotel_files <- function(input_files,
         output_file <- file.path(barcode_output_dir, paste0("filtered_summary",
                                                             toupper(gsub("bc", "BC", barcode)), ".csv"))
         safe_write_csv(processed_data, output_file)
+        all_processed_data[[barcode]] <- processed_data
       }
 
     }, error = function(e) {

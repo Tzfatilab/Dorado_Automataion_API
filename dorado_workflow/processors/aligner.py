@@ -8,7 +8,9 @@ Handles alignment of demuxed BAM or FASTQ files to reference genome using Dorado
 from pathlib import Path
 from typing import Dict, Optional
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
-
+import os
+import subprocess
+import shlex
 
 class AlignmentProcessor(ProcessorBase):
     """
@@ -172,7 +174,8 @@ class AlignmentProcessor(ProcessorBase):
         cmd_parts = [
             "dorado", "aligner",
             "-r",  # Recursive
-            f"--output-dir {self.output_dir}",
+            "--output-dir",
+            self.output_dir,
         ]
 
         # Add emit-summary flag if configured
@@ -186,10 +189,16 @@ class AlignmentProcessor(ProcessorBase):
         ])
 
         # Join command parts
-        command = " ".join(cmd_parts)
+        command = self._format_command(cmd_parts)
 
         self.context.logger.info(f"Alignment command: {command}")
         return command
+
+    def _format_command(self, cmd_parts: list) -> str:
+        args = [str(part) for part in cmd_parts]
+        if os.name == "nt":
+            return subprocess.list2cmdline(args)
+        return shlex.join(args)
 
     def _detect_input_type(self, input_path: Path) -> Optional[str]:
         """
@@ -232,12 +241,12 @@ class AlignmentProcessor(ProcessorBase):
 
         # Count output files if directory exists
         if self.output_dir.exists():
-            aligned_files = list(self.output_dir.glob("*"))
+            aligned_files = list(self.output_dir.rglob("*"))
             stats['output_file_count'] = len(aligned_files)
 
             # Count specific file types
-            bam_files = list(self.output_dir.glob("*.bam"))
-            summary_files = list(self.output_dir.glob("*summary*"))
+            bam_files = list(self.output_dir.rglob("*.bam"))
+            summary_files = list(self.output_dir.rglob("*summary*"))
 
             stats['aligned_bam_count'] = len(bam_files)
             stats['summary_file_count'] = len(summary_files)
@@ -265,4 +274,4 @@ class AlignmentProcessor(ProcessorBase):
         if not self.output_dir.exists():
             return []
 
-        return list(self.output_dir.glob("*.bam"))
+        return list(self.output_dir.rglob("*.bam"))

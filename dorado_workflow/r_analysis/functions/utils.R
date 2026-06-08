@@ -93,7 +93,8 @@ extract_barcode_from_path <- function(file_path) {
                                         "(?i)(bc|barcode)(\\d+)")
 
   if (!is.na(barcode_match)) {
-    return(tolower(barcode_match))
+    number <- as.integer(stringr::str_extract(barcode_match, "\\d+"))
+    return(sprintf("barcode%02d", number))
   }
 
   # If filename doesn't have barcode, try parent directory
@@ -102,7 +103,8 @@ extract_barcode_from_path <- function(file_path) {
                                         "(?i)(bc|barcode)(\\d+)")
 
   if (!is.na(barcode_match)) {
-    return(tolower(barcode_match))
+    number <- as.integer(stringr::str_extract(barcode_match, "\\d+"))
+    return(sprintf("barcode%02d", number))
   }
 
   warning("Could not extract barcode from: ", file_path)
@@ -110,27 +112,30 @@ extract_barcode_from_path <- function(file_path) {
 }
 
 # Normalize barcode names to handle zero-padding differences
-normalize_barcode_name <- function(barcode) {
-  if (is.na(barcode)) return(NA)
+normalize_barcode_name <- function(barcode_value) {
+  if (is.function(barcode_value)) {
+    stop("normalize_barcode_name expected a barcode string but received a function")
+  }
 
-  # Extract the number part and prefix
-  if (grepl("^bc", barcode, ignore.case = TRUE)) {
-    prefix <- "bc"
-    number_part <- stringr::str_extract(barcode, "\\d+")
-  } else if (grepl("^barcode", barcode, ignore.case = TRUE)) {
-    prefix <- "barcode"
-    number_part <- stringr::str_extract(barcode, "\\d+")
+  if (length(barcode_value) == 0 || is.na(barcode_value[1])) {
+    return(NA)
+  }
+
+  barcode_value <- as.character(barcode_value[1])
+
+  if (grepl("^bc", barcode_value, ignore.case = TRUE)) {
+    number_part <- stringr::str_extract(barcode_value, "\\d+")
+  } else if (grepl("^barcode", barcode_value, ignore.case = TRUE)) {
+    number_part <- stringr::str_extract(barcode_value, "\\d+")
   } else {
-    return(tolower(barcode))
+    return(tolower(barcode_value))
   }
 
-  # Convert to integer to remove leading zeros, then back to string
   if (!is.na(number_part)) {
-    normalized_number <- as.character(as.integer(number_part))
-    return(paste0(prefix, normalized_number))
+    return(sprintf("barcode%02d", as.integer(number_part)))
   }
 
-  return(tolower(barcode))
+  return(tolower(barcode_value))
 }
 
 # System command wrapper with error handling

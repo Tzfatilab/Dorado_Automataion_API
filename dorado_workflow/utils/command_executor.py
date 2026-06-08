@@ -6,6 +6,7 @@ Handles execution of shell commands with logging and error handling.
 Integrates with WorkflowLogger for command tracking.
 """
 
+import shutil
 import subprocess
 from typing import Optional, List
 from pathlib import Path
@@ -149,16 +150,15 @@ class CommandExecutor:
         Returns:
             True if tool is available, False otherwise
         """
-        try:
-            result = subprocess.run(
-                f"which {tool_name}",
-                shell=True,
-                capture_output=True,
-                check=False
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
+        tool_path = shutil.which(tool_name)
+
+        if tool_path:
+            self.logger.debug(f"Found {tool_name}: {tool_path}")
+            return True
+
+        self.logger.debug(f"Tool not found: {tool_name}")
+        return False    
+
 
     def validate_tools(self, required_tools: List[str]) -> tuple[bool, List[str]]:
         """

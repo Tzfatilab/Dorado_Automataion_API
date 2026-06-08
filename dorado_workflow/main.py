@@ -24,7 +24,7 @@ Usage:
 import sys
 import argparse
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 
 # Import workflow components
 from operators.workflow_operator import WorkflowOperator
@@ -36,9 +36,14 @@ from utils.logger import WorkflowLogger
 from utils.command_executor import CommandExecutor
 
 
-def setup_context(trial_name: str,
-                  base_output_dir: Optional[str] = None,
-                  config_path: Optional[str] = None) -> WorkflowContext:
+def setup_context(
+        trial_name: str,
+        base_output_dir: Optional[str] = None,
+        config_path: Optional[str] = None,
+        organism: Optional[str] = None,
+        log_callback: Optional[Callable[[str], None]] = None,
+        log_level: str = "INFO",
+) -> WorkflowContext:
     """
     Initialize and setup workflow context with all dependencies.
 
@@ -56,12 +61,19 @@ def setup_context(trial_name: str,
     else:
         config = ConfigManager()
 
+    if organism:
+        config.set_organism(organism)
+
     # Initialize path manager
     path_mgr = PathManager(trial_name, base_output_dir, config_manager=config)
 
     # Initialize logger
     log_file = path_mgr.get_log_file_path()
-    logger = WorkflowLogger(log_file)
+    logger = WorkflowLogger(
+        log_file,
+        log_level=log_level,
+        log_callback=log_callback,
+    )
 
     logger.info("=" * 60)
     logger.info(f"Dorado Workflow v2.0 - Trial: {trial_name}")
@@ -81,7 +93,7 @@ def setup_context(trial_name: str,
 
 def cmd_pod5_workflow(args) -> int:
     """Execute POD5 complete workflow."""
-    context = setup_context(args.trial_name, args.output_dir, args.config)
+    context = setup_context(args.trial_name, args.output_dir, args.config, organism=args.organism)
     operator = WorkflowOperator(context)
 
     success = operator.run_pod5_workflow(
@@ -94,7 +106,7 @@ def cmd_pod5_workflow(args) -> int:
 
 def cmd_fastq_workflow(args) -> int:
     """Execute FASTQ workflow."""
-    context = setup_context(args.trial_name, args.output_dir, args.config)
+    context = setup_context(args.trial_name, args.output_dir, args.config, organism=args.organism)
     operator = WorkflowOperator(context)
 
     success = operator.run_fastq_workflow(
@@ -117,7 +129,7 @@ def cmd_nanotel_only(args) -> int:
 
 def cmd_alignment_only(args) -> int:
     """Execute alignment only."""
-    context = setup_context(args.trial_name, args.output_dir, args.config)
+    context = setup_context(args.trial_name, args.output_dir, args.config, organism=args.organism)
     operator = WorkflowOperator(context)
 
     success = operator.run_alignment_only(

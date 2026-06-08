@@ -86,41 +86,32 @@ class BarcodeManager:
 
     def normalize_barcode(self, barcode: str) -> str:
         """
-        Normalize barcode name to standard format.
-        Python reimplementation of R's normalize_barcode_name.
+        Normalize barcode name to standard zero-padded format.
 
         Converts various formats to standard:
-        - "bc01" -> "barcode1"
-        - "BARCODE01" -> "barcode1"
-        - "barcode02" -> "barcode2"
+        - "bc1" -> "barcode01"
+        - "BARCODE01" -> "barcode01"
+        - "barcode2" -> "barcode02"
+        - "barcode10" -> "barcode10"
+        - "barcode100" -> "barcode100"
 
-        Removes leading zeros from numbers.
+        Always uses two-digit zero-padding (minimum); larger numbers are left alone.
 
         Args:
             barcode: Barcode string in any format
 
         Returns:
-            Normalized barcode (e.g., "barcode1", "barcode10")
+            Normalized barcode (e.g., "barcode01", "barcode10")
         """
         if not barcode:
             return ""
 
-        barcode_lower = barcode.lower()
-
-        # Extract prefix and number
-        match = self.BARCODE_PATTERN.search(barcode_lower)
+        match = self.BARCODE_PATTERN.search(barcode.lower())
         if match:
-            prefix = match.group(1)  # "bc" or "barcode"
-            number_str = match.group(2)  # "01", "02", etc.
+            number = int(match.group(2))
+            return f"barcode{number:02d}"
 
-            # Convert to integer to remove leading zeros, then back to string
-            number = str(int(number_str))
-
-            # Always use "barcode" prefix
-            return f"barcode{number}"
-
-        # If no match, return lowercase version
-        return barcode_lower
+        return barcode.lower()
 
     # ==================== Barcode Discovery ====================
 

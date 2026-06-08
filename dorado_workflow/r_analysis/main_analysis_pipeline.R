@@ -398,28 +398,27 @@ generate_pipeline_report <- function(results, config, duration) {
                       "   Status: SKIPPED OR FAILED"
     )
   }
-
   report_lines <- c(report_lines,
                     "",
                     "OUTPUT STRUCTURE:",
                     paste("  ", config$base_output_dir, "/"),
-                    "    â”œâ”€â”€ nanotel_output/",
-                    "    â”‚   â”œâ”€â”€ barcode*/.csv",
-                    "    â”‚       â”œâ”€â”€ filtered_summary*.csv",
-                    "    â”‚       â”œâ”€â”€ nanotel_summary_statistics.csv",
-                    "    â”‚       â””â”€â”€ nanotel_analysis_report.txt",
-                    "    â”œâ”€â”€ mapping_output/",
-                    "    â”‚   â”œâ”€â”€ mapped*.csv",
-                    "    â”‚   â”œâ”€â”€ filtered_*.bam",
-                    "    â”‚   â”œâ”€â”€ pileup-*.bed",
-                    "    â”‚   â””â”€â”€ mapping_analysis_report.txt",
-                    "    â”œâ”€â”€ methylation_output/",
-                    "    â”‚   â”œâ”€â”€ plots/",
-                    "    â”‚   â”œâ”€â”€ processed_data/",
-                    "    â”‚   â”œâ”€â”€ shiny_app/ (if enabled)",
-                    "    â”‚   â”œâ”€â”€ methylation_summary_statistics.csv",
-                    "    â”‚   â””â”€â”€ methylation_analysis_report.txt",
-                    "    â””â”€â”€ complete_pipeline_report.txt",
+                    "    nanotel_output/",
+                    "    barcode*/.csv",
+                    "    filtered_summary*.csv",
+                    "    nanotel_summary_statistics.csv",
+                    "    nanotel_analysis_report.txt",
+                    "    mapping_output/",
+                    "    mapped*.csv",
+                    "    filtered_*.bam",
+                    "    pileup-*.bed",
+                    "    mapping_analysis_report.txt",
+                    "    methylation_output/",
+                    "    plots/",
+                    "    processed_data/",
+                    "    shiny_app/ (if enabled)",
+                    "    methylation_summary_statistics.csv",
+                    "    methylation_analysis_report.txt",
+                    "    complete_pipeline_report.txt",
                     "",
                     "NEXT STEPS:",
                     "  1. Review individual analysis reports for detailed results",
@@ -473,21 +472,21 @@ if (!interactive()) {
   # Run complete pipeline
   tryCatch({
     results <- main_r_analysis_pipeline(config_file)
-    cat("\nðŸŽ‰ Complete R analysis pipeline finished successfully!\n")
+    cat("\nComplete R analysis pipeline finished successfully!\n")
 
     # Print summary
     if (!is.null(results$nanotel)) {
-      cat("âœ“ NanoTel: Processed", results$nanotel$barcodes_processed, "barcodes\n")
+      cat("NanoTel: Processed", results$nanotel$barcodes_processed, "barcodes\n")
     }
     if (!is.null(results$mapping)) {
-      cat("âœ“ Mapping: Processed", length(results$mapping$successful_results), "barcodes\n")
+      cat("Mapping: Processed", length(results$mapping$successful_results), "barcodes\n")
     }
     if (!is.null(results$methylation)) {
-      cat("âœ“ Methylation:", results$methylation$total_sites, "sites analyzed\n")
+      cat("Methylation:", results$methylation$total_sites, "sites analyzed\n")
     }
 
   }, error = function(e) {
-    cat("âŒ Pipeline failed:", e$message, "\n")
+    cat("❌ Pipeline failed:", e$message, "\n")
     quit(status = 1)
   })
 }

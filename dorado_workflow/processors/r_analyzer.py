@@ -228,7 +228,7 @@ class RAnalyzer(ProcessorBase):
         found_summaries = []
         for item in nanotel_dir.iterdir():
             if item.is_dir() and item.name.startswith('barcode'):
-                summary_files = list(item.glob("*summary*.csv"))
+                summary_files = list(item.rglob("*summary*.csv"))
                 if summary_files:
                     found_summaries.append(item.name)
 

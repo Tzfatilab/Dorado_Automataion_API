@@ -198,35 +198,32 @@ class DemuxProcessor(ProcessorBase):
     def _organize_demuxed_files(self) -> Dict[str, Path]:
         """
         Organize demuxed BAM files into barcode subdirectories.
-
         Dorado outputs files with barcode names in the filename.
         This method organizes them into separate barcode directories.
 
         Returns:
             Dictionary mapping barcode names to their directory paths
         """
-        # Find all BAM files in the demuxed directory
-        bam_files = list(self.output_dir.glob("*.bam"))
-        bai_files = list(self.output_dir.glob("*.bam.bai"))
+        SKIP_FOLDERS = {'unclassified', 'mix'}
+
+        bam_files = list(self.output_dir.rglob("*.bam"))
+        bai_files = list(self.output_dir.rglob("*.bam.bai"))
 
         if not bam_files:
             self.context.logger.warning("No BAM files found to organize")
             return {}
 
-        # Group files by barcode or unclassified
         barcode_files = {}
 
         for file_path in bam_files + bai_files:
-            # Check if it's an unclassified file
             if 'unclassified' in file_path.name.lower():
                 folder_name = 'unclassified'
+            elif 'mix' in file_path.name.lower():
+                folder_name = 'mix'
             else:
-                # Extract barcode from filename using BarcodeManager
                 barcode = self.context.barcode_manager.extract_barcode(str(file_path))
-
                 if barcode:
-                    # Normalize barcode name
-                    folder_name = self.context.barcode_manager.normalize_barcode(barcode)
+                    folder_name = barcode.lower()  # keep zero-padding, don't normalize
                 else:
                     self.context.logger.warning(
                         f"Could not determine barcode for file: {file_path.name}"
@@ -237,16 +234,19 @@ class DemuxProcessor(ProcessorBase):
                 barcode_files[folder_name] = []
             barcode_files[folder_name].append(file_path)
 
-        # Create directories and move files
         barcode_dirs = {}
         for folder_name, files in barcode_files.items():
+            if folder_name in SKIP_FOLDERS:
+                continue
+
             target_dir = self.output_dir / folder_name
             target_dir.mkdir(exist_ok=True)
 
             for file_path in files:
                 new_path = target_dir / file_path.name
-                file_path.rename(new_path)
-                self.context.logger.info(f"Moved {file_path.name} to {folder_name}/")
+                if file_path != new_path:  # don't rename if already in right place
+                    file_path.rename(new_path)
+                    self.context.logger.info(f"Moved {file_path.name} to {folder_name}/")
 
             barcode_dirs[folder_name] = target_dir
 
@@ -262,25 +262,23 @@ class DemuxProcessor(ProcessorBase):
         Args:
             barcode_dirs: Dictionary of barcode names to directory paths
         """
+        SKIP_FOLDERS = {'unclassified', 'mix'}
+
         for barcode_name, barcode_dir in barcode_dirs.items():
-            # Skip unclassified
-            if barcode_name == 'unclassified':
+            if barcode_name in SKIP_FOLDERS:
                 continue
 
-            # Register the barcode
-            self.context.barcode_manager.add_barcode(barcode_name)
-
-            # Find BAM files in this barcode directory
-            bam_files = list(barcode_dir.glob("*.bam"))
+            # Register BAM files directly into BarcodeManager
+            bam_files = list(barcode_dir.rglob("*.bam"))
             for bam_file in bam_files:
-                self.context.barcode_manager.add_file(barcode_name, bam_file)
+                self.context.barcode_manager.barcode_files[barcode_name].append(bam_file)
+                self.context.barcode_manager.discovered_barcodes.add(barcode_name)
 
-            # Mark demux as successful for this barcode
+            # Mark demux as successful
             self.context.barcode_manager.register_success(barcode_name, 'demux')
 
-        self.context.logger.info(
-            f"Registered {len(barcode_dirs) - ('unclassified' in barcode_dirs)} barcodes"
-        )
+        registered = len([b for b in barcode_dirs if b not in SKIP_FOLDERS])
+        self.context.logger.info(f"Registered {registered} barcodes")
 
     def _collect_statistics(self, barcode_dirs: Dict[str, Path]) -> Dict[str, any]:
         """
@@ -301,7 +299,7 @@ class DemuxProcessor(ProcessorBase):
         # Count BAM files per barcode
         bam_counts = {}
         for barcode_name, barcode_dir in barcode_dirs.items():
-            bam_files = list(barcode_dir.glob("*.bam"))
+            bam_files = list(barcode_dir.rglob("*.bam"))
             bam_counts[barcode_name] = len(bam_files)
 
         stats['bam_files_per_barcode'] = bam_counts

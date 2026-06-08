@@ -22,7 +22,7 @@ source(file.path(script_dir, "functions", "mapping_functions.R"))
 process_barcode_multiple_bams <- function(barcode_configs_list) {
   cat("DEBUG: ENTERING process_barcode_multiple_bams function\n")
   # All configs in the list should be for the same barcode
-  barcode_name <- barcode_configs_list[[1]]$barcode_name
+  barcode_name <- toupper(normalize_barcode_name(barcode_configs_list[[1]]$barcode_name))
   log_message(paste("Processing", length(barcode_configs_list), "BAM files for barcode:", barcode_name))
 
   # CREATE BARCODE DIRECTORY ONCE AT THE TOP (ADD THIS):
@@ -580,7 +580,7 @@ create_barcode_configs_grouped <- function(nanotel_files, bam_info, alignment_su
       bam_row <- matching_bams[i, ]
 
       config <- list(
-        barcode_name = toupper(barcode),
+        barcode_name = toupper(normalize_barcode_name(barcode)),
         alignment_summary_path = alignment_summary_path,
         filtered_nanotel_path = nanotel_file,
         bam_file_path = bam_row$bam_path,

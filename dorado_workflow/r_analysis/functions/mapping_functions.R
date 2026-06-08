@@ -56,6 +56,23 @@ process_barcode_mapping <- function(alignment_summary_path,
 
   log_message(paste("Loaded alignment data:", nrow(minimap), "alignments"))
 
+ # Dorado/minimap summaries have changed column names across versions.
+ # Normalize the MAPQ column once so downstream filters stay stable.
+ mapq_candidates <- c("alignment_mapq", "mapq", "mapping_quality", "alignment_mapping_quality")
+ mapq_col <- mapq_candidates[mapq_candidates %in% names(minimap)][1]
+ if (is.na(mapq_col)) {
+   stop(
+     "Alignment summary is missing a MAPQ column. Expected one of: ",
+     paste(mapq_candidates, collapse = ", "),
+     ". Found columns: ",
+     paste(names(minimap), collapse = ", ")
+   )
+ }
+ minimap$alignment_mapq <- suppressWarnings(as.numeric(minimap[[mapq_col]]))
+ if (all(is.na(minimap$alignment_mapq))) {
+   stop("MAPQ column '", mapq_col, "' could not be converted to numeric values")
+ }
+
   # Read filtered NanoTel data
   nanotel_data <- safe_read_csv(filtered_nanotel_path, col_types = cols())
 

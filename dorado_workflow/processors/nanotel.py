@@ -8,6 +8,7 @@ Processes FASTQ files to identify and analyze telomeric sequences.
 
 from pathlib import Path
 from typing import Dict, List, Optional
+import shlex
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
 
 
@@ -87,7 +88,7 @@ class NanoTelProcessor(ProcessorBase):
 
         self.context.logger.info("✓ All NanoTel prerequisites validated")
         return True
-
+    
     def execute(self, fastq_dir: str, parallel: bool = False) -> ProcessorResult:
         """
         Execute the NanoTel telomere analysis.
@@ -185,7 +186,7 @@ class NanoTelProcessor(ProcessorBase):
 
         for barcode_dir in barcode_dirs:
             # Check if this directory has FASTQ files
-            fastq_files = list(barcode_dir.glob("*.fastq*"))
+            fastq_files = list(barcode_dir.rglob("*.fastq*"))
             if not fastq_files:
                 self.context.logger.warning(
                     f"No FASTQ files found in {barcode_dir.name}, skipping"
@@ -200,8 +201,7 @@ class NanoTelProcessor(ProcessorBase):
                 barcode_name = barcode_dir.name
 
             # Create output directory for this barcode
-            barcode_output_dir = self.output_dir / barcode_name
-            barcode_output_dir.mkdir(parents=True, exist_ok=True)
+            barcode_output_dir = self.context.path_manager.get_barcode_nanotel_dir(barcode_name)
 
             tasks.append({
                 'barcode': barcode_name,
@@ -269,6 +269,7 @@ class NanoTelProcessor(ProcessorBase):
         telomere_pattern = nanotel_params.get('telomere_pattern', 'CCCTAA')
         min_density = nanotel_params.get('min_density', 0.5)
         use_filter = nanotel_params.get('use_filter', True)
+        tvr_patterns = nanotel_params.get('tvr_patterns', [])
 
         # Build command parts
         cmd_parts = [
@@ -279,6 +280,13 @@ class NanoTelProcessor(ProcessorBase):
             f"--patterns {telomere_pattern}",
             f"--min_density {min_density}",
         ]
+
+        if tvr_patterns:
+            if isinstance(tvr_patterns, str):
+                tvr_patterns_arg = tvr_patterns
+            else:
+                tvr_patterns_arg = " ".join(str(pattern) for pattern in tvr_patterns)
+            cmd_parts.append(f"--tvr_patterns {shlex.quote(tvr_patterns_arg)}")
 
         # Add filter flag if enabled
         if use_filter:
@@ -314,7 +322,7 @@ class NanoTelProcessor(ProcessorBase):
         for barcode in successful_barcodes:
             barcode_dir = self.output_dir / barcode
             if barcode_dir.exists():
-                output_files = list(barcode_dir.glob("*"))
+                output_files = list(barcode_dir.rglob("*"))
                 output_files_per_barcode[barcode] = len(output_files)
 
         stats['output_files_per_barcode'] = output_files_per_barcode

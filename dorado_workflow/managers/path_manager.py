@@ -9,7 +9,8 @@ Works with ConfigManager to use configured directory naming conventions.
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
-
+import re
+import shutil
 
 class PathManager:
     """
@@ -87,6 +88,36 @@ class PathManager:
             directory.mkdir(parents=True, exist_ok=True)
             self._created_dirs.add(directory)
         return directory
+
+    def _normalize_barcode(self, barcode: str) -> str:
+        """Normalize barcode name to zero-padded form (e.g., 'barcode6' -> 'barcode06')."""
+        match = re.search(r'(?:barcode|bc)(\d+)', barcode, re.IGNORECASE)
+        if not match:
+            return barcode
+        return f"barcode{int(match.group(1)):02d}"
+
+    def _resolve_barcode_dir(self, parent: Path, barcode: str) -> Path:
+        """Return canonical padded barcode dir under `parent`, merging any unpadded duplicate."""
+        canonical_name = self._normalize_barcode(barcode)
+        canonical_path = parent / canonical_name
+
+        if parent.exists():
+            for sibling in parent.iterdir():
+                if (sibling.is_dir()
+                        and sibling.name != canonical_name
+                        and self._normalize_barcode(sibling.name) == canonical_name):
+                    # Merge sibling contents into canonical, then remove sibling
+                    canonical_path.mkdir(parents=True, exist_ok=True)
+                    for child in sibling.iterdir():
+                        dest = canonical_path / child.name
+                        if not dest.exists():
+                            shutil.move(str(child), str(dest))
+                    try:
+                        sibling.rmdir()
+                    except OSError:
+                        pass  # not empty due to conflicts — leave for manual review
+
+        return self._ensure_directory(canonical_path)
 
     def create_all_directories(self) -> None:
         """
@@ -178,8 +209,7 @@ class PathManager:
         Returns:
             Path to barcode's FASTQ directory
         """
-        dir_path = self.get_fastq_dir() / barcode
-        return self._ensure_directory(dir_path)
+        return self._resolve_barcode_dir(self.get_fastq_dir(), barcode)
 
     def get_barcode_nanotel_dir(self, barcode: str) -> Path:
         """
@@ -191,8 +221,7 @@ class PathManager:
         Returns:
             Path to barcode's NanoTel directory
         """
-        dir_path = self.get_nanotel_output_dir() / barcode
-        return self._ensure_directory(dir_path)
+        return self._resolve_barcode_dir(self.get_nanotel_output_dir(), barcode)
 
     def get_barcode_mapping_dir(self, barcode: str) -> Path:
         """
@@ -204,8 +233,7 @@ class PathManager:
         Returns:
             Path to barcode's mapping directory
         """
-        dir_path = self.get_r_mapping_output_dir() / barcode
-        return self._ensure_directory(dir_path)
+        return self._resolve_barcode_dir(self.get_r_mapping_output_dir(), barcode)
 
     def get_barcode_demuxed_dir(self, barcode: str) -> Path:
         """
@@ -217,8 +245,7 @@ class PathManager:
         Returns:
             Path to barcode's demuxed directory
         """
-        dir_path = self.get_demuxed_dir() / barcode
-        return self._ensure_directory(dir_path)
+        return self._resolve_barcode_dir(self.get_demuxed_dir(), barcode)
 
     def get_barcode_aligned_dir(self, barcode: str) -> Path:
         """
@@ -230,8 +257,7 @@ class PathManager:
         Returns:
             Path to barcode's aligned directory
         """
-        dir_path = self.get_aligned_dir() / barcode
-        return self._ensure_directory(dir_path)
+        return self._resolve_barcode_dir(self.get_aligned_dir(), barcode)
 
     # ==================== File Path Generators ====================
 
@@ -304,9 +330,9 @@ class PathManager:
         Get path to alignment summary file.
 
         Returns:
-            Path to alignment_summary.txt
+            Path to sequencing_summary.txt
         """
-        return self.get_aligned_dir() / "alignment_summary.txt"
+        return self.get_aligned_dir() / "sequencing_summary.txt"
 
     # ==================== R Config Generation ====================
 
