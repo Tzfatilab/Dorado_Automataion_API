@@ -89,6 +89,9 @@ class WorkflowSection:
             self.selected_workflows.add(key)
             self.workflow_cards[key].set_selected(True)
 
+        if hasattr(self, "_update_advanced_options_state"):
+            self._update_advanced_options_state()
+
     def _build_workflow_flags(self, inputs):
         """
         Derive boolean flags indicating which workflow steps should run.

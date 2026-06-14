@@ -45,9 +45,9 @@ class ConfigSection:
         # Combobox containing supported organism presets.
         self.organism = QComboBox()
         self.organism.addItems([
-            "mouse",
-            "human",
-            "zebra fish"
+            "Mouse",
+            "Human",
+            "Zebra Fish"
         ])
         self.organism.setFixedWidth(260)
 

@@ -2,6 +2,9 @@
 Advanced options section for the main UI.
 
 Contains basecalling and NanoTel option cards and related helpers.
+
+The controls in this mixin are read by AppWindow when it creates a worker.
+Their enabled state follows the workflow selections managed by WorkflowSection.
 """
 from PySide6.QtWidgets import (
     QLabel,
@@ -15,6 +18,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QDialog,
     QDialogButtonBox,
+    QGraphicsOpacityEffect,
+    QMessageBox,
 )
 
 from PySide6.QtCore import Qt
@@ -29,6 +34,27 @@ from PySide6.QtCore import QRegularExpression
 from gui.ui_styles import make_card
 from gui.widgets.selection_widgets import SelectOption
 from core.workflow_constants import BASE_DIR
+
+
+class MappingCheckBox(QCheckBox):
+    """Checkbox that can block unchecking when mapping is required."""
+
+    def __init__(self, text, can_uncheck):
+        super().__init__(text)
+        self.can_uncheck = can_uncheck
+
+    def nextCheckState(self):
+        # Intercept the click before Qt visually unchecks the box. Restoring the
+        # state from a clicked handler would cause a short unchecked flicker.
+        if self.isChecked() and not self.can_uncheck():
+            QMessageBox.warning(
+                self.window(),
+                "Mapping Required",
+                "Chromosome mapping cannot be disabled while methylation is selected.",
+            )
+            return
+
+        super().nextCheckState()
 
 
 class AdvancedSection:
@@ -46,11 +72,45 @@ class AdvancedSection:
         row = QHBoxLayout()
         row.setSpacing(16)
 
-        row.addWidget(self._build_basecalling_options(), 1)
-        row.addWidget(self._build_nanotel_options(), 1)
+        self.basecalling_options_card = self._build_basecalling_options()
+        self.nanotel_options_card = self._build_nanotel_options()
+
+        # Keep references because WorkflowSection refreshes these cards whenever
+        # the user selects or deselects an analysis step.
+        row.addWidget(self.basecalling_options_card, 1)
+        row.addWidget(self.nanotel_options_card, 1)
         box.setLayout(row)
 
+        self._update_advanced_options_state()
+
         return box
+
+    def _update_advanced_options_state(self):
+        """Enable advanced option cards only for selected workflow steps."""
+        # getattr keeps construction safe if this mixin is reused before
+        # WorkflowSection has initialized selected_workflows.
+        selected = getattr(self, "selected_workflows", set())
+        self._set_option_card_enabled(
+            self.basecalling_options_card,
+            "basecalling" in selected,
+        )
+        self._set_option_card_enabled(
+            self.nanotel_options_card,
+            "nanotel" in selected,
+        )
+
+    @staticmethod
+    def _set_option_card_enabled(card, enabled):
+        """Set card interactivity and clearly fade disabled cards."""
+        # Reuse one opacity effect per card; replacing it on every workflow
+        # click can make Qt discard the previous effect unexpectedly.
+        effect = card.graphicsEffect()
+        if effect is None:
+            effect = QGraphicsOpacityEffect(card)
+            card.setGraphicsEffect(effect)
+
+        effect.setOpacity(1.0 if enabled else 0.45)
+        card.setEnabled(enabled)
 
     def _option_card(self):
         """
@@ -72,27 +132,22 @@ class AdvancedSection:
         return card
 
     def _build_basecalling_options(self):
-        """
-        Build the 'Basecalling Options' card.
-
-        This card includes methylation type selectors and a chromosome mapping checkbox.
-
-        Returns:
-            QFrame: fully configured basecalling options card.
-        """
+        """Build the card containing basecalling-specific controls."""
         card = self._option_card()
-
         main = QVBoxLayout(card)
         main.setContentsMargins(0, 0, 0, 0)
         main.setSpacing(0)
 
-        # =====================================================
-        # HEADER
-        # =====================================================
+        main.addWidget(self._build_basecalling_header())
+        main.addWidget(self._build_divider(QFrame.HLine))
+        main.addWidget(self._build_basecalling_body())
 
+        return card
+
+    def _build_basecalling_header(self):
+        """Build the Basecalling Options card header."""
         header_widget = QWidget()
         header_widget.setFixedHeight(55)
-
         header_widget.setStyleSheet("""
             background: white;
             border-top-left-radius: 12px;
@@ -103,135 +158,101 @@ class AdvancedSection:
         header.setContentsMargins(14, 10, 14, 10)
 
         title_row = QHBoxLayout()
-
         icon = QLabel()
-        icon.setStyleSheet("""
-            background: transparent;
-            border: none;
-        """)
+        icon.setStyleSheet("background: transparent; border: none;")
         icon.setPixmap(
-            QPixmap(str(BASE_DIR / "icons" / "sub_basecalling.png")).
-            scaled(34, 34,Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            QPixmap(str(BASE_DIR / "icons" / "sub_basecalling.png")).scaled(
+                34,
+                34,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
         )
 
         title = QLabel("Basecalling Options")
-
         title.setStyleSheet("""
             font-size: 16px;
             font-weight: 700;
-            color: #2F5FE3;
+            color: #2563eb;
+            border: none;
+            background: transparent;
         """)
 
         title_row.addWidget(icon)
         title_row.addSpacing(6)
         title_row.addWidget(title)
         title_row.addStretch()
-        title.setStyleSheet("""
-            font-size: 16px;
-            font-weight: 700;
-            color: #2563eb;
-            border: none;            
-            background: transparent;
-        """)
-
         header.addLayout(title_row)
         header.addStretch()
 
-        main.addWidget(header_widget)
+        return header_widget
 
-        # =====================================================
-        # DIVIDER
-        # =====================================================
-
+    @staticmethod
+    def _build_divider(shape):
+        """Build a horizontal or vertical divider."""
         line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("""
+        line.setFrameShape(shape)
+        size_rule = "max-height: 1px;" if shape == QFrame.HLine else "max-width: 1px;"
+        line.setStyleSheet(f"""
             color: #E5E7EB;
             background: #E5E7EB;
-            max-height: 1px;
+            {size_rule}
         """)
-        main.addWidget(line)
+        return line
 
-        # =====================================================
-        # BODY
-        # =====================================================
-
+    def _build_basecalling_body(self):
+        """Build methylation and chromosome mapping controls."""
         body_widget = QWidget()
-        body_widget.setStyleSheet("""
-            background: white;
-        """)
+        body_widget.setStyleSheet("background: white;")
         body = QHBoxLayout(body_widget)
-
         body.setContentsMargins(16, 12, 16, 12)
         body.setSpacing(16)
 
-        # -----------------------------------------------------
-        # LEFT SIDE: METHYLATION TYPE OPTIONS
-        # -----------------------------------------------------
+        body.addWidget(self._build_methylation_options())
+        body.addWidget(self._build_divider(QFrame.VLine))
+        body.addWidget(self._build_mapping_option())
 
-        left = QVBoxLayout()
-        left.setAlignment(Qt.AlignTop)
-        left.setSpacing(8)
+        return body_widget
+
+    def _build_methylation_options(self):
+        """Build the mutually exclusive methylation selectors."""
+        layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignTop)
+        layout.setSpacing(8)
 
         meth_title = QLabel("Methylation Type")
         meth_title.setStyleSheet("""
-          font-size: 14px;
+            font-size: 14px;
             font-weight: 600;
             color: #374151;
             border: none;
             background: transparent;
         """)
-        left.addWidget(meth_title)
+        layout.addWidget(meth_title)
 
-        # Reusable selectable options (provided by widgets.selection_widgets)
         self.none_option = SelectOption("None")
         self.cpg_option = SelectOption("5mCpG")
         self.hmc_option = SelectOption("5mCpG + 5hmCpG")
-
-        # Default selection
         self.none_option.set_selected(True)
 
-        left.addWidget(self.none_option)
-        left.addWidget(self.cpg_option)
-        left.addWidget(self.hmc_option)
-
-        # Wire click handlers to update selected state
-        for option in [
-            self.none_option,
-            self.cpg_option,
-            self.hmc_option
-        ]:
+        for option in [self.none_option, self.cpg_option, self.hmc_option]:
+            layout.addWidget(option)
+            # Capture the current option in the default argument. Without this,
+            # every callback would select the final option from the loop.
             option.mousePressEvent = (
-                lambda e, o=option:
-                self._set_methylation(o)
+                lambda event, selected=option: self._set_methylation(selected)
             )
 
-        left_widget = QWidget()
-        left_widget.setLayout(left)
-        left_widget.setFixedWidth(360)
+        widget = QWidget()
+        widget.setLayout(layout)
+        widget.setFixedWidth(360)
+        return widget
 
-        body.addWidget(left_widget)
-
-        # -----------------------------------------------------
-        # VERTICAL DIVIDER
-        # -----------------------------------------------------
-
-        vline = QFrame()
-        vline.setFrameShape(QFrame.VLine)
-        vline.setStyleSheet("""
-            color: #E5E7EB;
-            background: #E5E7EB;
-            max-width: 1px;
-        """)
-        body.addWidget(vline)
-
-        # -----------------------------------------------------
-        # RIGHT SIDE: CHROMOSOME MAPPING
-        # -----------------------------------------------------
-
-        right = QVBoxLayout()
-        right.setAlignment(Qt.AlignTop)
-        right.setSpacing(8)
+    def _build_mapping_option(self):
+        """Build the chromosome mapping control."""
+        layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignTop)
+        layout.setSpacing(8)
 
         chrom_title = QLabel("Chromosome Mapping")
         chrom_title.setStyleSheet("""
@@ -241,14 +262,16 @@ class AdvancedSection:
             border: none;
             background: transparent;
         """)
-        right.addWidget(chrom_title)
+        layout.addWidget(chrom_title)
 
-        self.chromosome_mapping = QCheckBox(
+        self.chromosome_mapping = MappingCheckBox(
             "Align reads to reference genome\n"
-            "during basecalling"
+            "during basecalling",
+            # Mapping is mandatory while either methylation mode is selected.
+            # The callback is evaluated on each click, not only during setup.
+            can_uncheck=lambda: self.none_option.selected,
         )
 
-        # Style the checkbox and indicators
         self.chromosome_mapping.setStyleSheet("""
             QCheckBox {
                 font-size: 14px;
@@ -273,125 +296,97 @@ class AdvancedSection:
                 border-radius: 4px;
             }
         """)
+        layout.addWidget(self.chromosome_mapping)
 
-        right.addWidget(self.chromosome_mapping)
-
-        right_widget = QWidget()
-        right_widget.setLayout(right)
-
-        body.addWidget(right_widget)
-
-        main.addWidget(body_widget)
-
-        return card
+        widget = QWidget()
+        widget.setLayout(layout)
+        return widget
 
     def _build_nanotel_options(self):
-        """
-        Build the 'NanoTel Options' card.
-
-        Includes TVR mode segmented buttons and numeric configuration fields.
-
-        Returns:
-            QFrame: fully configured NanoTel options card.
-        """
+        """Build the card containing NanoTel-specific controls."""
         card = self._option_card()
-
         main = QVBoxLayout(card)
         main.setContentsMargins(0, 0, 0, 0)
         main.setSpacing(0)
 
-        # =====================================================
-        # HEADER
-        # =====================================================
+        main.addWidget(self._build_nanotel_header())
+        main.addWidget(self._build_divider(QFrame.HLine))
+        main.addWidget(self._build_nanotel_body())
 
+        return card
+
+    def _build_nanotel_header(self):
+        """Build the NanoTel Options card header."""
         header_widget = QWidget()
         header_widget.setFixedHeight(55)
-
         header_widget.setStyleSheet("""
             background: white;
             border-top-left-radius: 12px;
             border-top-right-radius: 12px;
-            border: none;            
-            background: transparent;                                    
+            border: none;
+            background: transparent;
         """)
 
         header = QHBoxLayout(header_widget)
         header.setContentsMargins(14, 10, 14, 10)
 
         title_row = QHBoxLayout()
-
         icon = QLabel()
-        icon.setStyleSheet("""
-            background: transparent;
-            border: none;
-        """)
+        icon.setStyleSheet("background: transparent; border: none;")
         icon.setPixmap(
-           QPixmap(str(BASE_DIR / "icons" / "sub_nanotel.png")).
-            scaled(34, 34,Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            QPixmap(str(BASE_DIR / "icons" / "sub_nanotel.png")).scaled(
+                34,
+                34,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
         )
 
         title = QLabel("NanoTel Options")
         title.setStyleSheet("""
             font-size: 16px;
             font-weight: 700;
-            color: #2F5FE3;
+            color: #2563EB;
+            background: transparent;
+            border: none;
         """)
 
         title_row.addWidget(icon)
         title_row.addSpacing(6)
         title_row.addWidget(title)
         title_row.addStretch()
-        title.setStyleSheet("""
-            font-size: 16px;
-            font-weight: 700;
-            color: #2563EB;
-            background: transparent;
-            border: none;            
-        """)
 
         toggle = QCheckBox()
         header.addLayout(title_row)
         header.addStretch()
         header.addWidget(toggle)
-        main.addWidget(header_widget)
 
-        # =====================================================
-        # DIVIDER
-        # =====================================================
+        return header_widget
 
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("""
-            color: #E5E7EB;
-            background: #E5E7EB;
-            max-height: 1px;
-        """)
-        main.addWidget(line)
-
-        # =====================================================
-        # BODY
-        # =====================================================
-
+    def _build_nanotel_body(self):
+        """Build the TVR mode controls and numeric NanoTel fields."""
         body_widget = QWidget()
-        body_widget.setStyleSheet("""
-            background: white;
-        """)
+        body_widget.setStyleSheet("background: white;")
         body = QVBoxLayout(body_widget)
         body.setContentsMargins(16, 12, 16, 12)
         body.setSpacing(10)
 
-        # -------------------------------------------------
-        # TVR BUTTONS (segmented control)
-        # -------------------------------------------------
+        body.addLayout(self._build_tvr_mode_controls())
+        body.addLayout(self._build_nanotel_fields())
 
+        return body_widget
+
+    def _build_tvr_mode_controls(self):
+        """Build the segmented TVR mode buttons."""
         tvr_row = QHBoxLayout()
         tvr_row.setSpacing(8)
+
         tvr_label = QLabel("TVR Mode")
         tvr_label.setStyleSheet("""
             font-size: 14px;
             font-weight: 600;
             color: #374151;
-            border: none;            
+            border: none;
             background: transparent;
         """)
         tvr_label.setFixedWidth(80)
@@ -409,9 +404,37 @@ class AdvancedSection:
             self.manual_btn
         ]
         self.selected_tvr_mode = "None"
+        # Manual patterns are stored here even though the field itself is not
+        # displayed; AppWindow reads the value when it creates the worker.
         self.tvr_manual = QLineEdit()
 
-        segmented_style = """
+        active_style, segmented_style = self._tvr_button_styles()
+        for button in self.tvr_buttons:
+            # Capture each button so its callback keeps the correct TVR mode.
+            button.clicked.connect(
+                lambda _, selected=button: self._set_tvr_mode(
+                    selected,
+                    active_style,
+                    segmented_style,
+                )
+            )
+            button.setStyleSheet(
+                active_style if button == self.none_btn else segmented_style
+            )
+
+        button_widths = [72, 96, 72, 104]
+        for button, width in zip(self.tvr_buttons, button_widths):
+            button.setFixedWidth(width)
+            button.setFixedHeight(34)
+            tvr_row.addWidget(button)
+
+        tvr_row.addStretch()
+        return tvr_row
+
+    @staticmethod
+    def _tvr_button_styles():
+        """Return active and inactive TVR button styles."""
+        inactive_style = """
             QPushButton {
                 background: white;
                 color: #111827;
@@ -426,7 +449,6 @@ class AdvancedSection:
                 color: #2563EB;
             }
         """
-
         active_style = """
             QPushButton {
                 background: #2563EB;
@@ -438,45 +460,10 @@ class AdvancedSection:
                 font-weight: 600;
             }
         """
+        return active_style, inactive_style
 
-        # Connect each button to the mode setter with styles passed through
-        for btn in self.tvr_buttons:
-            btn.clicked.connect(
-                lambda _, b=btn: self._set_tvr_mode(
-                    b,
-                    active_style,
-                    segmented_style
-                )
-            )
-
-        # Initial style states
-        self.none_btn.setStyleSheet(active_style)
-        self.preset_btn.setStyleSheet(segmented_style)
-        self.tsq1_btn.setStyleSheet(segmented_style)
-        self.manual_btn.setStyleSheet(segmented_style)
-
-        button_widths = {
-            self.none_btn: 72,
-            self.preset_btn: 96,
-            self.tsq1_btn: 72,
-            self.manual_btn: 104,
-        }
-        for btn, width in button_widths.items():
-            btn.setFixedWidth(width)
-            btn.setFixedHeight(34)
-
-        tvr_row.addWidget(self.none_btn)
-        tvr_row.addWidget(self.preset_btn)
-        tvr_row.addWidget(self.tsq1_btn)
-        tvr_row.addWidget(self.manual_btn)
-        tvr_row.addStretch()
-
-        body.addLayout(tvr_row)
-
-        # -------------------------------------------------
-        # GRID: numeric configuration fields
-        # -------------------------------------------------
-
+    def _build_nanotel_fields(self):
+        """Build validated numeric NanoTel configuration fields."""
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
@@ -489,7 +476,8 @@ class AdvancedSection:
         self.max_distance_edge.setFixedWidth(74)
         self.min_density_threshold.setFixedWidth(74)
 
-        # Validators ensure valid numeric ranges
+        # Validators prevent invalid values before the options reach the
+        # pipeline configuration layer.
         self.read_length.setValidator(QIntValidator(0, 10000))
         self.max_distance_edge.setValidator(QIntValidator(0, 1000))
         validator = QDoubleValidator(0.0, 1.0, 3)
@@ -512,20 +500,9 @@ class AdvancedSection:
                 font-weight: 500;
             }
         """
-
-        read_label = QLabel("Min Read Length (bp)")
-        read_label.setStyleSheet(label_style)
-        edge_label = QLabel("Max Edge Distance")
-        edge_label.setStyleSheet(label_style)
-        density_label = QLabel("Min Density")
-        density_label.setStyleSheet(label_style)
-
-        for label in [read_label, edge_label, density_label]:
-            label.setWordWrap(False)
-
-        read_label.setFixedWidth(140)
-        density_label.setFixedWidth(128)
-        edge_label.setFixedWidth(140)
+        read_label = self._build_field_label("Min Read Length (bp)", 140, label_style)
+        edge_label = self._build_field_label("Max Edge Distance", 140, label_style)
+        density_label = self._build_field_label("Min Density", 128, label_style)
 
         grid.addWidget(read_label, 0, 0)
         grid.addWidget(self.read_length, 0, 1)
@@ -533,11 +510,16 @@ class AdvancedSection:
         grid.addWidget(self.max_distance_edge, 0, 3)
         grid.addWidget(density_label, 1, 0)
         grid.addWidget(self.min_density_threshold, 1, 1)
-        body.addLayout(grid)
+        return grid
 
-        main.addWidget(body_widget)
-
-        return card
+    @staticmethod
+    def _build_field_label(text, width, style):
+        """Build a fixed-width label for a NanoTel field."""
+        label = QLabel(text)
+        label.setStyleSheet(style)
+        label.setWordWrap(False)
+        label.setFixedWidth(width)
+        return label
 
     def _set_tvr_mode(
         self,
@@ -618,7 +600,7 @@ class AdvancedSection:
 
         label = QLabel("Patterns separated by spaces:")
         line_edit = QLineEdit(self.tvr_manual.text())
-        line_edit.setPlaceholderText("ACTG,TTAGGG")
+        line_edit.setPlaceholderText("ACTG TTAGGG")
         line_edit.setValidator(
             QRegularExpressionValidator(
                 QRegularExpression("[ACGTacgt,;\\s]*"),
@@ -637,6 +619,8 @@ class AdvancedSection:
         if dialog.exec() != QDialog.Accepted:
             return None
 
+        # Normalize every accepted separator into the comma-separated format
+        # expected by the NanoTel configuration override.
         return ",".join(
             pattern.strip().upper()
             for pattern in line_edit.text().replace(";", ",").replace(" ", ",").split(",")
@@ -661,6 +645,12 @@ class AdvancedSection:
             option.set_selected(
                 option == selected
             )
+
+        methylation_enabled = selected != self.none_option
+        if methylation_enabled:
+            # Methylation analysis depends on aligned reads. Mapping remains
+            # selected after methylation is removed, but can then be unchecked.
+            self.chromosome_mapping.setChecked(True)
 
     def _get_methylation_type(self):
         """
@@ -699,5 +689,5 @@ class AdvancedSection:
 
         row.addWidget(label)
         row.addWidget(widget)
-
-        r
+        row.addStretch()
+        return row

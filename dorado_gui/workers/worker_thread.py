@@ -22,7 +22,7 @@ class WorkerThread(QObject):
             fastq_path: str = "",
             bam_path: str = "",
             output_dir: str = "",
-            organism: str = "mouse",
+            organism: str = "Mouse",
             do_basecalling: bool = False,
             do_nanotel: bool = False,
             non_pod5_trim_status: str = "auto",
@@ -42,7 +42,7 @@ class WorkerThread(QObject):
         self.fastq_path = fastq_path
         self.bam_path = bam_path
         self.output_dir = output_dir
-        self.organism = organism
+        self.organism = organism.lower()
 
         self.do_basecalling = do_basecalling
         self.do_nanotel = do_nanotel
