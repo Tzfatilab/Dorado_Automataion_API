@@ -663,10 +663,10 @@ class AdvancedSection:
             return "none"
 
         if self.cpg_option.selected:
-            return "5mCpG"
+            return "5mCG"
 
         if self.hmc_option.selected:
-            return "5mCpG + 5hmCpG"
+            return "5mCG_5hmCG"
 
         return "none"
 

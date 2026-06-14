@@ -17,9 +17,6 @@
 # Please try to give the output_path outside the input dir path and vice versa
 
 suppressPackageStartupMessages(require(optparse))
-suppressPackageStartupMessages(require(conflicted))
-conflicts_prefer(base::intersect)
-conflicts_prefer(base::setdiff)
 
 ########## start of the flags ###############
 # global vars
@@ -109,6 +106,7 @@ suppressPackageStartupMessages(require(BiocGenerics))
 suppressPackageStartupMessages(require(S4Vectors))
 suppressPackageStartupMessages(require(IRanges))
 suppressPackageStartupMessages(require(Biostrings))
+suppressPackageStartupMessages(require(conflicted))
 suppressPackageStartupMessages(require(tidyverse))
 # Fallback: if tidyverse failed to load (e.g. missing ragg system lib on Linux),
 # load its core packages individually so the script can still run.
@@ -2127,14 +2125,8 @@ filter_reads <- function(samples,  patterns, do_rc = TRUE, num_of_cores = 10, su
   if (isTRUE(do_rc)) {
     samps_1000 <- Biostrings::reverseComplement(samps_1000)
   }
-    # FROK don't work on windows os 
-    cluster_type <- if (.Platform$OS.type == "windows") {
-    "PSOCK"
-  } else {
-    "FORK"
-  }
-  cl <- makeCluster(num_of_cores, type = cluster_type)
-  
+  # FROK don't work on windows os 
+  cl <- makeCluster(num_of_cores, type = "FORK")
   # change to -(61+ just incase there are indels ( barcode_telorette == 61))
   if(right_edge) {
     trimm_length <- trimm_length +1
@@ -2146,13 +2138,10 @@ filter_reads <- function(samples,  patterns, do_rc = TRUE, num_of_cores = 10, su
 
   stopCluster(cl)
 
-  if (.Platform$OS.type == "windows") {
-  logical_100 <- lapply(samp_100, filter_density,
-      patterns = patterns, min_density = global_min_density * 0.8)
-  } else {
-    logical_100 <- mclapply(samp_100, filter_density,
-        patterns = patterns, min_density = global_min_density * 0.8, mc.cores = num_of_cores)
-  }
+
+  logical_100 <- mclapply(X = samp_100, FUN = filter_density,
+      patterns = patterns, min_density = global_min_density*0.8, mc.cores = num_of_cores)
+
 
   #test_filter2 <- samps_1000[unlist(logical_100)]
 
@@ -2215,11 +2204,7 @@ run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta
   
   
   options(future.globals.maxSize = 1048576000*1.5) # 1.5 gigabyte max
-  if (.Platform$OS.type == "windows") {
-  plan(multisession, workers = 8)
-  } else {
-    plan(multicore, workers = 8)
-  }
+  plan(multicore, workers = 8)
   serial_start <- 1
   while (TRUE) {
     i <- i + 1

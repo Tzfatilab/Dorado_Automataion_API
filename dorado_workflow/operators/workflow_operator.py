@@ -99,12 +99,11 @@ class WorkflowOperator:
             return False
 
         # Step 4: Alignment
-        if not align_during_basecalling:
-            result = self.aligner.execute(str(demuxed_dir), organism)
-            self.results['aligner'] = result
-            if not result.success:
-                self.context.logger.error("Workflow stopped: Alignment failed")
-                return False
+        result = self.aligner.execute(str(demuxed_dir), organism)
+        self.results['aligner'] = result
+        if not result.success:
+            self.context.logger.error("Workflow stopped: Alignment failed")
+            return False
 
         # Step 5: R Analysis (all three: filtration, mapping, methylation)
         result = self.r_analyzer.execute(
