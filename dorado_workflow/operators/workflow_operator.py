@@ -109,7 +109,7 @@ class WorkflowOperator:
         # Step 5: R Analysis (all three: filtration, mapping, methylation)
         result = self.r_analyzer.execute(
             run_filtration=True,
-            run_mapping=False, # for now
+            run_mapping=methylation_enabled,
             run_methylation= methylation_enabled
         )
         self.results['r_analyzer'] = result
@@ -223,8 +223,8 @@ class WorkflowOperator:
         )
         result = self.r_analyzer.execute(
             run_filtration=True,
-            run_mapping=False, # for now,
-            run_methylation=False
+            run_mapping=do_mapping,
+            run_methylation=has_methylation and do_mapping
         )
         self.results['r_analyzer'] = result
         if not result.success:

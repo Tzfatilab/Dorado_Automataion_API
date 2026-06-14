@@ -10,6 +10,6 @@ from PySide6.QtWidgets import QApplication
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = AppWindow()
-    w.showMaximized()
+    #w.showMaximized()
     w.show()
     sys.exit(app.exec())

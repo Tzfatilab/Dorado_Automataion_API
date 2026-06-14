@@ -197,11 +197,11 @@ def _build_basecalling_overrides(methylation_type: str) -> dict:
     if mode == "none":
         return {"modified_bases": ""}
 
-    if mode == "cpg":
-        return {"modified_bases": "5mCG_5hmCG"}
+    if mode == "5mcpg":
+        return {"modified_bases": "5mCG"}
 
-    if mode == "hydroxymethylation":
-        return {"modified_bases": "5mC_5hmC"}
+    if mode == "5mcpg + 5hmcpg":
+        return {"modified_bases": "5mCG_5hmCG"}
 
     return {}
 

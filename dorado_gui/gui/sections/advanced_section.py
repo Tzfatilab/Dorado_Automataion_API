@@ -185,8 +185,8 @@ class AdvancedSection:
 
         # Reusable selectable options (provided by widgets.selection_widgets)
         self.none_option = SelectOption("None")
-        self.cpg_option = SelectOption("CpG (5mC)")
-        self.hmc_option = SelectOption("CpG + Hydroxymethylation (5hmC)")
+        self.cpg_option = SelectOption("5mCpG")
+        self.hmc_option = SelectOption("5mCpG + 5hmCpG")
 
         # Default selection
         self.none_option.set_selected(True)
@@ -667,16 +667,16 @@ class AdvancedSection:
         Query the currently selected methylation type.
 
         Returns:
-            str: one of "none", "CpG", "Hydroxymethylation".
+            str: one of "none", "5mCpG", "5mCpG + 5hmCpG".
         """
         if self.none_option.selected:
             return "none"
 
         if self.cpg_option.selected:
-            return "CpG"
+            return "5mCpG"
 
         if self.hmc_option.selected:
-            return "Hydroxymethylation"
+            return "5mCpG + 5hmCpG"
 
         return "none"
 

@@ -97,7 +97,7 @@ class SelectCard(QFrame):
 
         title_lbl = QLabel(title)
         title_lbl.setStyleSheet("font-weight: 600; font-size: 13px;")
-
+        
         desc_lbl = QLabel(description)
         desc_lbl.setStyleSheet("color: #6b7280; font-size: 11px;")
         desc_lbl.setWordWrap(True)
