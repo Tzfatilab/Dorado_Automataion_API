@@ -17,7 +17,7 @@ The workflow supports:
 
 ## Graphical User Interface (GUI)
 
-The Dorado Automation API is also available through the **Telomere Analyzer** graphical interface, providing a user-friendly way to configure and execute Oxford Nanopore sequencing workflows without requiring command-line interaction.
+The Dorado Automation API is also available through the Telomere Analyzer graphical interface, providing a user-friendly way to configure and execute Oxford Nanopore sequencing workflows without requiring command-line interaction. The graphical interface is supported on both Linux and Windows systems; however, due to limitations in parallel processing and process management on Windows, workflow execution may be slower. For optimal performance and stability, running the software on Linux is recommended.
 
 * <img width="2864" height="1662" alt="image" src="https://github.com/user-attachments/assets/fb120896-465c-4378-aa5c-a7c28a899c16" />
 
