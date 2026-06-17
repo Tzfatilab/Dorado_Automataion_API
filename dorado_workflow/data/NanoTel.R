@@ -108,6 +108,11 @@ suppressPackageStartupMessages(require(IRanges))
 suppressPackageStartupMessages(require(Biostrings))
 suppressPackageStartupMessages(require(conflicted))
 suppressPackageStartupMessages(require(tidyverse))
+
+# Prefer base::intersect to avoid conflicts between lubridate / Biostrings
+conflicts_prefer(base::intersect)
+conflicts_prefer(base::setdiff)
+
 # Fallback: if tidyverse failed to load (e.g. missing ragg system lib on Linux),
 # load its core packages individually so the script can still run.
 if (!isNamespaceLoaded("purrr")) {
@@ -2120,48 +2125,94 @@ create_sample <- function(input_path, format = "fastq") {
   return(sample)
 }
 
-filter_reads <- function(samples,  patterns, do_rc = TRUE, num_of_cores = 10, subread_width = 200, right_edge = TRUE, trimm_length = 70) {
+# update : 2023-02-10 change the function to use parallel::parLapply instead of mclapply for Windows compatibility
+filter_reads <- function(samples, patterns, do_rc = TRUE,
+                         num_of_cores = 10,
+                         subread_width = 200,
+                         right_edge = TRUE,
+                         trimm_length = 70) {
+
   samps_1000 <- samples[width(samples) >= 1e3]
+
   if (isTRUE(do_rc)) {
     samps_1000 <- Biostrings::reverseComplement(samps_1000)
   }
-  # FROK don't work on windows os 
-  cl <- makeCluster(num_of_cores, type = "FORK")
-  # change to -(61+ just incase there are indels ( barcode_telorette == 61))
-  if(right_edge) {
-    trimm_length <- trimm_length +1
-    trimm_length <- -1*trimm_length
-    samp_100 <- parLapply(cl, samps_1000, subseq, end = trimm_length, width = subread_width)
-  } else { # check the start of the read (left)
-    samp_100 <- parLapply(cl, samps_1000, subseq, start = trimm_length + 1, width = subread_width)
+
+  # Detect OS
+  is_windows <- .Platform$OS.type == "windows"
+
+  # Create cluster
+  cl_type <- if (is_windows) "PSOCK" else "FORK"
+  cl <- parallel::makeCluster(num_of_cores, type = cl_type)
+
+  if (is_windows) {
+    parallel::clusterEvalQ(cl, {
+      suppressPackageStartupMessages(require(BiocGenerics))
+      suppressPackageStartupMessages(require(S4Vectors))
+      suppressPackageStartupMessages(require(IRanges))
+      suppressPackageStartupMessages(require(Biostrings))
+    })
+  }
+
+  if (right_edge) {
+    trimm_length <- -(trimm_length + 1)
+
+    samp_100 <- parallel::parLapply(
+      cl,
+      samps_1000,
+      subseq,
+      end = trimm_length,
+      width = subread_width
+    )
+  } else {
+    samp_100 <- parallel::parLapply(
+      cl,
+      samps_1000,
+      subseq,
+      start = trimm_length + 1,
+      width = subread_width
+    )
+  }
+
+  if (is_windows) {
+    parallel::clusterExport(
+      cl,
+      c("filter_density", "patterns", "global_min_density"),
+      envir = environment()
+    )
+
+    logical_100 <- parallel::parLapply(
+      cl,
+      samp_100,
+      filter_density,
+      patterns = patterns,
+      min_density = global_min_density * 0.8
+    )
+  } else {
+
+    logical_100 <- parallel::mclapply(
+      X = samp_100,
+      FUN = filter_density,
+      patterns = patterns,
+      min_density = global_min_density * 0.8,
+      mc.cores = num_of_cores
+    )
   }
 
   stopCluster(cl)
 
-
-  logical_100 <- mclapply(X = samp_100, FUN = filter_density,
-      patterns = patterns, min_density = global_min_density*0.8, mc.cores = num_of_cores)
-
-
-  #test_filter2 <- samps_1000[unlist(logical_100)]
-
-  #logical_100 <-sapply(X = samp_100, FUN = filter_density, patterns = curr_patterns, min_density = 0.175)
-
-
   rm(samp_100)
-  names(logical_100) <- NULL
 
+  names(logical_100) <- NULL
   samps_1000 <- samps_1000[unlist(logical_100)]
 
   if (length(samps_1000) < 1) {
-    message("No read have passed the filteration at run_with_rc_and_filter!")
+    message("No read have passed the filtration at run_with_rc_and_filter!")
     return(NA)
-  }else {
-
-    return(samps_1000)
   }
-}
 
+  samps_1000
+}
 
 
 

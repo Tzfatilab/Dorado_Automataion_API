@@ -180,7 +180,7 @@ def _run_nanotel_only(operator, fastq_path, bam_path, organism, log, check_cance
     log("=" * 60)
 
     if fastq_path:
-        return operator.run_nanotel_workflow(fastq_path, organism=organism, has_methylation=has_methylation)
+        return operator.run_nanotel_workflow(fastq_path, organism=organism, align=True, has_methylation=has_methylation)
 
     if bam_path:
         return operator.run_nanotel_workflow(bam_path, organism=organism, align=True, has_methylation=has_methylation)

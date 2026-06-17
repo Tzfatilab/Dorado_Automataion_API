@@ -268,7 +268,6 @@ class NanoTelProcessor(ProcessorBase):
         nanotel_script = config.get_nanotel_script_path()
         telomere_pattern = nanotel_params.get('telomere_pattern', 'CCCTAA')
         min_density = nanotel_params.get('min_density', 0.5)
-        use_filter = nanotel_params.get('use_filter', True)
         tvr_patterns = nanotel_params.get('tvr_patterns', [])
 
         # Build command parts
@@ -288,13 +287,7 @@ class NanoTelProcessor(ProcessorBase):
                 tvr_patterns_arg = " ".join(str(pattern) for pattern in tvr_patterns)
             cmd_parts.append(f"--tvr_patterns {shlex.quote(tvr_patterns_arg)}")
 
-        # Add filter flag if enabled
-        if use_filter:
-            cmd_parts.append("--use_filter")
-
-        # Join command parts
         command = " ".join(cmd_parts)
-
         return command
 
     def _collect_statistics(self, results_per_barcode: Dict[str, bool]) -> Dict[str, any]:

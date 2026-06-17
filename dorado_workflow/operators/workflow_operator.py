@@ -6,7 +6,8 @@ Handles three main execution scenarios and manages the pipeline flow.
 """
 
 from pathlib import Path
-from typing import Optional, Dict, Any, Union
+from typing import Any, Dict, Optional, Tuple
+
 from processors.base import WorkflowContext, ProcessorResult
 from processors.basecaller import BasecallerProcessor
 from processors.demuxer import DemuxProcessor
@@ -14,7 +15,7 @@ from processors.nanotel import NanoTelProcessor
 from processors.aligner import AlignmentProcessor
 from processors.r_analyzer import RAnalyzer
 from processors.bam_to_fastq import BamToFastqProcessor
-from typing import Any, Tuple, Optional, Union
+
 
 class WorkflowOperator:
     """
@@ -31,6 +32,7 @@ class WorkflowOperator:
     2. FASTQ workflow: nanotel → align → R analysis (filtration only, no methylation yet)
     3. Single process: Run individual step (nanotel, align, R analysis)
     """
+
     def __init__(self, context: WorkflowContext):
         """
         Initialize workflow operator with context.
@@ -50,8 +52,88 @@ class WorkflowOperator:
         # Track workflow state
         self.results: Dict[str, ProcessorResult] = {}
 
+    # ------------------------------ Internal helpers ------------------------------
+    def _run_step(self, key: str, label: str, processor: Any,
+                  *args: Any, **kwargs: Any) -> Optional[ProcessorResult]:
+        """
+        Execute a processor, store its result, and check for success.
+        Args:
+            key: Name under which to store the result.
+            label: Human-readable step name used in the error message.
+            processor: Processor instance whose ``execute`` will be called.
+            *args, **kwargs: Arguments forwarded to ``processor.execute``.
+        Returns:
+            The ProcessorResult on success, or None on failure (after logging).
+        """
+        result = processor.execute(*args, **kwargs)
+        self.results[key] = result
+        if not result.success:
+            self.context.logger.error(f"Workflow stopped: {label} failed")
+            return None
+        return result
 
-    def run_pod5_workflow(self, pod5_input: str, organism: str = "mouse", methylation_enabled: bool = False, align_during_basecalling: bool = False) -> bool:
+    def _log_inputs(self, input_path: str, organism: Optional[str]) -> None:
+        """Log the standard input/organism header lines."""
+        self.context.logger.section_header("WORKFLOW INPUTS")
+        self.context.logger.info(f"Input: {input_path}")
+        self.context.logger.info(f"Organism: {organism}")
+
+    def _finish_success(self) -> bool:
+        """Log the success banner and print the run summary."""
+        self.context.logger.section_header("WORKFLOW COMPLETED SUCCESSFULLY")
+        self._print_workflow_summary()
+        return True
+
+    def _run_basecall_to_fastq(self, pod5_input: str, organism: Optional[str],
+                               align_during_basecalling: bool
+                               ) -> Optional[Tuple[Any, Any]]:
+        """
+        Shared POD5 prefix: basecall → demux → BAM-to-FASTQ.
+        Returns:
+            (demuxed_dir, fastq_dir) on success, or None on failure.
+        """
+        result = self._run_step('basecaller', 'Basecalling', self.basecaller,
+                                 pod5_input, organism, align_during_basecalling)
+        if result is None:
+            return None
+        basecalled_bam = result.get_output('bam')
+
+        result = self._run_step('demuxer', 'Demultiplexing', self.demuxer,
+                                 str(basecalled_bam))
+        if result is None:
+            return None
+        demuxed_dir = result.get_output('output_dir')
+
+        result = self._run_step('bam_to_fastq', 'BAM to FASTQ conversion',
+                                 self.bam_to_fastq, str(demuxed_dir))
+        if result is None:
+            return None
+        fastq_dir = result.get_output('fastq_dir')
+
+        return demuxed_dir, fastq_dir
+
+    def _prepare_fastq_input(self, input_path: str) -> Optional[Tuple[Any, bool]]:
+        """Convert BAM to FASTQ if needed. Returns (fastq_dir, do_mapping) or None on failure."""
+        path = Path(input_path)
+        bam_files = list(path.rglob("*.bam"))
+        fastq_files = list(path.rglob("*.fastq*"))
+
+        if bam_files and not fastq_files:
+            self.context.logger.info("BAM input detected — converting to FASTQ...")
+            result = self._run_step('bam_to_fastq', 'BAM to FASTQ conversion',
+                                    self.bam_to_fastq, input_path)
+            if result is None:
+                return None
+            # BAM input means we have mapping data, so enable alignment downstream.
+            return result.get_output('fastq_dir'), True
+
+        return input_path, False
+
+    # ------------------------------ Full workflows ------------------------------
+
+    def run_pod5_workflow(self, pod5_input: str, organism: str = "mouse",
+                          methylation_enabled: bool = False,
+                          align_during_basecalling: bool = False) -> bool:
         """
         Execute complete workflow starting from POD5 files.
         Workflow: POD5 → basecall → demux → nanotel → align → R analysis (all)
@@ -62,177 +144,95 @@ class WorkflowOperator:
             True if entire workflow succeeds, False otherwise
         """
         self.context.logger.section_header("POD5 COMPLETE WORKFLOW")
-        self.context.logger.info(f"Input: {pod5_input}")
-        self.context.logger.info(f"Organism: {organism}")
+        self._log_inputs(pod5_input, organism)
 
-        # Step 1: Basecalling
-        result = self.basecaller.execute(pod5_input, organism, align_during_basecalling)
-        self.results['basecaller'] = result
-        if not result.success:
-            self.context.logger.error("Workflow stopped: Basecalling failed")
+        prep = self._run_basecall_to_fastq(pod5_input, organism, align_during_basecalling)
+        if prep is None:
             return False
-        basecalled_bam = result.get_output('bam')
+        demuxed_dir, fastq_dir = prep
 
-        # Step 2: Demultiplexing
-        result = self.demuxer.execute(str(basecalled_bam))
-        self.results['demuxer'] = result
-        if not result.success:
-            self.context.logger.error("Workflow stopped: Demultiplexing failed")
+        # NanoTel analysis
+        if self._run_step('nanotel', 'NanoTel analysis',
+                          self.nanotel, str(fastq_dir)) is None:
             return False
 
-        demuxed_dir = result.get_output('output_dir')
+        # Alignment (skip only if already aligned during basecalling and no methylation needed)
+        if not align_during_basecalling or methylation_enabled:
+            if self._run_step('aligner', 'Alignment',
+                              self.aligner, str(demuxed_dir), organism) is None:
+                return False
 
-        # Step 3: BAM to FASTQ conversion
-        result = self.bam_to_fastq.execute(str(demuxed_dir))
-        self.results['bam_to_fastq'] = result
-        if not result.success:
-            self.context.logger.error("Workflow stopped: BAM to FASTQ conversion failed")
+        # R analysis (filtration, plus mapping/methylation when enabled)
+        if self._run_step('r_analyzer', 'R analysis', self.r_analyzer,
+                          run_filtration=True,
+                          run_mapping=methylation_enabled,
+                          run_methylation=methylation_enabled) is None:
             return False
 
-        fastq_dir = result.get_output('fastq_dir')
+        return self._finish_success()
 
-        # Step 4: NanoTel Analysis
-        result = self.nanotel.execute(str(fastq_dir))
-        self.results['nanotel'] = result
-        if not result.success:
-            self.context.logger.error("Workflow stopped: NanoTel analysis failed")
-            return False
-
-        # Step 4: Alignment
-        result = self.aligner.execute(str(demuxed_dir), organism)
-        self.results['aligner'] = result
-        if not result.success:
-            self.context.logger.error("Workflow stopped: Alignment failed")
-            return False
-
-        # Step 5: R Analysis (all three: filtration, mapping, methylation)
-        result = self.r_analyzer.execute(
-            run_filtration=True,
-            run_mapping=methylation_enabled,
-            run_methylation= methylation_enabled
-        )
-        self.results['r_analyzer'] = result
-        if not result.success:
-            self.context.logger.error("Workflow stopped: R analysis failed")
-            return False
-
-        self.context.logger.section_header("WORKFLOW COMPLETED SUCCESSFULLY")
-        self._print_workflow_summary()
-        return True
-
-
-    def _prepare_fastq_input(self, input_path: str) -> Optional[Union[Tuple[Any, bool], Tuple[str, bool]]]:
-        """Convert BAM to FASTQ if needed. Returns FASTQ dir or None on failure."""
-        path = Path(input_path)
-        bam_files = list(path.rglob("*.bam"))
-        fastq_files = list(path.rglob("*.fastq*"))
-
-        if bam_files and not fastq_files:
-            self.context.logger.info("BAM input detected — converting to FASTQ...")
-            result = self.bam_to_fastq.execute(input_path)
-            self.results['bam_to_fastq'] = result
-            if not result.success:
-                return None
-            # if it is a bam file, do alignment
-            return result.get_output('fastq_dir'), True
-
-        return input_path, False
-
-
-    def run_basecalling(self,pod5_input: str,organism: str = None, align_during_basecalling: bool = False)-> bool:
+    def run_basecalling(self, pod5_input: str, organism: str = None,
+                        align_during_basecalling: bool = False) -> bool:
         """
-        Execute complete workflow starting from POD5 files.
-        Workflow: POD5 → basecall → demux → bam to fastq
+        Execute the basecalling portion of the workflow.
+        Workflow: POD5 → basecall → demux → BAM to FASTQ
         Args:
             pod5_input: Path to POD5 input (file or directory)
         Returns:
             True if entire workflow succeeds, False otherwise
         """
         self.context.logger.section_header("POD5 BASECALLING WORKFLOW")
-        self.context.logger.info(f"Input: {pod5_input}")
-        self.context.logger.info(f"Organism: {organism}")
+        self._log_inputs(pod5_input, organism)
 
-        # Step 1: Basecalling
-        result = self.basecaller.execute(pod5_input, organism, align_during_basecalling)
-        self.results['basecaller'] = result
-        if not result.success:
-            self.context.logger.error("Workflow stopped: Basecalling failed")
-            return False
+        return self._run_basecall_to_fastq(
+            pod5_input, organism, align_during_basecalling) is not None
 
-        basecalled_bam = result.get_output('bam')
-
-        # Step 2: Demultiplexing
-        result = self.demuxer.execute(str(basecalled_bam))
-        self.results['demuxer'] = result
-        if not result.success:
-            self.context.logger.error("Workflow stopped: Demultiplexing failed")
-            return False
-
-        demuxed_dir = result.get_output('output_dir')
-
-        # Step 3: BAM to FASTQ conversion
-        result = self.bam_to_fastq.execute(str(demuxed_dir))
-        self.results['bam_to_fastq'] = result
-        if not result.success:
-            self.context.logger.error("Workflow stopped: BAM to FASTQ conversion failed")
-            return False
-
-        return True
-
-
-    def run_nanotel_workflow(self,path_input: str,organism: str = "mouse",align: bool = False, has_methylation : bool =False)-> bool:
+    def run_nanotel_workflow(self, path_input: str, organism: str = "mouse",
+                             align: bool = False, has_methylation: bool = False) -> bool:
         """
         Execute workflow starting from FASTQ files (from MinKNOW) or BAM files.
         Workflow: FASTQ (or BAM → FASTQ) → nanotel → align → R analysis (filtration only)
         Note: FASTQ from MinKNOW won't have methylation data, so we only run
         NanoTel filtration. Mapping/methylation require POD5 workflow.
         Args:
-            fastq_input: Path to FASTQ or BAM directory
+            path_input: Path to FASTQ or BAM directory
             organism: Organism type ('mouse' or 'human')
         Returns:
             True if workflow succeeds, False otherwise
         """
         self.context.logger.section_header("FASTQ WORKFLOW")
-        self.context.logger.info(f"Input: {path_input}")
-        self.context.logger.info(f"Organism: {organism}")
+        self._log_inputs(path_input, organism)
 
-        fastq_input, do_mapping = self._prepare_fastq_input(path_input)
-        if fastq_input is None:
+        prepared = self._prepare_fastq_input(path_input)
+        if prepared is None:
+            return False
+        fastq_input, do_mapping = prepared
+
+        # NanoTel analysis
+        if self._run_step('nanotel', 'NanoTel analysis',
+                          self.nanotel, fastq_input) is None:
             return False
 
-        # Step 1: NanoTel Analysis
-        result = self.nanotel.execute(fastq_input)
-        self.results['nanotel'] = result
-        if not result.success:
-            self.context.logger.error("Workflow stopped: NanoTel analysis failed")
-            return False
-
-        # Step 2: Alignment
+        # Alignment
         if align:
-            result = self.aligner.execute(fastq_input, organism)
-            self.results['aligner'] = result
-            if not result.success:
-                self.context.logger.error("Workflow stopped: Alignment failed")
+            if self._run_step('aligner', 'Alignment',
+                              self.aligner, fastq_input, organism) is None:
                 return False
 
-        # Step 3: R Analysis (filtration only - no methylation in FASTQ from MinKNOW)
+        # R analysis (filtration only - no methylation in FASTQ from MinKNOW)
         self.context.logger.info(
             "Note: FASTQ workflow runs NanoTel filtration only.\n"
             "For mapping/methylation analysis, use POD5 workflow with basecalling."
         )
-        result = self.r_analyzer.execute(
-            run_filtration=True,
-            run_mapping=do_mapping,
-            run_methylation=has_methylation and do_mapping
-        )
-        self.results['r_analyzer'] = result
-        if not result.success:
-            self.context.logger.error("Workflow stopped: R analysis failed")
+        if self._run_step('r_analyzer', 'R analysis', self.r_analyzer,
+                          run_filtration=True,
+                          run_mapping=do_mapping,
+                          run_methylation=has_methylation and do_mapping) is None:
             return False
 
-        self.context.logger.section_header("WORKFLOW COMPLETED SUCCESSFULLY")
-        self._print_workflow_summary()
-        return True
+        return self._finish_success()
+
+    # ------------------------------ Single-step workflows ------------------------------
 
     def run_nanotel_only(self, fastq_input: str) -> bool:
         """
@@ -243,12 +243,11 @@ class WorkflowOperator:
             True if succeeds, False otherwise
         """
         self.context.logger.section_header("NANOTEL ANALYSIS ONLY")
-        result = self.nanotel.execute(fastq_input)
-        self.results['nanotel'] = result
-        if result.success:
+        result = self._run_step('nanotel', 'NanoTel analysis', self.nanotel, fastq_input)
+        if result is not None:
             self.context.logger.info("✓ NanoTel analysis completed")
             self.context.logger.info(f"Output: {result.get_output('nanotel_output')}")
-        return result.success
+        return result is not None
 
     def run_alignment_only(self, fastq_input: str, organism: str = "mouse") -> bool:
         """
@@ -260,19 +259,15 @@ class WorkflowOperator:
             True if succeeds, False otherwise
         """
         self.context.logger.section_header("ALIGNMENT ONLY")
-
-        result = self.aligner.execute(fastq_input, organism)
-        self.results['aligner'] = result
-
-        if result.success:
+        result = self._run_step('aligner', 'Alignment', self.aligner, fastq_input, organism)
+        if result is not None:
             self.context.logger.info("✓ Alignment completed")
             self.context.logger.info(f"Output: {result.get_output('aligned_dir')}")
-        return result.success
+        return result is not None
 
-    def run_r_analysis_only(self,
-                           run_filtration: bool = True,
-                           run_mapping: bool = True,
-                           run_methylation: bool = True) -> bool:
+    def run_r_analysis_only(self, run_filtration: bool = True,
+                            run_mapping: bool = True,
+                            run_methylation: bool = True) -> bool:
         """
         Execute only R analysis pipeline.
         This requires that previous steps have been completed:
@@ -286,15 +281,11 @@ class WorkflowOperator:
             True if succeeds, False otherwise
         """
         self.context.logger.section_header("R ANALYSIS ONLY")
-
-        result = self.r_analyzer.execute(
-            run_filtration=run_filtration,
-            run_mapping=run_mapping,
-            run_methylation=run_methylation
-        )
-        self.results['r_analyzer'] = result
-
-        if result.success:
+        result = self._run_step('r_analyzer', 'R analysis', self.r_analyzer,
+                                run_filtration=run_filtration,
+                                run_mapping=run_mapping,
+                                run_methylation=run_methylation)
+        if result is not None:
             self.context.logger.info("✓ R analysis completed")
             if run_filtration:
                 self.context.logger.info(f"Filtered summaries: {result.get_output('nanotel_filtered')}")
@@ -302,13 +293,13 @@ class WorkflowOperator:
                 self.context.logger.info(f"Mapping output: {result.get_output('mapping_output')}")
             if run_methylation:
                 self.context.logger.info(f"Methylation output: {result.get_output('methylation_output')}")
-        return result.success
+        return result is not None
 
+    # ------------------------------ Result accessors / utilities ------------------------------
 
     def _print_workflow_summary(self) -> None:
         """Print summary of workflow execution."""
         self.context.logger.info("\n=== WORKFLOW SUMMARY ===")
-
         for processor_name, result in self.results.items():
             status = "✓ SUCCESS" if result.success else "✗ FAILED"
             self.context.logger.info(f"{processor_name}: {status}")
@@ -325,7 +316,6 @@ class WorkflowOperator:
             ProcessorResult if found, None otherwise
         """
         return self.results.get(processor_name)
-
 
     def get_all_results(self) -> Dict[str, ProcessorResult]:
         """
