@@ -2000,6 +2000,73 @@ create_dirs <- function(output_dir) {
   }
 }
 
+get_barcode_file_prefix <- function(input_path) {
+  # Normalize the input folder name into a stable file prefix so every output
+  # file can be traced back to its barcode, even when folder names vary
+  # between barcode01, barcode_01, bc01, etc.
+  barcode_name <- basename(normalizePath(input_path, mustWork = FALSE))
+  match <- regmatches(barcode_name, regexpr("(barcode|bc)[_-]*[0-9]+", barcode_name, ignore.case = TRUE))
+
+  if (length(match) > 0 && nzchar(match[1])) {
+    barcode_num <- regmatches(match[1], regexpr("[0-9]+", match[1]))
+    return(paste0("barcode", sprintf("%02d", as.integer(barcode_num))))
+  }
+
+  safe_name <- gsub("[^A-Za-z0-9_-]+", "_", barcode_name)
+  gsub("^_+|_+$", "", safe_name)
+}
+
+add_barcode_prefix_to_generated_files <- function(output_dir, barcode_prefix) {
+  # Several per-read files are created deep inside the analysis functions using
+  # serial numbers only. Rename them after the run so exported files remain
+  # unique and barcode-identifiable when folders are copied or merged.
+  subdirs <- c("single_read_plots", "single_read_plots_adj", "reads")
+  renamed_count <- 0
+
+  for (subdir in subdirs) {
+    current_dir <- file.path(output_dir, subdir)
+    if (!dir.exists(current_dir)) {
+      log_print(base::paste("Skipping barcode filename update; folder not found:", current_dir),
+                hide_notes = TRUE, console = FALSE)
+      next
+    }
+
+    files <- list.files(current_dir, full.names = TRUE, recursive = FALSE)
+    log_print(base::paste("Checking", length(files), "files for barcode prefix in:", current_dir),
+              hide_notes = TRUE, console = FALSE)
+
+    for (file_path in files) {
+      if (dir.exists(file_path)) {
+        next
+      }
+
+      file_name <- basename(file_path)
+      if (startsWith(file_name, paste0(barcode_prefix, "_"))) {
+        next
+      }
+
+      new_path <- file.path(dirname(file_path), paste0(barcode_prefix, "_", file_name))
+      if (!file.exists(new_path)) {
+        if (file.rename(file_path, new_path)) {
+          renamed_count <- renamed_count + 1
+          log_print(base::paste("Renamed NanoTel file:", basename(file_path),
+                                "->", basename(new_path)),
+                    hide_notes = TRUE, console = FALSE)
+        } else {
+          log_print(base::paste("WARNING: Failed to rename NanoTel file:", file_path),
+                    hide_notes = TRUE, console = FALSE)
+        }
+      } else {
+        log_print(base::paste("Keeping NanoTel file because target already exists:", new_path),
+                  hide_notes = TRUE, console = FALSE)
+      }
+    }
+  }
+
+  log_print(base::paste("Barcode filename update complete. Files renamed:", renamed_count),
+            hide_notes = TRUE, console = FALSE)
+}
+
 
 ############## Running functions ###############################################
 
@@ -2478,10 +2545,27 @@ if(!is.null(cur_tvr_patterns)) {
 }
 
 
-barcode_name <- basename(normalizePath(opt$input_path, mustWork = FALSE))
+# Use one barcode prefix for all files produced by this NanoTel run.
+barcode_name <- get_barcode_file_prefix(opt$input_path)
+log_print(base::paste("Resolved barcode file prefix:", barcode_name),
+          hide_notes = TRUE, console = FALSE)
+log_print(base::paste("Adding barcode prefix to generated NanoTel files under:", opt$save_path),
+          hide_notes = TRUE, console = FALSE)
+add_barcode_prefix_to_generated_files(opt$save_path, barcode_name)
+
+# Write top-level NanoTel outputs with the barcode in the filename. This avoids
+# generic names like reads_ids.txt and makes files self-describing outside their
+# barcode directory.
+summary_file <- file.path(opt$save_path, paste0(barcode_name, "_summary.csv"))
+reads_ids_file <- file.path(opt$save_path, paste0(barcode_name, "_reads_ids.txt"))
 write_csv(x = ans_list$df_summary,
-          file = file.path(opt$save_path, paste0(barcode_name, "_summary.csv")))
-write_lines(x = ans_list$df_summary$sequence_ID  , file = file.path(opt$save_path, "reads_ids.txt"))
+          file = summary_file)
+log_print(base::paste("NanoTel summary CSV saved to:", summary_file),
+          hide_notes = TRUE, console = FALSE)
+write_lines(x = ans_list$df_summary$sequence_ID,
+            file = reads_ids_file)
+log_print(base::paste("NanoTel read IDs saved to:", reads_ids_file),
+          hide_notes = TRUE, console = FALSE)
 
 # =====================================================================
 # POST-PROCESSING ANALYSIS (only runs when --analysis flag is set)
@@ -2512,9 +2596,14 @@ if (isTRUE(opt$analysis)) {
     dplyr::filter(SeqLen_minus_RunMed >= 134)
 
   # Write filtered sorted summary
+  # Post-processing outputs also keep the barcode prefix for consistency with
+  # the raw NanoTel summary and read-id files above.
+  filtered_summary_file <- file.path(opt$save_path,
+                                     paste0(barcode_name, "_filtered_sorted_summary.csv"))
   write_csv(x = df_filtered,
-            file = file.path(opt$save_path,
-                             paste0(barcode_name, "_filtered_sorted_summary.csv")))
+            file = filtered_summary_file)
+  log_print(base::paste("NanoTel filtered sorted summary saved to:", filtered_summary_file),
+            hide_notes = TRUE, console = FALSE)
 
   # --- Stats .txt ---
   n_reads   <- nrow(df_filtered)
@@ -2528,8 +2617,10 @@ if (isTRUE(opt$analysis)) {
     paste0("Median telomere length with mismatch (bp)  : ", med_telo),
     paste0("% of telomeres shorter than 2kb            : ", pct_short, "%")
   )
-  write_lines(results_lines,
-              file.path(opt$save_path, paste0(barcode_name, "_results.txt")))
+  results_file <- file.path(opt$save_path, paste0(barcode_name, "_results.txt"))
+  write_lines(results_lines, results_file)
+  log_print(base::paste("NanoTel results text saved to:", results_file),
+            hide_notes = TRUE, console = FALSE)
 
   # --- Telomere plot (uses pre-final-filter data so x-axis extends to the crossing point) ---
   df_plot <- df_for_plot
@@ -2550,11 +2641,14 @@ if (isTRUE(opt$analysis)) {
     theme_prism() +
     theme(legend.position = "bottom")
 
+  plot_file <- file.path(opt$save_path, paste0(barcode_name, "_telomere_plot.png"))
   ggsave(
-    filename = file.path(opt$save_path, paste0(barcode_name, "_telomere_plot.png")),
+    filename = plot_file,
     plot     = p_telo,
     width    = 12, height = 6, dpi = 150
   )
+  log_print(base::paste("NanoTel telomere plot saved to:", plot_file),
+            hide_notes = TRUE, console = FALSE)
 
 } # end --analysis block
 
