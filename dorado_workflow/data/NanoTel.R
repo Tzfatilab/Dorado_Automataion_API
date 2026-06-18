@@ -1185,13 +1185,14 @@ plot_single_telo <- function(x_length, seq_length, subs, serial_num, seq_start,
   subs <- na.omit(subs)
   # save file if specified
     if (save_it) {
+      read_stem <- make_barcode_read_stem(serial_num)
       if (isTRUE(eps)) {
-        eps_path <- file.path(output_jpegs, paste0("read", serial_num, ".eps"))
+        eps_path <- file.path(output_jpegs, paste0(read_stem, ".eps"))
         setEPS()
         #naming the eps file
         postscript(eps_path)
       } else {
-        jpeg_path <- file.path(output_jpegs, paste0("read", serial_num, ".jpeg"))
+        jpeg_path <- file.path(output_jpegs, paste0(read_stem, ".jpeg"))
         jpeg(filename = jpeg_path, width = w, height = h)
       }
   }
@@ -1296,13 +1297,14 @@ plot_single_telo_with_gray_area <- function(x_length, seq_length, subs,subs_mism
   subs <- na.omit(subs)
   # save file if specified
   if (save_it) {
+    read_stem <- make_barcode_read_stem(serial_num)
     if (isTRUE(eps)) {
-      eps_path <- file.path(output_jpegs, paste0("read", serial_num, ".eps"))
+      eps_path <- file.path(output_jpegs, paste0(read_stem, ".eps"))
       setEPS()
       #naming the eps file
       postscript(eps_path)
     } else {
-      jpeg_path <- file.path(output_jpegs, paste0("read", serial_num, ".jpeg"))
+      jpeg_path <- file.path(output_jpegs, paste0(read_stem, ".jpeg"))
       jpeg(filename = jpeg_path, width = w, height = h)
     }
   }
@@ -1442,13 +1444,14 @@ plot_single_telo_with_tvr <- function(x_length, seq_length, subs,subs_mismatch, 
   subs <- na.omit(subs)
   # save file if specified
   if (save_it) {
+    read_stem <- make_barcode_read_stem(serial_num)
     if (isTRUE(eps)) {
-      eps_path <- file.path(output_jpegs, paste0("read", serial_num, ".eps"))
+      eps_path <- file.path(output_jpegs, paste0(read_stem, ".eps"))
       setEPS()
       #naming the eps file
       postscript(eps_path)
     } else {
-      jpeg_path <- file.path(output_jpegs, paste0("read", serial_num, ".jpeg"))
+      jpeg_path <- file.path(output_jpegs, paste0(read_stem, ".jpeg"))
       jpeg(filename = jpeg_path, width = w, height = h)
     }
   }
@@ -1652,7 +1655,7 @@ plot_single_telo_ggplot2 <- function(seq_length, subs, serial_num, seq_start,
   #' @param output_jpegs: the output directory for saving the file
   subs <- na.omit(subs)
   # save the densities in a csv file for later use !
-  write_csv(x = subs, file = file.path(output_jpegs, paste0(serial_num, ".csv")))
+  write_csv(x = subs, file = file.path(output_jpegs, paste0(make_barcode_read_stem(serial_num), ".csv")))
   sub_title <- paste("read length:", seq_length, ", telomere length:",
                      abs(seq_start - seq_end) + 1)
 
@@ -1682,7 +1685,7 @@ plot_single_telo_ggplot2 <- function(seq_length, subs, serial_num, seq_start,
 
   # save file if specified
   if (isTRUE(save_it)) {
-    eps_path <- file.path(output_jpegs, paste0("gg_read", serial_num, ".eps"))
+    eps_path <- file.path(output_jpegs, paste0(make_barcode_read_stem(serial_num), "_gg.eps"))
     #'ggsave currently recognises the extensions eps/ps, tex (pictex), pdf,
     #'jpeg, tiff, png, bmp, svg and wmf (windows only).
     suppressMessages(ggsave(plot = my_ggplot, device = "eps",
@@ -1873,8 +1876,8 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
   }
   
   # changed to compressed file: 2026-01-29
-  output_telo_fasta <- paste(output_dir, paste(toString(current_serial),
-                       "fasta.gz", sep = "."),  sep = "/")
+  output_telo_fasta <- file.path(output_dir, paste0(make_barcode_read_stem(current_serial),
+                                                    ".fasta.gz"))
   writeXStringSet(current_seq, output_telo_fasta, compress = TRUE)
 
   
@@ -2014,6 +2017,14 @@ get_barcode_file_prefix <- function(input_path) {
 
   safe_name <- gsub("[^A-Za-z0-9_-]+", "_", barcode_name)
   gsub("^_+|_+$", "", safe_name)
+}
+
+make_barcode_read_stem <- function(serial_num) {
+  # Per-read outputs are created before the final summary files, so they use a
+  # global prefix initialized from the input barcode before processing starts.
+  barcode_prefix <- get0("global_barcode_file_prefix", envir = globalenv(), ifnotfound = "")
+  prefix <- if (nzchar(barcode_prefix)) paste0(barcode_prefix, "_") else ""
+  paste0(prefix, "read", serial_num)
 }
 
 add_barcode_prefix_to_generated_files <- function(output_dir, barcode_prefix) {
@@ -2505,6 +2516,13 @@ if(dir.exists(opt$i) ){
 
 create_dirs(output_dir = opt$save_path)
 
+# Use one barcode prefix for all files produced by this NanoTel run. It must be
+# initialized before run_future_worker_chuncks because per-read plots and FASTA
+# files are created inside nested analysis functions.
+barcode_name <- get_barcode_file_prefix(opt$input_path)
+global_barcode_file_prefix <- barcode_name
+log_print(base::paste("Resolved barcode file prefix:", barcode_name),
+          hide_notes = TRUE, console = FALSE)
 
   
 ans_list <- run_future_worker_chuncks(input_path = opt$i, output_path = opt$save_path, 
@@ -2545,10 +2563,6 @@ if(!is.null(cur_tvr_patterns)) {
 }
 
 
-# Use one barcode prefix for all files produced by this NanoTel run.
-barcode_name <- get_barcode_file_prefix(opt$input_path)
-log_print(base::paste("Resolved barcode file prefix:", barcode_name),
-          hide_notes = TRUE, console = FALSE)
 log_print(base::paste("Adding barcode prefix to generated NanoTel files under:", opt$save_path),
           hide_notes = TRUE, console = FALSE)
 add_barcode_prefix_to_generated_files(opt$save_path, barcode_name)
