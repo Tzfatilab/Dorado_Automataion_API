@@ -22,13 +22,13 @@ class BamToFastqProcessor(ProcessorBase):
     - Run conversions in parallel for speed
 
     Requires: samtools
-    Input:  demuxed/barcode01/file.bam
-    Output: fastqs/barcode01/barcode01.fastq
+    Input:  processing/demultiplexed/barcode01/file.bam
+    Output: processing/fastq/barcode01/barcode01.fastq
     """
 
     def __init__(self, context: WorkflowContext):
         super().__init__(context)
-        self.output_dir = self.context.path_manager.get_fastq_dir()
+        self.output_dir = self.context.path_manager.get_fastq_dir_path()
 
     def validate_inputs(self, demuxed_dir: str) -> bool:
         self.context.logger.info("Validating BAM to FASTQ conversion inputs...")

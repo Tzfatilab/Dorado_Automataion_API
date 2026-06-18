@@ -41,7 +41,7 @@ class DemuxProcessor(ProcessorBase):
         super().__init__(context)
 
         # Define output directory
-        self.output_dir = self.context.path_manager.get_demuxed_dir()
+        self.output_dir = self.context.path_manager.get_demuxed_dir_path()
 
     def validate_inputs(self, basecalled_bam: str) -> bool:
         """

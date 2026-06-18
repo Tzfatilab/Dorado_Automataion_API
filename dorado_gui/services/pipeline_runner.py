@@ -76,18 +76,45 @@ def run_pipeline(
     log("=" * 60)
 
     output_path = Path(output_dir)
-    actual_trial = output_path.name
 
-    # Detect whether output_dir already points to a trial-specific folder.
-    trial_subdirs = ['nanotel_output', 'aligned', 'logs', 'fastqs', 'demuxed']
-    is_trial_folder = any((output_path / subdir).exists() for subdir in trial_subdirs)
+    # Detect whether output_dir points to the trial root, a layout group
+    # (processing/results), or an older trial-specific subfolder.
+    group_dirs = {'processing', 'results'}
+    legacy_group_dirs = {'raw_data'}
+    leaf_subdirs = {
+        'basecalled', 'demultiplexed', 'fastq', 'nanotel', 'mapping',
+        'methylation', 'aligned', 'logs',
+    }
+    legacy_subdirs = {
+        'nanotel_output', 'aligned', 'logs', 'fastqs', 'demuxed',
+        'rebasecalled', 'r_analysis',
+    }
+    trial_markers = group_dirs | legacy_group_dirs | legacy_subdirs
+    is_trial_folder = any((output_path / subdir).exists() for subdir in trial_markers)
+    is_trial_group = output_path.name in group_dirs or output_path.name in legacy_group_dirs
+    is_nested_subdir = (
+        output_path.name in leaf_subdirs
+        and output_path.parent.name in (group_dirs | legacy_group_dirs)
+    )
+    is_legacy_subdir = output_path.name in legacy_subdirs
 
-    if is_trial_folder:
-        base_dir = str(output_path.parent)
-        log(f"✅ Detected trial-specific folder. Using parent as base: {base_dir}")
+    if is_nested_subdir:
+        actual_trial = output_path.parent.parent.name
+        base_dir = str(output_path.parent.parent.parent)
+        log(f"✅ Detected nested trial subfolder. Using parent trial: {output_path.parent.parent}")
+    elif is_trial_group or is_legacy_subdir:
+        actual_trial = output_path.parent.name
+        base_dir = str(output_path.parent.parent)
+        log(f"✅ Detected trial subfolder. Using parent trial: {output_path.parent}")
     else:
-        base_dir = str(output_path)
-        log(f"✅ Using selected folder as base: {base_dir}")
+        actual_trial = output_path.name
+
+        if is_trial_folder:
+            base_dir = str(output_path.parent)
+            log(f"✅ Detected trial-specific folder. Using parent as base: {base_dir}")
+        else:
+            base_dir = str(output_path)
+            log(f"✅ Using selected folder as base: {base_dir}")
 
     context = setup_context(
         trial_name=actual_trial,

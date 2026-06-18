@@ -34,8 +34,9 @@ class PathManager:
             base_output_dir: Base output directory. If None, uses config default.
             config_manager: ConfigManager instance for accessing config
 
-        Note: Directories are NOT created during initialization.
-              Use create_all_directories() or individual getters to create them.
+        Note: Directories are NOT created during initialization. Use the
+              *_path methods to get paths without creating them, or the
+              existing getters when a directory should be created immediately.
         """
         self.trial_name = trial_name
         self.config_manager = config_manager
@@ -57,14 +58,17 @@ class PathManager:
         else:
             # Fallback defaults if no config provided
             self.dir_structure = {
-                'rebasecalled': 'rebasecalled',
-                'demuxed': 'demuxed',
-                'fastqs': 'fastqs',
-                'nanotel_output': 'nanotel_output',
+                'raw_data': 'processing',
+                'results': 'results',
+                'reports': 'reports',
+                'rebasecalled': 'basecalled',
+                'demuxed': 'demultiplexed',
+                'fastqs': 'fastq',
+                'nanotel_output': 'nanotel',
                 'aligned': 'aligned',
-                'r_analysis': 'r_analysis',
-                'mapping_output': 'mapping_output',
-                'methylation_output': 'methylation_output',
+                'r_analysis': 'results',
+                'mapping_output': 'mapping',
+                'methylation_output': 'methylation',
                 'logs': 'logs'
             }
 
@@ -126,6 +130,9 @@ class PathManager:
         """
         # Main trial directories
         self._ensure_directory(self.get_trial_dir())
+        self._ensure_directory(self.get_raw_data_dir())
+        self._ensure_directory(self.get_results_dir())
+        self._ensure_directory(self.get_reports_dir())
         self._ensure_directory(self.get_rebasecalled_dir())
         self._ensure_directory(self.get_demuxed_dir())
         self._ensure_directory(self.get_fastq_dir())
@@ -141,61 +148,139 @@ class PathManager:
 
     # ==================== Main Directory Getters ====================
 
+    def _raw_data_path(self) -> Path:
+        """Return the processing/intermediate data root path without creating it."""
+        return self.trial_dir / self.dir_structure.get('raw_data', 'processing')
+
+    def _results_path(self) -> Path:
+        """Return the analysis results root path without creating it."""
+        return self.trial_dir / self.dir_structure.get('results', 'results')
+
+    def _directory_path(self, key: str) -> Path:
+        """Return a configured trial subdirectory path without creating it."""
+        return self.trial_dir / self.dir_structure[key]
+
+    def get_trial_dir_path(self) -> Path:
+        """Get the trial root directory path without creating it."""
+        return self.trial_dir
+
+    def get_raw_data_dir_path(self) -> Path:
+        """Get the processing/intermediate data root path without creating it."""
+        return self._raw_data_path()
+
+    def get_processing_dir_path(self) -> Path:
+        """Get the processing/intermediate data root path without creating it."""
+        return self._raw_data_path()
+
+    def get_results_dir_path(self) -> Path:
+        """Get the analysis results root path without creating it."""
+        return self._results_path()
+
+    def get_reports_dir_path(self) -> Path:
+        """Get the reports/configuration output path without creating it."""
+        return self._results_path() / self.dir_structure.get('reports', 'reports')
+
+    def get_rebasecalled_dir_path(self) -> Path:
+        """Get the rebasecalled directory path without creating it."""
+        return self._raw_data_path() / self.dir_structure['rebasecalled']
+
+    def get_demuxed_dir_path(self) -> Path:
+        """Get the demuxed directory path without creating it."""
+        return self._raw_data_path() / self.dir_structure['demuxed']
+
+    def get_fastq_dir_path(self) -> Path:
+        """Get the FASTQ files directory path without creating it."""
+        return self._raw_data_path() / self.dir_structure['fastqs']
+
+    def get_nanotel_output_dir_path(self) -> Path:
+        """Get the NanoTel output directory path without creating it."""
+        return self._results_path() / self.dir_structure['nanotel_output']
+
+    def get_aligned_dir_path(self) -> Path:
+        """Get the aligned directory path without creating it."""
+        return self._raw_data_path() / self.dir_structure['aligned']
+
+    def get_logs_dir_path(self) -> Path:
+        """Get the logs directory path without creating it."""
+        return self._results_path() / self.dir_structure['logs']
+
+    def get_r_analysis_dir_path(self) -> Path:
+        """Get the R analysis base directory path without creating it."""
+        return self._results_path()
+
+    def get_r_nanotel_output_dir_path(self) -> Path:
+        """Get the R NanoTel analysis output directory path without creating it."""
+        return self.get_nanotel_output_dir_path()
+
+    def get_r_mapping_output_dir_path(self) -> Path:
+        """Get the R mapping analysis output directory path without creating it."""
+        return self.get_r_analysis_dir_path() / self.dir_structure['mapping_output']
+
+    def get_r_methylation_output_dir_path(self) -> Path:
+        """Get the R methylation analysis output directory path without creating it."""
+        return self.get_r_analysis_dir_path() / self.dir_structure['methylation_output']
+
     def get_trial_dir(self) -> Path:
         """Get the trial root directory."""
         return self._ensure_directory(self.trial_dir)
 
+    def get_raw_data_dir(self) -> Path:
+        """Get the processing/intermediate data root directory."""
+        return self._ensure_directory(self.get_raw_data_dir_path())
+
+    def get_processing_dir(self) -> Path:
+        """Get the processing/intermediate data root directory."""
+        return self._ensure_directory(self.get_processing_dir_path())
+
+    def get_results_dir(self) -> Path:
+        """Get the analysis results root directory."""
+        return self._ensure_directory(self.get_results_dir_path())
+
+    def get_reports_dir(self) -> Path:
+        """Get the reports/configuration output directory."""
+        return self._ensure_directory(self.get_reports_dir_path())
+
     def get_rebasecalled_dir(self) -> Path:
         """Get the rebasecalled directory."""
-        dir_path = self.trial_dir / self.dir_structure['rebasecalled']
-        return self._ensure_directory(dir_path)
+        return self._ensure_directory(self.get_rebasecalled_dir_path())
 
     def get_demuxed_dir(self) -> Path:
         """Get the demuxed directory."""
-        dir_path = self.trial_dir / self.dir_structure['demuxed']
-        return self._ensure_directory(dir_path)
+        return self._ensure_directory(self.get_demuxed_dir_path())
 
     def get_fastq_dir(self) -> Path:
         """Get the FASTQ files directory."""
-        dir_path = self.trial_dir / self.dir_structure['fastqs']
-        return self._ensure_directory(dir_path)
+        return self._ensure_directory(self.get_fastq_dir_path())
 
     def get_nanotel_output_dir(self) -> Path:
         """Get the NanoTel output directory."""
-        dir_path = self.trial_dir / self.dir_structure['nanotel_output']
-        return self._ensure_directory(dir_path)
+        return self._ensure_directory(self.get_nanotel_output_dir_path())
 
     def get_aligned_dir(self) -> Path:
         """Get the aligned directory."""
-        dir_path = self.trial_dir / self.dir_structure['aligned']
-        return self._ensure_directory(dir_path)
+        return self._ensure_directory(self.get_aligned_dir_path())
 
     def get_logs_dir(self) -> Path:
         """Get the logs directory."""
-        dir_path = self.trial_dir / self.dir_structure['logs']
-        return self._ensure_directory(dir_path)
+        return self._ensure_directory(self.get_logs_dir_path())
 
     # ==================== R Analysis Directory Getters ====================
 
     def get_r_analysis_dir(self) -> Path:
         """Get the R analysis base directory."""
-        dir_path = self.trial_dir / self.dir_structure['r_analysis']
-        return self._ensure_directory(dir_path)
+        return self._ensure_directory(self.get_r_analysis_dir_path())
 
     def get_r_nanotel_output_dir(self) -> Path:
         """Get the R NanoTel analysis output directory."""
-        dir_path = self.trial_dir / self.dir_structure['nanotel_output']
-        return self._ensure_directory(dir_path)
+        return self._ensure_directory(self.get_r_nanotel_output_dir_path())
 
     def get_r_mapping_output_dir(self) -> Path:
         """Get the R mapping analysis output directory."""
-        dir_path = self.get_r_analysis_dir() / self.dir_structure['mapping_output']
-        return self._ensure_directory(dir_path)
+        return self._ensure_directory(self.get_r_mapping_output_dir_path())
 
     def get_r_methylation_output_dir(self) -> Path:
         """Get the R methylation analysis output directory."""
-        dir_path = self.get_r_analysis_dir() / self.dir_structure['methylation_output']
-        return self._ensure_directory(dir_path)
+        return self._ensure_directory(self.get_r_methylation_output_dir_path())
 
     # ==================== Barcode Subdirectory Helpers ====================
 
@@ -332,7 +417,7 @@ class PathManager:
         Returns:
             Path to sequencing_summary.txt
         """
-        return self.get_aligned_dir() / "sequencing_summary.txt"
+        return self.get_aligned_dir_path() / "sequencing_summary.txt"
 
     # ==================== R Config Generation ====================
 
@@ -345,23 +430,27 @@ class PathManager:
             Dictionary with R pipeline configuration
         """
         return {
-            "base_output_dir": str(self.trial_dir),
+            "base_output_dir": str(self.get_results_dir_path()),
+            "raw_data_dir": str(self.get_raw_data_dir_path()),
+            "processing_dir": str(self.get_processing_dir_path()),
+            "results_dir": str(self.get_results_dir_path()),
+            "reports_dir": str(self.get_reports_dir_path()),
 
             "nanotel_analysis": {
-                "input_dir": str(self.get_nanotel_output_dir()),
-                "output_dir": str(self.get_r_nanotel_output_dir())
+                "input_dir": str(self.get_nanotel_output_dir_path()),
+                "output_dir": str(self.get_r_nanotel_output_dir_path())
             },
 
             "mapping_analysis": {
                 "alignment_summary_path": str(self.get_alignment_summary_path()),
-                "filtered_nanotel_dir": str(self.get_r_nanotel_output_dir()),
-                "bam_dir": str(self.get_aligned_dir()),
-                "output_dir": str(self.get_r_mapping_output_dir())
+                "filtered_nanotel_dir": str(self.get_r_nanotel_output_dir_path()),
+                "bam_dir": str(self.get_aligned_dir_path()),
+                "output_dir": str(self.get_r_mapping_output_dir_path())
             },
 
             "methylation_analysis": {
-                "pileup_bed_dir": str(self.get_r_mapping_output_dir()),
-                "output_dir": str(self.get_r_methylation_output_dir())
+                "pileup_bed_dir": str(self.get_r_mapping_output_dir_path()),
+                "output_dir": str(self.get_r_methylation_output_dir_path())
             }
         }
 
@@ -377,15 +466,19 @@ class PathManager:
         """
         return {
             'trial_dir': str(self.trial_dir),
-            'rebasecalled': str(self.trial_dir / self.dir_structure['rebasecalled']),
-            'demuxed': str(self.trial_dir / self.dir_structure['demuxed']),
-            'fastqs': str(self.trial_dir / self.dir_structure['fastqs']),
-            'nanotel_output': str(self.trial_dir / self.dir_structure['nanotel_output']),
-            'aligned': str(self.trial_dir / self.dir_structure['aligned']),
-            'r_analysis': str(self.trial_dir / self.dir_structure['r_analysis']),
-            'mapping_output': str(self.trial_dir / self.dir_structure['mapping_output']),
-            'methylation_output': str(self.trial_dir / self.dir_structure['methylation_output']),
-            'logs': str(self.trial_dir / self.dir_structure['logs'])
+            'raw_data': str(self.get_raw_data_dir_path()),
+            'processing': str(self.get_processing_dir_path()),
+            'results': str(self.get_results_dir_path()),
+            'reports': str(self.get_reports_dir_path()),
+            'rebasecalled': str(self.get_rebasecalled_dir_path()),
+            'demuxed': str(self.get_demuxed_dir_path()),
+            'fastqs': str(self.get_fastq_dir_path()),
+            'nanotel_output': str(self.get_nanotel_output_dir_path()),
+            'aligned': str(self.get_aligned_dir_path()),
+            'r_analysis': str(self.get_r_analysis_dir_path()),
+            'mapping_output': str(self.get_r_mapping_output_dir_path()),
+            'methylation_output': str(self.get_r_methylation_output_dir_path()),
+            'logs': str(self.get_logs_dir_path())
         }
 
     def __repr__(self) -> str:

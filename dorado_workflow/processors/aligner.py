@@ -38,7 +38,7 @@ class AlignmentProcessor(ProcessorBase):
         super().__init__(context)
 
         # Define output directory
-        self.output_dir = self.context.path_manager.get_aligned_dir()
+        self.output_dir = self.context.path_manager.get_aligned_dir_path()
 
     def validate_inputs(self, input_dir: str, organism: str = "mouse") -> bool:
         """
@@ -132,7 +132,8 @@ class AlignmentProcessor(ProcessorBase):
             result = ProcessorResult(
                 success=True,
                 output_paths={
-                    'output_dir': self.output_dir
+                    'output_dir': self.output_dir,
+                    'aligned_dir': self.output_dir
                 },
                 statistics=stats
             )

@@ -151,14 +151,17 @@
   },
 
   "directory_structure": {
-    "rebasecalled": "rebasecalled",
-    "demuxed": "demuxed",
-    "fastqs": "fastqs",
-    "nanotel_output": "nanotel_output",
+    "raw_data": "processing",
+    "results": "results",
+    "reports": "reports",
+    "rebasecalled": "basecalled",
+    "demuxed": "demultiplexed",
+    "fastqs": "fastq",
+    "nanotel_output": "nanotel",
     "aligned": "aligned",
-    "r_analysis": "r_analysis",
-    "mapping_output": "mapping_output",
-    "methylation_output": "methylation_output",
+    "r_analysis": "results",
+    "mapping_output": "mapping",
+    "methylation_output": "methylation",
     "logs": "logs"
   }
 }

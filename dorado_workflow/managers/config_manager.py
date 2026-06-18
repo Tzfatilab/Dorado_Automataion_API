@@ -234,9 +234,8 @@ class ConfigManager:
         return  self._resolve_path(self.config['paths']['nanotel_script'])
 
     def get_default_output_base(self) -> str:
-        """Get default base output directory (created if missing)."""
+        """Get default base output directory path without creating it."""
         base = Path(self._resolve_path(self.config['paths']['default_output_base']))
-        base.mkdir(parents=True, exist_ok=True)
         return str(base)
 
     # ==================== Stage-Specific Config Access ====================

@@ -314,7 +314,9 @@ generate_pipeline_report <- function(results, config, duration) {
 
   log_message("Generating comprehensive pipeline report")
 
-  report_file <- file.path(config$base_output_dir, "complete_pipeline_report.txt")
+  reports_dir <- if (!is.null(config$reports_dir)) config$reports_dir else config$base_output_dir
+  ensure_directory_exists(reports_dir)
+  report_file <- file.path(reports_dir, "complete_pipeline_report.txt")
 
   report_lines <- c(
     rep_str("=", 80),
@@ -402,23 +404,26 @@ generate_pipeline_report <- function(results, config, duration) {
                     "",
                     "OUTPUT STRUCTURE:",
                     paste("  ", config$base_output_dir, "/"),
-                    "    nanotel_output/",
-                    "    barcode*/.csv",
-                    "    filtered_summary*.csv",
-                    "    nanotel_summary_statistics.csv",
-                    "    nanotel_analysis_report.txt",
-                    "    mapping_output/",
-                    "    mapped*.csv",
-                    "    filtered_*.bam",
-                    "    pileup-*.bed",
-                    "    mapping_analysis_report.txt",
-                    "    methylation_output/",
-                    "    plots/",
-                    "    processed_data/",
-                    "    shiny_app/ (if enabled)",
-                    "    methylation_summary_statistics.csv",
-                    "    methylation_analysis_report.txt",
-                    "    complete_pipeline_report.txt",
+                    "    nanotel/",
+                    "      barcode*/.csv",
+                    "      filtered_summary*.csv",
+                    "      nanotel_summary_statistics.csv",
+                    "      nanotel_analysis_report.txt",
+                    "    mapping/",
+                    "      mapped*.csv",
+                    "      filtered_*.bam",
+                    "      pileup-*.bed",
+                    "      mapping_analysis_report.txt",
+                    "    methylation/",
+                    "      plots/",
+                    "      processed_data/",
+                    "      shiny_app/ (if enabled)",
+                    "      methylation_summary_statistics.csv",
+                    "      methylation_analysis_report.txt",
+                    "    logs/",
+                    "    reports/",
+                    "      r_pipeline_config.json",
+                    "      complete_pipeline_report.txt",
                     "",
                     "NEXT STEPS:",
                     "  1. Review individual analysis reports for detailed results",

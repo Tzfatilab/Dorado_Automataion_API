@@ -43,7 +43,7 @@ class BasecallerProcessor(ProcessorBase):
         super().__init__(context)
 
         # Define output directory
-        self.output_dir = self.context.path_manager.get_rebasecalled_dir()
+        self.output_dir = self.context.path_manager.get_rebasecalled_dir_path()
 
     def validate_inputs(self, pod5_input: str, organism: str = "mouse", align : bool = False) -> bool:
         """

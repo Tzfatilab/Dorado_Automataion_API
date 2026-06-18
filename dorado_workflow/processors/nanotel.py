@@ -41,7 +41,7 @@ class NanoTelProcessor(ProcessorBase):
         super().__init__(context)
 
         # Define output directory
-        self.output_dir = self.context.path_manager.get_nanotel_output_dir()
+        self.output_dir = self.context.path_manager.get_nanotel_output_dir_path()
 
     def validate_inputs(self, fastq_dir: str) -> bool:
         """
@@ -145,7 +145,8 @@ class NanoTelProcessor(ProcessorBase):
             result = ProcessorResult(
                 success=overall_success,
                 output_paths={
-                    'output_dir': self.output_dir
+                    'output_dir': self.output_dir,
+                    'nanotel_output': self.output_dir
                 },
                 statistics=stats,
                 error=None if overall_success else f"Failed for barcodes: {failed_barcodes}"

@@ -50,13 +50,14 @@ class RAnalyzer(ProcessorBase):
         super().__init__(context)
 
         # Use PathManager's directory structure
-        # NanoTel raw output and filtered summaries go to nanotel_output/
-        self.nanotel_output_dir = self.context.path_manager.get_nanotel_output_dir()
+        # NanoTel raw output and filtered summaries go to results/nanotel/.
+        self.nanotel_output_dir = self.context.path_manager.get_nanotel_output_dir_path()
 
-        # R analysis outputs go to r_analysis/ subdirectories
-        self.r_analysis_dir = self.context.path_manager.get_r_analysis_dir()
-        self.mapping_output_dir = self.context.path_manager.get_r_mapping_output_dir()
-        self.methylation_output_dir = self.context.path_manager.get_r_methylation_output_dir()
+        # R analysis outputs share the results/ folder with NanoTel.
+        self.r_analysis_dir = self.context.path_manager.get_r_analysis_dir_path()
+        self.reports_dir = self.context.path_manager.get_reports_dir_path()
+        self.mapping_output_dir = self.context.path_manager.get_r_mapping_output_dir_path()
+        self.methylation_output_dir = self.context.path_manager.get_r_methylation_output_dir_path()
 
     def validate_inputs(self, run_filtration: bool = True,
                        run_mapping: bool = True,
@@ -91,10 +92,12 @@ class RAnalyzer(ProcessorBase):
             if not self._check_bam_methylation():
                 return False
 
-        # Ensure output directories exist
+        # Ensure only the output directories needed for this run exist.
         self.r_analysis_dir.mkdir(parents=True, exist_ok=True)
-        self.mapping_output_dir.mkdir(parents=True, exist_ok=True)
-        self.methylation_output_dir.mkdir(parents=True, exist_ok=True)
+        if run_mapping:
+            self.mapping_output_dir.mkdir(parents=True, exist_ok=True)
+        if run_methylation:
+            self.methylation_output_dir.mkdir(parents=True, exist_ok=True)
 
         self.context.logger.info("✓ All R analysis prerequisites validated")
         return True
@@ -157,8 +160,8 @@ class RAnalyzer(ProcessorBase):
             pipeline_config["mapping_analysis"].update(mapping_params)
             pipeline_config["methylation_analysis"].update(methylation_params)
 
-            # 4. Write JSON config into the trial's r_analysis directory
-            config_path = self.r_analysis_dir / "r_pipeline_config.json"
+            # 4. Write JSON config into the trial's reports directory
+            config_path = self.reports_dir / "r_pipeline_config.json"
             config_path.parent.mkdir(parents=True, exist_ok=True)
 
             with config_path.open("w") as f:
@@ -187,6 +190,7 @@ class RAnalyzer(ProcessorBase):
                 success=True,
                 output_paths={
                     'r_analysis_dir': self.r_analysis_dir,
+                    'reports_dir': self.reports_dir,
                     'nanotel_filtered': self.nanotel_output_dir,  # Filtered summaries go here
                     'mapping_output': self.mapping_output_dir,
                     'methylation_output': self.methylation_output_dir
@@ -249,7 +253,7 @@ class RAnalyzer(ProcessorBase):
         Returns:
             True if valid, False otherwise
         """
-        aligned_dir = self.context.path_manager.get_aligned_dir()
+        aligned_dir = self.context.path_manager.get_aligned_dir_path()
 
         if not aligned_dir.exists():
             self.context.logger.error(
@@ -277,7 +281,7 @@ class RAnalyzer(ProcessorBase):
         Returns:
             True if methylation data found, False otherwise
         """
-        aligned_dir = self.context.path_manager.get_aligned_dir()
+        aligned_dir = self.context.path_manager.get_aligned_dir_path()
         bam_files = list(aligned_dir.rglob("*.bam"))
 
         if not bam_files:
@@ -353,6 +357,7 @@ class RAnalyzer(ProcessorBase):
         """
         return {
             'r_analysis_dir': self.r_analysis_dir,
+            'reports_dir': self.reports_dir,
             'nanotel_filtered': self.nanotel_output_dir,  # Filtered summaries here
             'mapping_output': self.mapping_output_dir,
             'methylation_output': self.methylation_output_dir
