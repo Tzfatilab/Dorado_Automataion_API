@@ -207,6 +207,18 @@ class ProcessorBase(ABC):
         """
         return self.__class__.__name__
 
+    def get_display_name(self) -> str:
+        """Return the plain-language name used in user-facing progress logs."""
+        names = {
+            "BasecallerProcessor": "Basecalling",
+            "DemuxerProcessor": "Demultiplexing",
+            "BamToFastqProcessor": "BAM-to-FASTQ conversion",
+            "NanoTelProcessor": "NanoTel analysis",
+            "AlignerProcessor": "Read alignment",
+            "RAnalyzer": "Results analysis",
+        }
+        return names.get(self.get_name(), self.get_name().removesuffix("Processor"))
+
     def log_start(self, message: str = None) -> None:
         """
         Log the start of processing with a section header.
@@ -215,8 +227,8 @@ class ProcessorBase(ABC):
             message: Optional custom message. If None, uses processor name.
         """
         if message is None:
-            message = f"STARTING {self.get_name().upper()}"
-        self.context.logger.section_header(message)
+            message = f"Starting {self.get_display_name()}"
+        self.context.logger.info(message, gui_visible=False)
 
     def log_complete(self, result: ProcessorResult) -> None:
         """
@@ -225,6 +237,11 @@ class ProcessorBase(ABC):
         Args:
             result: ProcessorResult to log
         """
+        if result.success:
+            self.context.logger.info(f"{self.get_display_name()} completed.")
+        else:
+            self.context.logger.error(f"{self.get_display_name()} failed: {result.error}")
+        return
         if result.success:
             self.context.logger.info(f"✓ {self.get_name()} completed successfully")
         else:

@@ -42,6 +42,8 @@ class NanoTelProcessor(ProcessorBase):
 
         # Define output directory
         self.output_dir = self.context.path_manager.get_nanotel_output_dir_path()
+        self._pending_result_file = None
+        self._hiding_environment_details = False
 
     def validate_inputs(self, fastq_dir: str) -> bool:
         """
@@ -233,7 +235,12 @@ class NanoTelProcessor(ProcessorBase):
 
             try:
                 command = self._build_command(task)
-                self.context.command_executor.execute(command)
+                # Stream R's progress messages so GUI users see them as NanoTel runs.
+                self.context.command_executor.execute(
+                    command,
+                    stream_output=True,
+                    gui_output_transform=self._format_gui_output,
+                )
 
                 # Mark as successful in barcode manager
                 self.context.barcode_manager.register_success(barcode, 'nanotel')
@@ -251,6 +258,41 @@ class NanoTelProcessor(ProcessorBase):
                 self.context.logger.error(f"✗ NanoTel failed for {barcode}: {str(e)}")
 
         return results
+
+    def _format_gui_output(self, line: str) -> Optional[str]:
+        """Turn verbose NanoTel result-writing diagnostics into concise GUI updates."""
+        text = line.strip()
+
+        if text == "Log Path:":
+            self._hiding_environment_details = True
+            return None
+        if self._hiding_environment_details:
+            if text.startswith("Log Start Time:"):
+                self._hiding_environment_details = False
+            return None
+
+        if self._pending_result_file:
+            label = self._pending_result_file
+            self._pending_result_file = None
+            return f"Created {label}: {Path(text).name}"
+
+        if text == "NanoTel summary CSV saved to:":
+            self._pending_result_file = "summary file"
+            return None
+        if text == "NanoTel read IDs saved to:":
+            self._pending_result_file = "read-ID file"
+            return None
+        if text.startswith("Adding barcode prefix to generated NanoTel files under:"):
+            return "Saving NanoTel results..."
+        if (
+            text.startswith("Checking ")
+            or text.startswith("Barcode filename update complete.")
+            or text.startswith("Work ended at:")
+            or text.startswith(("C:\\", "C:/"))
+        ):
+            return None
+
+        return line
 
     def _build_command(self, task: Dict) -> str:
         """

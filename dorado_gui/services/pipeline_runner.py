@@ -9,6 +9,14 @@ sys.path.insert(0, str(project_root))
 from dorado_workflow.main import setup_context
 from dorado_workflow.operators.workflow_operator import WorkflowOperator
 
+
+def _log_banner(log, title: str, subtitle=None) -> None:
+    """Write a consistent, easy-to-scan stage banner to the GUI log."""
+    log(title.capitalize())
+    if subtitle:
+        log(subtitle)
+
+
 """Pipeline entrypoint used by the GUI and worker thread.
 
 This function can start from different input stages (POD5, FASTQ, BAM) and only executes steps enabled by the boolean flags.
@@ -71,9 +79,7 @@ def run_pipeline(
             raise RuntimeError("Cancelled by user")
 
     check_cancelled()
-    log("\n" + "=" * 60)
-    log("Setting up workflow context...")
-    log("=" * 60)
+    _log_banner(log, "SETTING UP WORKFLOW", "Preparing paths, settings, and tools")
 
     output_path = Path(output_dir)
 
@@ -101,20 +107,20 @@ def run_pipeline(
     if is_nested_subdir:
         actual_trial = output_path.parent.parent.name
         base_dir = str(output_path.parent.parent.parent)
-        log(f"✅ Detected nested trial subfolder. Using parent trial: {output_path.parent.parent}")
+        log(f"Detected nested trial subfolder. Using parent trial: {output_path.parent.parent}")
     elif is_trial_group or is_legacy_subdir:
         actual_trial = output_path.parent.name
         base_dir = str(output_path.parent.parent)
-        log(f"✅ Detected trial subfolder. Using parent trial: {output_path.parent}")
+        log(f"Detected trial subfolder. Using parent trial: {output_path.parent}")
     else:
         actual_trial = output_path.name
 
         if is_trial_folder:
             base_dir = str(output_path.parent)
-            log(f"✅ Detected trial-specific folder. Using parent as base: {base_dir}")
+            log(f"Detected trial-specific folder. Using parent as base: {base_dir}")
         else:
             base_dir = str(output_path)
-            log(f"✅ Using selected folder as base: {base_dir}")
+            log(f"Using selected folder as base: {base_dir}")
 
     context = setup_context(
         trial_name=actual_trial,
@@ -128,7 +134,6 @@ def run_pipeline(
     basecalling_overrides = _build_basecalling_overrides(methylation_type)
     if basecalling_overrides:
         context.config_manager.update_basecalling_params(basecalling_overrides)
-        log(f"Applied basecalling options: {basecalling_overrides}")
 
     # Adjust NanoTel settings based on the GUI advanced options.
     if trim_hint := (non_pod5_trim_status if non_pod5_trim_status in {"trimmed", "untrimmed"} else None):
@@ -146,11 +151,8 @@ def run_pipeline(
     )
     if nanotel_overrides:
         context.config_manager.update_nanotel_params(nanotel_overrides)
-        log(f"Applied NanoTel advanced options: {nanotel_overrides}")
 
     operator = WorkflowOperator(context=context)
-    log("Context ready.\n")
-
     res = 0
     if do_basecalling and do_nanotel:
         res = _run_full_pipeline(operator, context, pod5_path, organism, log, check_cancelled, has_methylation, align_during_basecalling)
@@ -187,10 +189,6 @@ def _run_basecalling_only(operator, pod5_path, organism, log, check_cancelled, a
         log(f"❌ {msg}")
         return 1
 
-    log("=" * 60)
-    log("RUNNING BASECALLING WORKFLOW")
-    log("=" * 60)
-
     return operator.run_basecalling(
         pod5_path,
         organism=organism,
@@ -201,10 +199,6 @@ def _run_basecalling_only(operator, pod5_path, organism, log, check_cancelled, a
 def _run_nanotel_only(operator, fastq_path, bam_path, organism, log, check_cancelled, has_methylation: bool = False):
     # Run only the NanoTel analysis, choosing FASTQ or BAM mode as needed.
     check_cancelled()
-
-    log("\n" + "=" * 60)
-    log("RUNNING NANOTEL WORKFLOW")
-    log("=" * 60)
 
     if fastq_path:
         return operator.run_nanotel_workflow(fastq_path, organism=organism, align=True, has_methylation=has_methylation)
@@ -303,10 +297,6 @@ def _parse_patterns(value: str) -> list:
 def _run_full_pipeline(operator, context, pod5_path, organism, log, check_cancelled, methylation_enabled: bool = False, align_during_basecalling: bool = False):
     # Execute the full POD5 + NanoTel pipeline.
     check_cancelled()
-
-    log("=" * 60)
-    log("RUNNING FULL PIPELINE")
-    log("=" * 60)
 
     res = operator.run_pod5_workflow(
         pod5_path,

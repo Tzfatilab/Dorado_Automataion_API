@@ -52,9 +52,37 @@ class WorkflowOperator:
         # Track workflow state
         self.results: Dict[str, ProcessorResult] = {}
 
+    STEP_DETAILS = {
+        'Basecalling': (
+            'Converts POD5 signal',
+            'a basecalled BAM file',
+        ),
+        'Demultiplexing': (
+            'Separates reads by barcode',
+            'barcode-specific BAM folders',
+        ),
+        'BAM to FASTQ conversion': (
+            'Converts BAM reads',
+            'FASTQ files for each barcode',
+        ),
+        'NanoTel analysis': (
+            'Measures telomere features',
+            'barcode-specific NanoTel summaries',
+        ),
+        'Alignment': (
+            'Aligns reads to the reference genome',
+            'aligned reads and mapping results',
+        ),
+        'R analysis': (
+            'Builds the requested analysis results',
+            'tables and summary reports',
+        ),
+    }
+
     # ------------------------------ Internal helpers ------------------------------
     def _run_step(self, key: str, label: str, processor: Any,
-                  *args: Any, **kwargs: Any) -> Optional[ProcessorResult]:
+                  *args: Any, step: Optional[str] = None,
+                  **kwargs: Any) -> Optional[ProcessorResult]:
         """
         Execute a processor, store its result, and check for success.
         Args:
@@ -65,6 +93,12 @@ class WorkflowOperator:
         Returns:
             The ProcessorResult on success, or None on failure (after logging).
         """
+        title = f"{step}: {label}" if step else label
+        self.context.logger.section_header(title)
+        description, output = self.STEP_DETAILS.get(label, (None, None))
+        if description:
+            self.context.logger.info(f"{description}; creates {output}.")
+
         result = processor.execute(*args, **kwargs)
         self.results[key] = result
         if not result.success:
@@ -74,7 +108,7 @@ class WorkflowOperator:
 
     def _log_inputs(self, input_path: str, organism: Optional[str]) -> None:
         """Log the standard input/organism header lines."""
-        self.context.logger.section_header("WORKFLOW INPUTS")
+        self.context.logger.section_header("Run details")
         self.context.logger.info(f"Input: {input_path}")
         self.context.logger.info(f"Organism: {organism}")
 
@@ -200,7 +234,7 @@ class WorkflowOperator:
         Returns:
             True if workflow succeeds, False otherwise
         """
-        self.context.logger.section_header("FASTQ WORKFLOW")
+        self.context.logger.section_header("FASTQ analysis workflow")
         self._log_inputs(path_input, organism)
 
         prepared = self._prepare_fastq_input(path_input)
@@ -209,14 +243,17 @@ class WorkflowOperator:
         fastq_input, do_mapping = prepared
 
         # NanoTel analysis
+        total_steps = 3 if align else 2
         if self._run_step('nanotel', 'NanoTel analysis',
-                          self.nanotel, fastq_input) is None:
+                          self.nanotel, fastq_input,
+                          step=f"Step 1/{total_steps}") is None:
             return False
 
         # Alignment
         if align:
             if self._run_step('aligner', 'Alignment',
-                              self.aligner, fastq_input, organism) is None:
+                              self.aligner, fastq_input, organism,
+                              step=f"Step 2/{total_steps}") is None:
                 return False
 
         # R analysis (filtration only - no methylation in FASTQ from MinKNOW)
@@ -224,10 +261,12 @@ class WorkflowOperator:
             "Note: FASTQ workflow runs NanoTel filtration only.\n"
             "For mapping/methylation analysis, use POD5 workflow with basecalling."
         )
+        final_step = total_steps if align else 2
         if self._run_step('r_analyzer', 'R analysis', self.r_analyzer,
                           run_filtration=True,
                           run_mapping=do_mapping,
-                          run_methylation=has_methylation and do_mapping) is None:
+                          run_methylation=has_methylation and do_mapping,
+                          step=f"Step {final_step}/{total_steps}") is None:
             return False
 
         return self._finish_success()

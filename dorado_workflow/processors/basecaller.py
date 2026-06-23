@@ -128,15 +128,18 @@ class BasecallerProcessor(ProcessorBase):
             return result
 
         try:
+            self.context.logger.info("Basecalling: preparing Dorado")
+
             # Build the basecalling command
             command, expected_output = self._build_command(pod5_input, organism, align)
 
-            # Execute basecalling
-            self.context.logger.info(f"Starting basecalling for: {pod5_input}")
-            self.context.command_executor.execute(command)
+            # Execute basecalling and forward Dorado's live progress to the GUI.
+            self.context.logger.info("Basecalling: Dorado is running; live progress follows")
+            self.context.command_executor.execute(command, stream_output=True)
 
             # Find the actual output file
             # (Dorado creates the file, we need to locate it)
+            self.context.logger.info("Basecalling: verifying output")
             actual_output = self._find_output_bam()
 
             if not actual_output:
@@ -148,6 +151,7 @@ class BasecallerProcessor(ProcessorBase):
                 return result
 
             # Collect statistics
+            self.context.logger.info("Basecalling: collecting output statistics")
             stats = self._collect_statistics(actual_output)
 
             # Create successful result

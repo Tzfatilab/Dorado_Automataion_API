@@ -2348,7 +2348,6 @@ run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta
     if(do_rc) {
       dna_reads <- reverseComplement(dna_reads)
     }
-    print(Sys.time())
     cat("processing chunk", i, "...\n")
     ## do something with 'dna' ...
     dna_length <- c(dna_length, width(dna_reads))

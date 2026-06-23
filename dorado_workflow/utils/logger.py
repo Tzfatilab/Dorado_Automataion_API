@@ -13,6 +13,7 @@ No dependencies - this is the foundation class.
 
 import sys
 import logging
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Callable
@@ -24,6 +25,10 @@ import threading
 class CallbackHandler(logging.Handler):
     """Logging handler that forwards formatted messages to a callback."""
 
+    _R_STARTUP_NOISE = re.compile(
+        r"^(?:\d+: )?package '.+' was built under R version \d+(?:\.\d+)+$"
+    )
+
 
     def __init__(self, callback: Callable[[str], None]):
         super().__init__()
@@ -32,10 +37,24 @@ class CallbackHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            msg = self.format(record)
+            gui_message = getattr(record, "gui_message", None)
+            message = gui_message if gui_message is not None else record.getMessage()
+            if not getattr(record, "gui_visible", True) or self._is_gui_noise(message):
+                return
+            msg = gui_message if gui_message is not None else self.format(record)
             self.callback(msg)
         except Exception:
             self.handleError(record)
+
+    @classmethod
+    def _is_gui_noise(cls, message: str) -> bool:
+        """Hide routine R package startup notices from the GUI only."""
+        message = message.strip()
+        return (
+            message in {"Warning message:", "Warning messages:"}
+            or bool(cls._R_STARTUP_NOISE.match(message))
+            or message.startswith("[conflicted] Will prefer ")
+        )
 
 
 
@@ -80,7 +99,7 @@ class WorkflowLogger:
 
 
         if log_file_path:
-            self.info(f"Logger initialized. Log file: {log_file_path}")
+            self.info(f"Logger initialized. Log file: {log_file_path}", gui_visible=False)
 
 
     def _setup_logging(self, log_level: str) -> None:
@@ -105,7 +124,9 @@ class WorkflowLogger:
         if self.log_callback:
             callback_handler = CallbackHandler(self.log_callback)
             callback_handler.setLevel(level)
-            callback_handler.setFormatter(console_format)
+            # The GUI adds its own compact [HH:MM:SS] timestamp.  Forwarding
+            # only the message avoids a noisy, duplicated terminal-style prefix.
+            callback_handler.setFormatter(logging.Formatter('%(message)s'))
             self.logger.addHandler(callback_handler)
         else:
             console_handler = logging.StreamHandler(sys.stdout)
@@ -136,9 +157,13 @@ class WorkflowLogger:
         self.logger.debug(message)
 
 
-    def info(self, message: str) -> None:
+    def info(self, message: str, gui_visible: bool = True,
+             gui_message: Optional[str] = None) -> None:
         """Log info message."""
-        self.logger.info(message)
+        self.logger.info(
+            message,
+            extra={"gui_visible": gui_visible, "gui_message": gui_message},
+        )
 
 
     def warning(self, message: str) -> None:
@@ -159,7 +184,7 @@ class WorkflowLogger:
     # ==================== Command Tracking ====================
 
 
-    def register_command(self, command: str) -> int:
+    def register_command(self, command: str, cwd: Optional[Path] = None) -> int:
         """
         Register a command as it starts executing.
         Thread-safe operation.
@@ -174,16 +199,29 @@ class WorkflowLogger:
         """
         with self.command_lock:
             cmd_index = len(self.executed_commands)
+            started_at = datetime.now()
             self.executed_commands.append({
-                'timestamp': datetime.now().strftime('%H:%M:%S'),
+                'number': cmd_index + 1,
+                'timestamp': started_at.strftime('%H:%M:%S'),
+                'started_at': started_at.isoformat(timespec='seconds'),
                 'command': command,
-                'status': 'running'
+                'cwd': str(cwd) if cwd else None,
+                'status': 'running',
+                '_started_timestamp': started_at.timestamp(),
             })
-            self.info(f"Executing command: {command}")
+            self.info("Starting command", gui_visible=False)
+            self.info(f"  Command: {command}", gui_visible=False)
+            self.info(
+                f"  Location: {cwd if cwd else 'workflow default'}",
+                gui_visible=False,
+            )
             return cmd_index
 
 
-    def mark_command_success(self, cmd_index: int) -> None:
+    def mark_command_success(self, cmd_index: int, returncode: int = 0,
+                             stdout: Optional[str] = None,
+                             stderr: Optional[str] = None,
+                             output_level: str = "debug") -> None:
         """
         Mark a command as successfully completed.
 
@@ -193,11 +231,25 @@ class WorkflowLogger:
         """
         with self.command_lock:
             if 0 <= cmd_index < len(self.executed_commands):
+                command = self.executed_commands[cmd_index]
+                duration = datetime.now().timestamp() - command.pop('_started_timestamp')
+                command.update({
+                    'status': 'success',
+                    'returncode': returncode,
+                    'duration_seconds': duration,
+                })
+                self.info(f"Command completed in {duration:.1f}s")
+                self.info(f"  Exit code: {returncode}", gui_visible=False)
+                self._log_command_output(stdout, stderr, level=output_level)
+                return
                 self.executed_commands[cmd_index]['status'] = 'success'
                 self.info(f"✓ Command completed successfully")
 
 
-    def mark_command_failed(self, cmd_index: int, error: str = "") -> None:
+    def mark_command_failed(self, cmd_index: int, error: str = "",
+                            returncode: Optional[int] = None,
+                            stdout: Optional[str] = None,
+                            stderr: Optional[str] = None) -> None:
         """
         Mark a command as failed.
 
@@ -208,10 +260,35 @@ class WorkflowLogger:
         """
         with self.command_lock:
             if 0 <= cmd_index < len(self.executed_commands):
+                command = self.executed_commands[cmd_index]
+                duration = datetime.now().timestamp() - command.pop('_started_timestamp')
+                command.update({
+                    'status': 'failed',
+                    'error': error,
+                    'returncode': returncode,
+                    'duration_seconds': duration,
+                })
+                exit_code = f" (exit code {returncode})" if returncode is not None else ""
+                self.error(f"Command failed after {duration:.1f}s")
+                if returncode is not None:
+                    self.error(f"  Exit code: {returncode}")
+                self.error(f"  Error: {error}")
+                self._log_command_output(stdout, stderr, level="error")
+                return
                 self.executed_commands[cmd_index]['status'] = 'failed'
                 self.executed_commands[cmd_index]['error'] = error
                 self.error(f"✗ Command failed: {error}")
 
+
+    def _log_command_output(self, stdout: Optional[str], stderr: Optional[str],
+                            level: str = "debug") -> None:
+        """Log captured command output when it contains useful diagnostic detail."""
+        for name, output in (("stdout", stdout), ("stderr", stderr)):
+            if output and output.strip():
+                log = getattr(self, level)
+                log(f"  {name.title()}:")
+                for line in output.strip().splitlines():
+                    log(f"    {line}")
 
     def get_command_history(self) -> List[Dict]:
         """
@@ -253,9 +330,11 @@ class WorkflowLogger:
 
         with self.command_lock:
             for i, cmd_info in enumerate(self.executed_commands, 1):
-                status_comment = "# SUCCESS" if cmd_info['status'] == 'success' else "# FAILED"
+                status_comment = f"# {cmd_info['status'].upper()}"
                 script_lines.extend([
                     f"# Command {i} - {cmd_info['timestamp']} - {status_comment}",
+                    f"# Duration: {cmd_info.get('duration_seconds', 0):.1f}s; exit code: {cmd_info.get('returncode', 'n/a')}",
+                    f"# Working directory: {cmd_info['cwd']}" if cmd_info.get('cwd') else "# Working directory: inherited",
                     cmd_info['command'],
                     ""
                 ])
@@ -345,7 +424,12 @@ class WorkflowLogger:
                     report_lines.extend([
                         f"{i}. [{cmd_info['timestamp']}] {status_icon} {cmd_info['status'].upper()}",
                         f"   Command: {cmd_info['command']}",
+                        f"   Duration: {cmd_info.get('duration_seconds', 0):.1f}s",
+                        f"   Exit code: {cmd_info.get('returncode', 'n/a')}",
                     ])
+
+                    if cmd_info.get('cwd'):
+                        report_lines.append(f"   Working directory: {cmd_info['cwd']}")
 
 
                     if cmd_info['status'] == 'failed' and 'error' in cmd_info:
@@ -382,10 +466,7 @@ class WorkflowLogger:
             title: Section title
             char: Character to use for the border
         """
-        border = char * len(title)
-        self.info(border)
         self.info(title)
-        self.info(border)
 
 
     def close(self) -> None:

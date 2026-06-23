@@ -65,9 +65,7 @@ class WorkerThread(QObject):
     def run(self):
         """Execute the pipeline and emit final success/failure signals."""
         try:
-            self.log.emit("=" * 60)
-            self.log.emit("WORKFLOW STARTING")
-            self.log.emit("=" * 60)
+            self.log.emit("Run started")
 
             # Pass all current settings and callbacks into the pipeline entrypoint.
             status_code, message = run_pipeline(

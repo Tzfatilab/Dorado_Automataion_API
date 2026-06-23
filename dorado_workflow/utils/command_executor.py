@@ -8,7 +8,7 @@ Integrates with WorkflowLogger for command tracking.
 
 import shutil
 import subprocess
-from typing import Optional, List
+from typing import Optional, List, Callable
 from pathlib import Path
 
 
@@ -33,7 +33,11 @@ class CommandExecutor:
         self.logger = logger
 
     def execute(self, command: str, capture_output: bool = False,
-                check: bool = True, cwd: Optional[Path] = None) -> subprocess.CompletedProcess:
+                check: bool = True, cwd: Optional[Path] = None,
+                log_captured_output: bool = False,
+                stream_output: bool = False,
+                gui_output_filter: Optional[Callable[[str], bool]] = None,
+                gui_output_transform: Optional[Callable[[str], Optional[str]]] = None) -> subprocess.CompletedProcess:
         """
         Execute a shell command with logging.
 
@@ -42,6 +46,10 @@ class CommandExecutor:
             capture_output: If True, capture stdout/stderr
             check: If True, raise exception on non-zero exit code
             cwd: Working directory for command execution
+            log_captured_output: If True, write captured stdout/stderr to the INFO log
+            stream_output: If True, relay combined stdout/stderr to the logger as it arrives
+            gui_output_filter: Optional function deciding which streamed lines appear in the GUI
+            gui_output_transform: Optional function that replaces or hides streamed GUI lines
 
         Returns:
             subprocess.CompletedProcess object
@@ -49,12 +57,46 @@ class CommandExecutor:
         Raises:
             subprocess.CalledProcessError: If command fails and check=True
         """
+        if capture_output and stream_output:
+            raise ValueError("capture_output and stream_output cannot both be enabled")
+
         # Register command with logger
-        cmd_index = self.logger.register_command(command)
+        cmd_index = self.logger.register_command(command, cwd=cwd)
 
         try:
             # Execute command
-            if capture_output:
+            if stream_output:
+                process = subprocess.Popen(
+                    command,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    cwd=cwd,
+                )
+                output_lines = []
+                for line in process.stdout:
+                    line = line.rstrip()
+                    if line:
+                        output_lines.append(line)
+                        gui_line = gui_output_transform(line) if gui_output_transform else line
+                        visible = gui_line is not None
+                        if gui_output_filter:
+                            visible = visible and gui_output_filter(line)
+                        self.logger.info(
+                            f"    {line}",
+                            gui_visible=visible,
+                            gui_message=f"    {gui_line}" if visible else None,
+                        )
+
+                returncode = process.wait()
+                if check and returncode:
+                    raise subprocess.CalledProcessError(
+                        returncode, command, output="\n".join(output_lines)
+                    )
+                result = subprocess.CompletedProcess(command, returncode)
+            elif capture_output:
                 result = subprocess.run(
                     command,
                     shell=True,
@@ -72,16 +114,25 @@ class CommandExecutor:
                 )
 
             # Mark as successful
-            self.logger.mark_command_success(cmd_index)
+            self.logger.mark_command_success(
+                cmd_index,
+                returncode=result.returncode,
+                stdout=result.stdout if capture_output else None,
+                stderr=result.stderr if capture_output else None,
+                output_level="info" if log_captured_output else "debug",
+            )
             return result
 
         except subprocess.CalledProcessError as e:
             # Mark as failed
-            error_msg = str(e)
-            if capture_output and e.stderr:
-                error_msg += f"\nstderr: {e.stderr}"
-
-            self.logger.mark_command_failed(cmd_index, error_msg)
+            self.logger.mark_command_failed(
+                cmd_index,
+                str(e),
+                returncode=e.returncode,
+                # Streamed output has already reached the GUI line-by-line.
+                stdout=e.stdout if capture_output else None,
+                stderr=e.stderr if capture_output else None,
+            )
             raise
 
     def execute_safe(self, command: str, capture_output: bool = False,

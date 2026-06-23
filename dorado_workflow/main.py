@@ -75,9 +75,7 @@ def setup_context(
         log_callback=log_callback,
     )
 
-    logger.info("=" * 60)
-    logger.info(f"Dorado Workflow v2.0 - Trial: {trial_name}")
-    logger.info("=" * 60)
+    logger.info(f"Dorado Workflow v2.0 - Trial: {trial_name}", gui_visible=False)
 
     # Initialize command executor
     executor = CommandExecutor(logger)

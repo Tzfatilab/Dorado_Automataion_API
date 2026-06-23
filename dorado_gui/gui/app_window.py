@@ -1,5 +1,6 @@
 import re
 import sys
+from html import escape
 
 from datetime import datetime
 from pathlib import Path
@@ -169,13 +170,56 @@ class AppWindow(
             return
 
         for line in message.split("\n"):
+            # Keep execution logs text-first even when a tool emits status emojis.
+            line = line.translate(str.maketrans("", "", "✅❌✓✗▶✕•↳"))
+            r_detail = line.strip()
+            if r_detail == "Log Path:":
+                self._hide_r_environment_details = True
+                continue
+            if getattr(self, "_hide_r_environment_details", False):
+                if r_detail.startswith("Log Start Time:"):
+                    self._hide_r_environment_details = False
+                continue
             if not line:
                 self.log.append("")
             elif re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} - ', line):
                 self.log.append(line)
             else:
                 ts = datetime.now().strftime("%H:%M:%S")
-                self.log.append(f"[{ts}] {line}")
+                is_key_update = (
+                    line == "Run started"
+                    or line.endswith(" workflow")
+                    or line == "Run details"
+                    or line.startswith("Step ")
+                    or line.startswith("Command completed")
+                    or line.startswith("Command failed")
+                    or line.startswith("Basecalling:")
+                    or line.endswith(" completed.")
+                    or "pipeline completed" in line.lower()
+                    or " failed" in line.lower()
+                )
+                is_section_title = (
+                    line == "Run started"
+                    or line.endswith(" workflow")
+                    or line == "Run details"
+                    or line.startswith("Step ")
+                )
+                is_major_milestone = (
+                    line == "Run started"
+                    or "pipeline completed" in line.lower()
+                    or "pipeline failed" in line.lower()
+                )
+                text = escape(line)
+                if is_key_update:
+                    text = f"<b>{text}</b>"
+                timestamp = f'<span style="color: #777;">[{ts}]</span> '
+                if is_major_milestone:
+                    self.log.append('<span style="color: #999;">============================================================</span>')
+                self.log.append(f'{timestamp}<span style="white-space: pre-wrap;">{text}</span>')
+                if is_major_milestone:
+                    self.log.append('<span style="color: #999;">============================================================</span>')
+                elif is_section_title:
+                    self.log.append(f'{timestamp}<span style="color: #999;">========================</span>')
 
     def _set_workflow_running(self, running):
         """
