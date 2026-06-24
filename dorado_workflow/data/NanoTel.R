@@ -87,8 +87,14 @@ option_list = list(
 
   make_option("--analysis", action = "store_true", default = FALSE,
               help = "Run post-processing filtration and produce filtered summary, stats txt, and plot.",
-              metavar = "Run analysis")
+              metavar = "Run analysis"),
 
+  make_option("--bias_prediction_model", action = "store", type = "character",
+              default = NULL,
+              help = paste("Path to the calibration .rds used for expected KM bias prediction.",
+                           "Defaults to models/calibration_obj.rds relative to the script directory.",
+                           "Override via this flag or a lab config file."),
+              metavar = "calibration model path")
 )   
 opt = parse_args(OptionParser(option_list=option_list))
 
@@ -134,11 +140,21 @@ suppressPackageStartupMessages(require(future))
 suppressPackageStartupMessages(require(ggprism))
 
 suppressPackageStartupMessages(require(testit))
-
+suppressPackageStartupMessages(require(survival))
 #utils::globalVariables(c("start_index"))
 
+# Minimum margin (bp) between sequence end and telomere end for a read to be
+# considered a complete (non-censored) event in the KM survival fit.
+BUFFER <- 50L
 
-
+# Resolve the directory containing this script so that bundled model files
+# (e.g. models/calibration_obj.rds) can be referenced relative to the repo
+# root rather than via absolute machine-specific paths.
+.script_dir <- tryCatch({
+  args <- commandArgs(trailingOnly = FALSE)
+  file_flag <- grep("--file=", args, value = TRUE)
+  if (length(file_flag) > 0) dirname(normalizePath(sub("--file=", "", file_flag[1]))) else getwd()
+}, error = function(e) getwd())
 
 #' my changes: 5.11.2023
 #' 1. Change thr for re-indexing  telomere_density < 0.85 
@@ -2580,15 +2596,32 @@ write_lines(x = ans_list$df_summary$sequence_ID,
 log_print(base::paste("NanoTel read IDs saved to:", reads_ids_file),
           hide_notes = TRUE, console = FALSE)
 
+barcode_name <- basename(normalizePath(opt$input_path, mustWork = FALSE))
+write_csv(x = ans_list$df_summary,
+          file = file.path(opt$save_path, paste0(barcode_name, "_summary.csv")))
+write_lines(x = ans_list$df_summary$sequence_ID  , file = file.path(opt$save_path, "reads_ids.txt"))
+
 # =====================================================================
 # POST-PROCESSING ANALYSIS (only runs when --analysis flag is set)
 # =====================================================================
 if (isTRUE(opt$analysis)) {
 
   # --- Step 1: Filter ---
-  df_filtered <- ans_list$df_summary %>%
+  df_step1_filtered <- ans_list$df_summary %>%
     dplyr::filter(telo_density_mismatch >= 0.75,
-                  Telomere_start_mismatch <= 134) %>%
+                  Telomere_start_mismatch <= 134)
+
+  # KM median is computed after the density/start filter and before the
+  # running-median filtration steps.
+  df_km <- df_step1_filtered %>%
+    dplyr::mutate(
+      margin = sequence_length - Telomere_end_mismatch,
+      event  = as.integer(margin >= BUFFER)
+    )
+  km_fit    <- survfit(Surv(Telomere_length_mismatch, event) ~ 1, data = df_km)
+  km_median <- summary(km_fit)$table[["median"]]
+
+  df_filtered <- df_step1_filtered %>%
 
     # --- Step 2: Sort by sequence length descending ---
     dplyr::arrange(desc(sequence_length)) %>%
@@ -2609,31 +2642,71 @@ if (isTRUE(opt$analysis)) {
     dplyr::filter(SeqLen_minus_RunMed >= 134)
 
   # Write filtered sorted summary
-  # Post-processing outputs also keep the barcode prefix for consistency with
-  # the raw NanoTel summary and read-id files above.
-  filtered_summary_file <- file.path(opt$save_path,
-                                     paste0(barcode_name, "_filtered_sorted_summary.csv"))
   write_csv(x = df_filtered,
-            file = filtered_summary_file)
-  log_print(base::paste("NanoTel filtered sorted summary saved to:", filtered_summary_file),
-            hide_notes = TRUE, console = FALSE)
+            file = file.path(opt$save_path,
+                             paste0(barcode_name, "_filtered_sorted_summary.csv")))
 
   # --- Stats .txt ---
-  n_reads   <- nrow(df_filtered)
+
+  # KM survival fit: event = 1 when the telomere is fully captured in the read
+  # (enough margin between sequence end and telomere end), 0 = censored.
+  df_filtered <- df_filtered %>%
+    dplyr::mutate(
+      margin = sequence_length - Telomere_end_mismatch,
+      event  = as.integer(margin >= BUFFER)
+    )
+
+  n_reads        <- nrow(df_filtered)
+  n_complete     <- sum(df_filtered$event == 1)
+  n_censored     <- sum(df_filtered$event == 0)
+  censoring_rate <- n_censored / n_reads
+
   med_telo  <- median(df_filtered$Telomere_length_mismatch)
   pct_short <- round(100 * sum(df_filtered$Telomere_length_mismatch < 2000) / n_reads, 1)
+  min_len   <- min(df_filtered$sequence_length)
+  max_len   <- max(df_filtered$sequence_length)
+
+  # WORK IN PROGRESS: the model-based expected KM bias calculation below is a
+  # provisional working feature, not the final calibrated implementation.
+  # Keep it functional for now, but treat this block as subject to revision.
+  # Expected KM bias from polynomial calibration model
+  model_path <- if (!is.null(opt$bias_prediction_model)) {
+    opt$bias_prediction_model
+  } else {
+    file.path(.script_dir, "models", "poly_regression_model.rds")
+  }
+  calibration_obj  <- readRDS(model_path)
+  expected_bias    <- predict(
+    calibration_obj$calibration_models$fit_km_bias,
+    newdata = data.frame(
+      censoring_for_model = censoring_rate,
+      log10_n_reads       = log10(n_reads)
+    )
+  )
+  bias_label <- ifelse(expected_bias >= 0,
+                       paste0("+", round(expected_bias), " bp"),
+                       paste0(round(expected_bias), " bp"))
+
+  fmt <- function(x) format(round(x), big.mark = ",", scientific = FALSE)
 
   results_lines <- c(
     paste0("Results for ", barcode_name),
     "==========================================",
-    paste0("Number of telomeric reads after filtration : ", n_reads),
-    paste0("Median telomere length with mismatch (bp)  : ", med_telo),
-    paste0("% of telomeres shorter than 2kb            : ", pct_short, "%")
+    paste0("Total Reads             : ", fmt(n_reads)),
+    paste0("Complete Reads          : ", fmt(n_complete)),
+    paste0("Censored Reads          : ", fmt(n_censored)),
+    paste0("Censoring Rate          : ", round(100 * censoring_rate, 1), "%"),
+    "",
+    paste0("Regular Median (post-filtration) : ", fmt(med_telo), " bp"),
+    paste0("KM Median               : ", fmt(km_median), " bp"),
+    "",
+    paste0("Expected KM Median Bias : ", bias_label),
+    paste0("Min Read Length         : ", fmt(min_len), " bp"),
+    paste0("Max Read Length         : ", fmt(max_len), " bp"),
+    paste0("% < 2kb                 : ", pct_short, "%")
   )
-  results_file <- file.path(opt$save_path, paste0(barcode_name, "_results.txt"))
-  write_lines(results_lines, results_file)
-  log_print(base::paste("NanoTel results text saved to:", results_file),
-            hide_notes = TRUE, console = FALSE)
+  write_lines(results_lines,
+              file.path(opt$save_path, paste0(barcode_name, "_results.txt")))
 
   # --- Telomere plot (uses pre-final-filter data so x-axis extends to the crossing point) ---
   df_plot <- df_for_plot
@@ -2654,14 +2727,11 @@ if (isTRUE(opt$analysis)) {
     theme_prism() +
     theme(legend.position = "bottom")
 
-  plot_file <- file.path(opt$save_path, paste0(barcode_name, "_telomere_plot.png"))
   ggsave(
-    filename = plot_file,
+    filename = file.path(opt$save_path, paste0(barcode_name, "_telomere_plot.png")),
     plot     = p_telo,
     width    = 12, height = 6, dpi = 150
   )
-  log_print(base::paste("NanoTel telomere plot saved to:", plot_file),
-            hide_notes = TRUE, console = FALSE)
 
 } # end --analysis block
 
@@ -2672,10 +2742,3 @@ log_print(base::paste("Work ended at:", toString(t2)), hide_notes = TRUE, consol
 # Close log
 log_close(footer = FALSE)
 writeLines(readLines(lf))
-
-
-
-
-
-
-
