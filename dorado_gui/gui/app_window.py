@@ -182,7 +182,7 @@ class AppWindow(
                     self._hide_workflow_summary = False
                 else:
                     continue
-            if r_detail == "Log Path:":
+            if r_detail.startswith("Log Path:"):
                 self._hide_r_environment_details = True
                 continue
             if getattr(self, "_hide_r_environment_details", False):
@@ -195,11 +195,20 @@ class AppWindow(
                 self.log.append(line)
             else:
                 ts = datetime.now().strftime("%H:%M:%S")
+                is_stage_title = line in {
+                    "Basecalling",
+                    "Demultiplexing",
+                    "BAM to FASTQ conversion",
+                    "NanoTel analysis",
+                    "Alignment",
+                    "R analysis",
+                }
                 is_key_update = (
                     line == "Run started"
                     or line.endswith(" workflow")
                     or line == "Run details"
                     or line.startswith("Step ")
+                    or is_stage_title
                     or line.startswith("Command completed")
                     or line.startswith("Command failed")
                     or line.startswith("Basecalling:")
@@ -212,6 +221,7 @@ class AppWindow(
                     or line.endswith(" workflow")
                     or line == "Run details"
                     or line.startswith("Step ")
+                    or is_stage_title
                 )
                 is_major_milestone = (
                     line == "Run started"

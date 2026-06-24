@@ -263,7 +263,7 @@ class NanoTelProcessor(ProcessorBase):
         """Turn verbose NanoTel result-writing diagnostics into concise GUI updates."""
         text = line.strip()
 
-        if text == "Log Path:":
+        if text.startswith("Log Path:"):
             self._hiding_environment_details = True
             return None
         if self._hiding_environment_details:

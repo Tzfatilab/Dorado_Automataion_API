@@ -168,7 +168,17 @@ class RAnalyzer(ProcessorBase):
                 json.dump(pipeline_config, f, indent=2)
 
             # 5. Build and run R command: pass config file AND trial name
-            self.context.logger.info("Starting R analysis pipeline...")
+            enabled_steps = []
+            if pipeline_config["run_nanotel_analysis"]:
+                enabled_steps.append("filtering")
+            if pipeline_config["run_mapping_analysis"]:
+                enabled_steps.append("mapping")
+            if pipeline_config["run_methylation_analysis"]:
+                enabled_steps.append("methylation")
+            self.context.logger.info(
+                f"R analysis steps: {', '.join(enabled_steps) or 'none'}"
+            )
+            self.context.logger.info("Running command: Rscript main_analysis_pipeline.R")
             r_script_path = Path(__file__).parent.parent / "r_analysis" / "main_analysis_pipeline.R"
 
             if not r_script_path.exists():
@@ -180,6 +190,7 @@ class RAnalyzer(ProcessorBase):
 
             command = f"Rscript {r_script_path} {config_path} {trial_name}"
 
+            self.context.logger.info(f"Command: {command}")
             self.context.command_executor.execute(command, cwd=r_analysis_dir)
 
             # Collect statistics

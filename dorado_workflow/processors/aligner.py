@@ -121,8 +121,10 @@ class AlignmentProcessor(ProcessorBase):
             command = self._build_command(input_dir, organism, input_type)
 
             # Execute alignment
-            self.context.logger.info(f"Starting alignment for: {input_dir}")
-            self.context.logger.info(f"Using {input_type.upper()} input")
+            self.context.logger.info(
+                f"Running command: dorado aligner ({input_type.upper()} input)"
+            )
+            self.context.logger.info(f"Command: {command}")
             self.context.command_executor.execute(command)
 
             # Collect statistics

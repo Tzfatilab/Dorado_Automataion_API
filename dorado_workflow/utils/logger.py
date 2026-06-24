@@ -30,14 +30,16 @@ class CallbackHandler(logging.Handler):
     )
     _WORKFLOW_NOISE = re.compile(
         r"^(?:Validating .+ inputs|All required tools available:|All .+ prerequisites validated|"
-        r"(?:Converts|Separates|Measures) .+; creates .+|"
-        r"Basecall command:|Demux command:|Starting demultiplexing for:|"
+        r"(?:Converts|Separates|Measures|Aligns|Builds) .+; creates .+|"
+        r"(?:Basecall|Demux|Alignment) command:|Starting (?:demultiplexing|alignment) for:|"
         r"Basecalling:|Found \d+ (?:BAM|FASTQ) files|Found output BAM:|"
-        r"Basecalling output:|Organizing demuxed files|"
+        r"Basecalling output:|Alignment output:|(?:Auto-)?Detected input type:|"
+        r"Organizing demuxed files|"
         r"Moved |Organized \d+ directories|Registered \d+ barcodes|"
         r"No BAM files in |Converting BAMs for |Starting R analysis pipeline|"
         r"Found NanoTel summaries for |Basecalling completed\.|Demux completed\.|"
-        r"BAM-to-FASTQ conversion completed\.|NanoTel analysis completed\.).*"
+        r"BAM-to-FASTQ conversion completed\.|NanoTel analysis completed\.|"
+        r"Alignment completed\.).*"
     )
 
 
