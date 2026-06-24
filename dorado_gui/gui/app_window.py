@@ -320,15 +320,18 @@ class AppWindow(
                 f'<td style="padding: 3px 7px; border: 1px solid #d7dce1; '
                 f'font-weight: 600;">{escape(title)}</td>{value_html}</tr>'
             )
+        self.log.append("")
         self.log.append(
-            f'<span style="color: #777;">[{timestamp}]</span> <b>NanoTel summary statistics</b>'
+            f'<span style="color: #777;">[{timestamp}]</span> <b>NanoTel analysis summary statistics</b>'
         )
+        self.log.append("")
         self.log.append(
             '<table style="margin: 2px 0 5px 36px; border-collapse: collapse;">'
             '<tr><th style="padding: 3px 7px; text-align: left; color: #555; '
             'background: #f1f3f5; border: 1px solid #d7dce1;">Statistic</th>'
             f'{header_html}</tr>{rows_html}</table>'
         )
+        self.log.append("")
 
     def _set_workflow_running(self, running):
         """
