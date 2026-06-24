@@ -94,7 +94,6 @@ class WorkerThread(QObject):
                 return
 
             if status_code == 0:
-                self.log.emit("WORKFLOW FINISHED SUCCESSFULLY")
                 self.done.emit(True, message)
             else:
                 self.done.emit(False, message)

@@ -174,6 +174,37 @@ class AppWindow(
             line = line.translate(str.maketrans("", "", "✅❌✓✗▶✕•↳"))
             line = re.sub(r"^\s+(?=All .+ prerequisites validated$)", "", line)
             r_detail = line.strip()
+            if r_detail == "The input files:":
+                self._hide_next_nanotel_input_path = True
+                continue
+            if getattr(self, "_hide_next_nanotel_input_path", False):
+                self._hide_next_nanotel_input_path = False
+                continue
+            if r_detail == "Summary statistics of the sample reads length:":
+                self._nanotel_stat_title = "Sample read length"
+                continue
+            if r_detail == "Summary statistics for the Telomeric reads:":
+                continue
+            stat_titles = {
+                "reads length:": "Telomeric read length",
+                "Telomere length:": "Telomere length",
+                "Telomere length with 1 mismatch allowed:": "Telomere length (1 mismatch)",
+            }
+            if r_detail in stat_titles:
+                self._nanotel_stat_title = stat_titles[r_detail]
+                continue
+            if getattr(self, "_nanotel_stat_title", None) and r_detail.startswith("Min."):
+                self._nanotel_stat_values_pending = True
+                continue
+            if getattr(self, "_nanotel_stat_values_pending", False):
+                values = r_detail.split()
+                self._nanotel_stat_values_pending = False
+                if len(values) == 6:
+                    self._append_nanotel_stat_table(self._nanotel_stat_title, values)
+                    self._nanotel_stat_title = None
+                    continue
+            if r_detail.startswith("Work started at:"):
+                continue
             if r_detail in {"WORKFLOW COMPLETED SUCCESSFULLY", "=== WORKFLOW SUMMARY ==="}:
                 self._hide_workflow_summary = True
                 continue
@@ -209,7 +240,6 @@ class AppWindow(
                     or line == "Run details"
                     or line.startswith("Step ")
                     or is_stage_title
-                    or line.startswith("Command completed")
                     or line.startswith("Command failed")
                     or line.startswith("Basecalling:")
                     or line.endswith(" completed.")
@@ -246,11 +276,35 @@ class AppWindow(
                 timestamp = f'<span style="color: #777;">[{ts}]</span> '
                 if is_major_milestone:
                     self.log.append('<span style="color: #999;">============================================================</span>')
+                elif is_section_title:
+                    self.log.append("")
                 self.log.append(f'{timestamp}<span style="white-space: pre-wrap;">{text}</span>')
                 if is_major_milestone:
                     self.log.append('<span style="color: #999;">============================================================</span>')
                 elif is_section_title:
                     self.log.append(f'{timestamp}<span style="color: #999;">========================</span>')
+
+    def _append_nanotel_stat_table(self, title, values):
+        """Render one NanoTel distribution as a compact table in the GUI log."""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        headers = ("Min.", "1st Qu.", "Median", "Mean", "3rd Qu.", "Max.")
+        header_html = "".join(
+            f'<th style="padding: 3px 7px; text-align: right; color: #555; '
+            f'background: #f1f3f5; border: 1px solid #d7dce1;">{header}</th>'
+            for header in headers
+        )
+        value_html = "".join(
+            f'<td style="padding: 3px 7px; text-align: right; '
+            f'border: 1px solid #d7dce1;">{escape(value)}</td>'
+            for value in values
+        )
+        self.log.append(
+            f'<span style="color: #777;">[{timestamp}]</span> <b>{escape(title)}</b>'
+        )
+        self.log.append(
+            '<table style="margin: 2px 0 5px 12px; border-collapse: collapse;">'
+            f'<tr>{header_html}</tr><tr>{value_html}</tr></table>'
+        )
 
     def _set_workflow_running(self, running):
         """
@@ -405,7 +459,7 @@ class AppWindow(
             None
         """
         self._set_workflow_running(False)
-        if message:
+        if message and not success:
             self._append_log(message)
 
     def _cleanup_worker(self):

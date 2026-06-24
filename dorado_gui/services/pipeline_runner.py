@@ -1,4 +1,5 @@
 import sys
+import time
 from pathlib import Path
 
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -68,6 +69,7 @@ def run_pipeline(
     # Orchestrate the pipeline run based on user-selected workflow steps.
     # Validates input paths, sets up the workflow context, applies overrides,
     # and routes execution to the appropriate sub-workflow.
+    run_started_at = time.monotonic()
     def log(msg: str):
         # Relay log messages to the optional callback.
         if log_cb:
@@ -171,8 +173,12 @@ def run_pipeline(
         return (1, "No workflow selected")
 
     check_cancelled()
-    log("\n" + "=" * 60)
     if res:
+        elapsed_seconds = time.monotonic() - run_started_at
+        log("PIPELINE COMPLETED SUCCESSFULLY")
+        log(f"Total run time: {elapsed_seconds:.1f}s")
+        log(f"Results: {context.path_manager.get_results_dir_path()}")
+        return (0, "Workflow completed successfully")
         log("✅ PIPELINE COMPLETED SUCCESSFULLY")
         return (0, "Workflow completed successfully")
     else:
