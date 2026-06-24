@@ -293,15 +293,7 @@ class RAnalyzer(ProcessorBase):
 
         for bam in bam_files[:check_count]:
             try:
-                # Use samtools to check for MM:Z: methylation tags
-                result = subprocess.run(
-                    f"samtools view {bam} | head -100 | grep -c 'MM:Z:' || echo 0",
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-                count = int(result.stdout.strip())
+                count = self._count_methylation_tags(bam)
 
                 if count > 0:
                     has_methylation = True
@@ -322,6 +314,26 @@ class RAnalyzer(ProcessorBase):
 
         self.context.logger.info("✓ Methylation data detected in BAM files")
         return True
+
+    @staticmethod
+    def _count_methylation_tags(bam: Path, limit: int = 100) -> int:
+        """Count reads with MM methylation tags using pysam when available."""
+        try:
+            import pysam
+            with pysam.AlignmentFile(str(bam), "rb", check_sq=False) as alignment:
+                return sum(
+                    1 for _, read in zip(range(limit), alignment.fetch(until_eof=True))
+                    if read.has_tag("MM") or read.has_tag("Mm")
+                )
+        except ImportError:
+            result = subprocess.run(
+                f"samtools view {bam} | head -100 | grep -c 'MM:Z:' || echo 0",
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return int(result.stdout.strip())
 
     def _collect_statistics(self) -> Dict:
         """

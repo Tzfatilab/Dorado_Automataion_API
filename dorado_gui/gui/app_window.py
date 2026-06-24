@@ -172,7 +172,16 @@ class AppWindow(
         for line in message.split("\n"):
             # Keep execution logs text-first even when a tool emits status emojis.
             line = line.translate(str.maketrans("", "", "✅❌✓✗▶✕•↳"))
+            line = re.sub(r"^\s+(?=All .+ prerequisites validated$)", "", line)
             r_detail = line.strip()
+            if r_detail in {"WORKFLOW COMPLETED SUCCESSFULLY", "=== WORKFLOW SUMMARY ==="}:
+                self._hide_workflow_summary = True
+                continue
+            if getattr(self, "_hide_workflow_summary", False):
+                if "PIPELINE COMPLETED SUCCESSFULLY" in r_detail or "PIPELINE FAILED" in r_detail:
+                    self._hide_workflow_summary = False
+                else:
+                    continue
             if r_detail == "Log Path:":
                 self._hide_r_environment_details = True
                 continue
@@ -209,7 +218,19 @@ class AppWindow(
                     or "pipeline completed" in line.lower()
                     or "pipeline failed" in line.lower()
                 )
-                text = escape(line)
+                lower_line = line.lower()
+                is_failure = (
+                    " failed" in lower_line
+                    or line.startswith("Required tool not found:")
+                    or line.startswith("Missing tools:")
+                    or " requires samtools or" in lower_line
+                )
+                is_success = (
+                    " completed" in lower_line
+                    or " completed successfully" in lower_line
+                ) and not is_failure
+                status = "✗ " if is_failure else "✓ " if is_success else ""
+                text = escape(status + line)
                 if is_key_update:
                     text = f"<b>{text}</b>"
                 timestamp = f'<span style="color: #777;">[{ts}]</span> '

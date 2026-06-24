@@ -28,6 +28,14 @@ class CallbackHandler(logging.Handler):
     _R_STARTUP_NOISE = re.compile(
         r"^(?:\d+: )?package '.+' was built under R version \d+(?:\.\d+)+$"
     )
+    _WORKFLOW_NOISE = re.compile(
+        r"^(?:Validating .+ inputs|All required tools available:|All .+ prerequisites validated|"
+        r"Basecall command:|Demux command:|Starting demultiplexing for:|"
+        r"Found output BAM:|Basecalling output:|Organizing demuxed files|"
+        r"Moved |Organized \d+ directories|Registered \d+ barcodes|"
+        r"No BAM files in |Converting BAMs for |Starting R analysis pipeline|"
+        r"Found NanoTel summaries for ).*"
+    )
 
 
     def __init__(self, callback: Callable[[str], None]):
@@ -53,6 +61,7 @@ class CallbackHandler(logging.Handler):
         return (
             message in {"Warning message:", "Warning messages:"}
             or bool(cls._R_STARTUP_NOISE.match(message))
+            or bool(cls._WORKFLOW_NOISE.match(message))
             or message.startswith("[conflicted] Will prefer ")
         )
 

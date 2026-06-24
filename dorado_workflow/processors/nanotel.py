@@ -272,16 +272,15 @@ class NanoTelProcessor(ProcessorBase):
             return None
 
         if self._pending_result_file:
-            label = self._pending_result_file
             self._pending_result_file = None
-            return f"Created {label}: {Path(text).name}"
+            return line
 
         if text == "NanoTel summary CSV saved to:":
-            self._pending_result_file = "summary file"
-            return None
+            self._pending_result_file = True
+            return line
         if text == "NanoTel read IDs saved to:":
-            self._pending_result_file = "read-ID file"
-            return None
+            self._pending_result_file = True
+            return line
         if text.startswith("Adding barcode prefix to generated NanoTel files under:"):
             return "Saving NanoTel results..."
         if (

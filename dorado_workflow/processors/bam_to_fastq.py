@@ -29,6 +29,7 @@ class BamToFastqProcessor(ProcessorBase):
     def __init__(self, context: WorkflowContext):
         super().__init__(context)
         self.output_dir = self.context.path_manager.get_fastq_dir_path()
+        self.converter = None
 
     def validate_inputs(self, demuxed_dir: str) -> bool:
         self.context.logger.info("Validating BAM to FASTQ conversion inputs...")
@@ -46,9 +47,21 @@ class BamToFastqProcessor(ProcessorBase):
 
         self.context.logger.info(f"Found {len(bam_files)} BAM files")
 
-        # Check samtools is available
-        if not self.context.validate_tools(['samtools']):
-            return False
+        if self.context.command_executor.check_tool_available('samtools'):
+            self.converter = 'samtools'
+        else:
+            try:
+                import pysam  # noqa: F401
+                self.converter = 'pysam'
+                self.context.logger.info(
+                    "samtools is unavailable; using the Python BAM reader instead."
+                )
+            except ImportError:
+                self.context.logger.error(
+                    "BAM conversion requires samtools or the Python package pysam. "
+                    "Install pysam with: pip install pysam"
+                )
+                return False
 
         self.context.logger.info("✓ All BAM to FASTQ prerequisites validated")
         return True
@@ -132,10 +145,16 @@ class BamToFastqProcessor(ProcessorBase):
     def _convert_parallel(self, tasks: list, max_workers: int = 4) -> Dict[str, bool]:
         results = {}
 
+        if not tasks:
+            return results
+
         def convert_single(task):
-            command = f"samtools fastq {task['bam_file']} > {task['output_fastq']}"
             try:
-                self.context.command_executor.execute(command)
+                if self.converter == 'samtools':
+                    command = f"samtools fastq {task['bam_file']} > {task['output_fastq']}"
+                    self.context.command_executor.execute(command)
+                else:
+                    self._convert_with_pysam(task['bam_file'], task['output_fastq'])
                 self.context.logger.info(
                     f"✓ {task['barcode']}: {task['bam_file'].name} → {task['output_fastq'].name}"
                 )
@@ -153,6 +172,22 @@ class BamToFastqProcessor(ProcessorBase):
                 results[barcode] = success
 
         return results
+
+    @staticmethod
+    def _convert_with_pysam(bam_file: Path, output_fastq: Path) -> None:
+        """Write primary BAM reads as FASTQ without requiring a samtools executable."""
+        import pysam
+
+        with pysam.AlignmentFile(str(bam_file), "rb", check_sq=False) as bam, \
+             output_fastq.open("w", encoding="utf-8", newline="\n") as fastq:
+            for read in bam.fetch(until_eof=True):
+                if read.is_secondary or read.is_supplementary:
+                    continue
+                sequence = read.query_sequence
+                if not sequence:
+                    continue
+                qualities = read.qual or "I" * len(sequence)
+                fastq.write(f"@{read.query_name}\n{sequence}\n+\n{qualities}\n")
 
     def get_output_paths(self) -> Dict[str, Path]:
         return {'fastq_dir': self.output_dir}
