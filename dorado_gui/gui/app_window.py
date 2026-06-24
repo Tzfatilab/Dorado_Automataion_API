@@ -182,6 +182,7 @@ class AppWindow(
                 continue
             if r_detail == "Summary statistics of the sample reads length:":
                 self._nanotel_stat_title = "Sample read length"
+                self._nanotel_stat_tables = {}
                 continue
             if r_detail == "Summary statistics for the Telomeric reads:":
                 continue
@@ -200,7 +201,12 @@ class AppWindow(
                 values = r_detail.split()
                 self._nanotel_stat_values_pending = False
                 if len(values) == 6:
-                    self._append_nanotel_stat_table(self._nanotel_stat_title, values)
+                    tables = getattr(self, "_nanotel_stat_tables", {})
+                    tables[self._nanotel_stat_title] = values
+                    self._nanotel_stat_tables = tables
+                    if self._nanotel_stat_title == "Telomere length (1 mismatch)":
+                        self._append_nanotel_stats_table(tables)
+                        self._nanotel_stat_tables = {}
                     self._nanotel_stat_title = None
                     continue
             if r_detail.startswith("Work started at:"):
@@ -284,26 +290,44 @@ class AppWindow(
                 elif is_section_title:
                     self.log.append(f'{timestamp}<span style="color: #999;">========================</span>')
 
-    def _append_nanotel_stat_table(self, title, values):
-        """Render one NanoTel distribution as a compact table in the GUI log."""
+    def _append_nanotel_stats_table(self, tables):
+        """Render NanoTel read and telomere distributions in one compact table."""
         timestamp = datetime.now().strftime("%H:%M:%S")
         headers = ("Min.", "1st Qu.", "Median", "Mean", "3rd Qu.", "Max.")
+        table_order = (
+            "Sample read length",
+            "Telomeric read length",
+            "Telomere length",
+            "Telomere length (1 mismatch)",
+        )
         header_html = "".join(
             f'<th style="padding: 3px 7px; text-align: right; color: #555; '
             f'background: #f1f3f5; border: 1px solid #d7dce1;">{header}</th>'
             for header in headers
         )
-        value_html = "".join(
-            f'<td style="padding: 3px 7px; text-align: right; '
-            f'border: 1px solid #d7dce1;">{escape(value)}</td>'
-            for value in values
+        rows_html = ""
+        for title in table_order:
+            values = tables.get(title)
+            if not values:
+                continue
+            value_html = "".join(
+                f'<td style="padding: 3px 7px; text-align: right; '
+                f'border: 1px solid #d7dce1;">{escape(value)}</td>'
+                for value in values
+            )
+            rows_html += (
+                '<tr>'
+                f'<td style="padding: 3px 7px; border: 1px solid #d7dce1; '
+                f'font-weight: 600;">{escape(title)}</td>{value_html}</tr>'
+            )
+        self.log.append(
+            f'<span style="color: #777;">[{timestamp}]</span> <b>NanoTel summary statistics</b>'
         )
         self.log.append(
-            f'<span style="color: #777;">[{timestamp}]</span> <b>{escape(title)}</b>'
-        )
-        self.log.append(
-            '<table style="margin: 2px 0 5px 12px; border-collapse: collapse;">'
-            f'<tr>{header_html}</tr><tr>{value_html}</tr></table>'
+            '<table style="margin: 2px 0 5px 36px; border-collapse: collapse;">'
+            '<tr><th style="padding: 3px 7px; text-align: left; color: #555; '
+            'background: #f1f3f5; border: 1px solid #d7dce1;">Statistic</th>'
+            f'{header_html}</tr>{rows_html}</table>'
         )
 
     def _set_workflow_running(self, running):
