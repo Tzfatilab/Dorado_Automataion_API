@@ -180,6 +180,8 @@ class AppWindow(
             if getattr(self, "_hide_next_nanotel_input_path", False):
                 self._hide_next_nanotel_input_path = False
                 continue
+            if r_detail.startswith("Resolved barcode file prefix:"):
+                self._nanotel_current_barcode = r_detail.split(":", 1)[1].strip()
             if r_detail == "Summary statistics of the sample reads length:":
                 self._nanotel_stat_title = "Sample read length"
                 self._nanotel_stat_tables = {}
@@ -321,8 +323,12 @@ class AppWindow(
                 f'font-weight: 600;">{escape(title)}</td>{value_html}</tr>'
             )
         self.log.append("")
+        barcode = getattr(self, "_nanotel_current_barcode", "")
+        title = "NanoTel analysis summary statistics"
+        if barcode:
+            title = f"{title} — {barcode}"
         self.log.append(
-            f'<span style="color: #777;">[{timestamp}]</span> <b>NanoTel analysis summary statistics</b>'
+            f'<span style="color: #777;">[{timestamp}]</span> <b>{escape(title)}</b>'
         )
         self.log.append("")
         self.log.append(
