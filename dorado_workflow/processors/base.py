@@ -215,7 +215,7 @@ class ProcessorBase(ABC):
             "BamToFastqProcessor": "BAM-to-FASTQ conversion",
             "NanoTelProcessor": "NanoTel analysis",
             "AlignerProcessor": "Read alignment",
-            "RAnalyzer": "Results analysis",
+            "RAnalyzer": "Post-analysis",
         }
         return names.get(self.get_name(), self.get_name().removesuffix("Processor"))
 

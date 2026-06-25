@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Dict, Optional, List
 import subprocess
 import json
+import os
+import shlex
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
 
 
@@ -73,7 +75,7 @@ class RAnalyzer(ProcessorBase):
         Returns:
             True if validation passes, False otherwise
         """
-        self.context.logger.info("Validating R analysis prerequisites...")
+        self.context.logger.info("Validating post-analysis prerequisites...")
 
         # Check if Rscript is available
         if not self.context.validate_tools(['Rscript']):
@@ -99,7 +101,7 @@ class RAnalyzer(ProcessorBase):
         if run_methylation:
             self.methylation_output_dir.mkdir(parents=True, exist_ok=True)
 
-        self.context.logger.info("✓ All R analysis prerequisites validated")
+        self.context.logger.info("✓ All post-analysis prerequisites validated")
         return True
 
     def execute(self, run_filtration: bool = True,
@@ -122,7 +124,7 @@ class RAnalyzer(ProcessorBase):
         if not self.validate_inputs(run_filtration, run_mapping, run_methylation):
             result = ProcessorResult(
                 success=False,
-                error="R analysis prerequisite validation failed"
+                error="Post-analysis prerequisite validation failed"
             )
             self.log_complete(result)
             return result
@@ -176,9 +178,9 @@ class RAnalyzer(ProcessorBase):
             if pipeline_config["run_methylation_analysis"]:
                 enabled_steps.append("methylation")
             self.context.logger.info(
-                f"R analysis steps: {', '.join(enabled_steps) or 'none'}"
+                f"Post-analysis steps: {', '.join(enabled_steps) or 'none'}"
             )
-            self.context.logger.info("Running command: Rscript main_analysis_pipeline.R")
+            self.context.logger.info("Running post-analysis pipeline")
             r_script_path = Path(__file__).parent.parent / "r_analysis" / "main_analysis_pipeline.R"
 
             if not r_script_path.exists():
@@ -188,9 +190,14 @@ class RAnalyzer(ProcessorBase):
             r_analysis_dir = r_script_path.parent
             trial_name = path_mgr.trial_name
 
-            command = f"Rscript {r_script_path} {config_path} {trial_name}"
+            command = self._format_command([
+                "Rscript",
+                str(r_script_path),
+                str(config_path),
+                str(trial_name),
+            ])
 
-            self.context.logger.info(f"Command: {command}")
+            self.context.logger.info(f"Command: {command}", gui_visible=False)
             self.context.command_executor.execute(command, cwd=r_analysis_dir)
 
             # Collect statistics
@@ -209,12 +216,12 @@ class RAnalyzer(ProcessorBase):
                 statistics=stats
             )
 
-            self.context.logger.info("R analysis pipeline completed successfully")
+            self.context.logger.info("Post-analysis pipeline completed successfully")
             self.log_complete(result)
             return result
 
         except Exception as e:
-            error_msg = f"R analysis failed: {str(e)}"
+            error_msg = f"Post-analysis failed: {str(e)}"
             self.context.logger.error(error_msg)
             result = ProcessorResult(
                 success=False,
@@ -222,6 +229,13 @@ class RAnalyzer(ProcessorBase):
             )
             self.log_complete(result)
             return result
+
+    def _format_command(self, cmd_parts: List[str]) -> str:
+        """Quote a command safely for the current platform."""
+        args = [str(part) for part in cmd_parts]
+        if os.name == "nt":
+            return subprocess.list2cmdline(args)
+        return shlex.join(args)
 
     def _validate_nanotel_summaries(self) -> bool:
         """

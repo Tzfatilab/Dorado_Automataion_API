@@ -10,6 +10,8 @@ sys.path.insert(0, str(project_root))
 from dorado_workflow.main import setup_context
 from dorado_workflow.operators.workflow_operator import WorkflowOperator
 
+APP_OUTPUT_FOLDER = "Telomere Analyzer"
+
 
 def _log_banner(log, title: str, subtitle=None) -> None:
     """Write a consistent, easy-to-scan stage banner to the GUI log."""
@@ -85,8 +87,8 @@ def run_pipeline(
 
     output_path = Path(output_dir)
 
-    # Detect whether output_dir points to the trial root, a layout group
-    # (processing/results), or an older trial-specific subfolder.
+    # Detect whether output_dir points to the selected output root, an existing
+    # Telomere Analyzer folder, or one of its processing/results subfolders.
     group_dirs = {'processing', 'results'}
     legacy_group_dirs = {'raw_data'}
     leaf_subdirs = {
@@ -106,23 +108,23 @@ def run_pipeline(
     )
     is_legacy_subdir = output_path.name in legacy_subdirs
 
-    if is_nested_subdir:
-        actual_trial = output_path.parent.parent.name
-        base_dir = str(output_path.parent.parent.parent)
-        log(f"Detected nested trial subfolder. Using parent trial: {output_path.parent.parent}")
-    elif is_trial_group or is_legacy_subdir:
-        actual_trial = output_path.parent.name
-        base_dir = str(output_path.parent.parent)
-        log(f"Detected trial subfolder. Using parent trial: {output_path.parent}")
-    else:
-        actual_trial = output_path.name
-
-        if is_trial_folder:
-            base_dir = str(output_path.parent)
-            log(f"Detected trial-specific folder. Using parent as base: {base_dir}")
+    actual_trial = APP_OUTPUT_FOLDER
+    if output_path.name == APP_OUTPUT_FOLDER:
+        base_dir = str(output_path.parent)
+    elif is_nested_subdir:
+        trial_root = output_path.parent.parent
+        if trial_root.name == APP_OUTPUT_FOLDER:
+            base_dir = str(trial_root.parent)
         else:
-            base_dir = str(output_path)
-            log(f"Using selected folder as base: {base_dir}")
+            base_dir = str(trial_root)
+    elif is_trial_group or is_legacy_subdir:
+        trial_root = output_path.parent
+        if trial_root.name == APP_OUTPUT_FOLDER:
+            base_dir = str(trial_root.parent)
+        else:
+            base_dir = str(trial_root)
+    else:
+        base_dir = str(output_path)
 
     context = setup_context(
         trial_name=actual_trial,
@@ -131,6 +133,7 @@ def run_pipeline(
         organism=organism,
         log_callback=log,
     )
+    log(f"Results will be saved under: {context.path_manager.get_results_dir_path()}")
     has_methylation = str(methylation_type or "").strip().lower() != "none"
     align_during_basecalling = chromosome_mapping
     basecalling_overrides = _build_basecalling_overrides(methylation_type)
