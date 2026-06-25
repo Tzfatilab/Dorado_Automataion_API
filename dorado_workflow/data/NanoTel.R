@@ -2647,7 +2647,7 @@ if (isTRUE(opt$analysis)) {
                  "Telomere Length (mismatch)"     = "#228B22",
                  "Running Median Telomere Length" = "#4169E1")
     ) +
-    labs(title = "Telomere Analysis",
+    labs(title = paste("Telomere Analysis -", barcode_name),
          x     = "Read (sorted by length, longest to shortest)",
          y     = "Length (bp)",
          color = NULL) +
