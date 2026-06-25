@@ -8,6 +8,8 @@ Processes FASTQ files to identify and analyze telomeric sequences.
 
 from pathlib import Path
 from typing import Dict, List, Optional
+import os
+import subprocess
 import shlex
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
 
@@ -293,6 +295,22 @@ class NanoTelProcessor(ProcessorBase):
                 self._hiding_environment_details = False
             return None
 
+        if "The input argumetns for this run" in text or "The input arguments for this run" in text:
+            return "NanoTel settings"
+        if text and set(text) <= {"#"}:
+            return None
+        if text.startswith("The patterns to search:"):
+            return text.replace("The patterns to search:", "Telomere pattern:", 1)
+        if text.startswith("The sub-sequence length"):
+            value = text.split(":", 1)[1].strip() if ":" in text else ""
+            return f"Sub-sequence length: {value}"
+        if text.startswith("The minimal density for a telomeric subseq:"):
+            return text.replace(
+                "The minimal density for a telomeric subseq:",
+                "Minimum telomere density:",
+                1,
+            )
+
         if self._pending_result_file:
             self._pending_result_file = None
             result_dir = str(Path(text).parent) if text else ""
@@ -301,10 +319,22 @@ class NanoTelProcessor(ProcessorBase):
                 return f"Barcode results saved under: {result_dir}"
             return None
 
-        if text == "NanoTel summary CSV saved to:":
+        if text.startswith("NanoTel summary CSV saved to:"):
+            result_path = text.split(":", 1)[1].strip()
+            if result_path:
+                result_dir = str(Path(result_path).parent)
+                if result_dir not in self._shown_result_dirs:
+                    self._shown_result_dirs.add(result_dir)
+                    return f"Barcode results saved under: {result_dir}"
             self._pending_result_file = True
             return None
-        if text == "NanoTel read IDs saved to:":
+        if text.startswith("NanoTel read IDs saved to:"):
+            result_path = text.split(":", 1)[1].strip()
+            if result_path:
+                result_dir = str(Path(result_path).parent)
+                if result_dir not in self._shown_result_dirs:
+                    self._shown_result_dirs.add(result_dir)
+                    return f"Barcode results saved under: {result_dir}"
             self._pending_result_file = True
             return None
         if text.startswith("Adding barcode prefix to generated NanoTel files under:"):
@@ -338,14 +368,15 @@ class NanoTelProcessor(ProcessorBase):
         min_density = nanotel_params.get('min_density', 0.5)
         tvr_patterns = nanotel_params.get('tvr_patterns', [])
 
-        # Build command parts
+        # Build command parts as individual arguments so paths with spaces
+        # (for example "Telomere Analyzer") are quoted correctly.
         cmd_parts = [
             "Rscript", "--vanilla",
             nanotel_script,
-            f"-i {task['input_dir']}",
-            f"--save_path {task['output_dir']}",
-            f"--patterns {telomere_pattern}",
-            f"--min_density {min_density}",
+            "-i", str(task['input_dir']),
+            "--save_path", str(task['output_dir']),
+            "--patterns", str(telomere_pattern),
+            "--min_density", str(min_density),
         ]
 
         if tvr_patterns:
@@ -353,10 +384,16 @@ class NanoTelProcessor(ProcessorBase):
                 tvr_patterns_arg = tvr_patterns
             else:
                 tvr_patterns_arg = " ".join(str(pattern) for pattern in tvr_patterns)
-            cmd_parts.append(f"--tvr_patterns {shlex.quote(tvr_patterns_arg)}")
+            cmd_parts.extend(["--tvr_patterns", str(tvr_patterns_arg)])
 
-        command = " ".join(cmd_parts)
-        return command
+        return self._format_command(cmd_parts)
+
+    def _format_command(self, cmd_parts: List[str]) -> str:
+        """Quote a command safely for the current platform."""
+        args = [str(part) for part in cmd_parts]
+        if os.name == "nt":
+            return subprocess.list2cmdline(args)
+        return shlex.join(args)
 
     def _collect_statistics(self, results_per_barcode: Dict[str, bool]) -> Dict[str, any]:
         """

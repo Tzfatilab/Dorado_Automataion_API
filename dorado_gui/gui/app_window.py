@@ -189,7 +189,46 @@ class AppWindow(
             if r_detail == "The input files:":
                 self._hide_next_nanotel_input_path = True
                 continue
-            if r_detail in {"NanoTel summary CSV saved to:", "NanoTel read IDs saved to:"}:
+            if (
+                "The input argumetns for this run" in r_detail
+                or "The input arguments for this run" in r_detail
+            ):
+                line = line.replace(r_detail, "NanoTel settings")
+                r_detail = "NanoTel settings"
+            if r_detail and set(r_detail) <= {"#"}:
+                continue
+            if r_detail.startswith("The patterns to search:"):
+                line = line.replace("The patterns to search:", "Telomere pattern:", 1)
+                r_detail = line.strip()
+            if r_detail.startswith("The sub-sequence length"):
+                value = r_detail.split(":", 1)[1].strip() if ":" in r_detail else ""
+                line = f"Sub-sequence length: {value}"
+                r_detail = line
+            if r_detail.startswith("The minimal density for a telomeric subseq:"):
+                line = line.replace(
+                    "The minimal density for a telomeric subseq:",
+                    "Minimum telomere density:",
+                    1,
+                )
+                r_detail = line.strip()
+            if (
+                r_detail.startswith("NanoTel summary CSV saved to:")
+                or r_detail.startswith("NanoTel read IDs saved to:")
+            ):
+                result_path = r_detail.split(":", 1)[1].strip()
+                if result_path:
+                    result_dir = str(Path(result_path).parent)
+                    shown_dirs = getattr(self, "_shown_nanotel_result_dirs", set())
+                    if result_dir not in shown_dirs:
+                        shown_dirs.add(result_dir)
+                        self._shown_nanotel_result_dirs = shown_dirs
+                        ts = datetime.now().strftime("%H:%M:%S")
+                        self._append_log_line(
+                            f'<span style="color: #777;">[{ts}]</span> '
+                            f'<span style="white-space: pre-wrap;">    '
+                            f'{escape(f"Barcode results saved under: {result_dir}")}</span>'
+                        )
+                    continue
                 self._hide_next_nanotel_result_path = True
                 continue
             if getattr(self, "_hide_next_nanotel_result_path", False):
