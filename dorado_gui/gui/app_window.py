@@ -152,6 +152,18 @@ class AppWindow(
         self.log_dialog.raise_()
         self.log_dialog.activateWindow()
 
+    def _append_log_line(self, text):
+        """Append a visible log line and remember that the last line is not blank."""
+        self.log.append(text)
+        self._last_gui_log_blank = False
+
+    def _append_log_blank(self):
+        """Append one blank line, but never stack multiple blank lines."""
+        if getattr(self, "_last_gui_log_blank", False):
+            return
+        self.log.append("")
+        self._last_gui_log_blank = True
+
     def _append_log(self, message):
         """
         Append a log message to the execution log widget.
@@ -177,11 +189,23 @@ class AppWindow(
             if r_detail == "The input files:":
                 self._hide_next_nanotel_input_path = True
                 continue
+            if r_detail in {"NanoTel summary CSV saved to:", "NanoTel read IDs saved to:"}:
+                self._hide_next_nanotel_result_path = True
+                continue
+            if getattr(self, "_hide_next_nanotel_result_path", False):
+                self._hide_next_nanotel_result_path = False
+                continue
+            if r_detail == "NanoTel analysis":
+                self._nanotel_seen_barcode_processing = False
             if getattr(self, "_hide_next_nanotel_input_path", False):
                 self._hide_next_nanotel_input_path = False
                 continue
             if r_detail.startswith("Resolved barcode file prefix:"):
                 self._nanotel_current_barcode = r_detail.split(":", 1)[1].strip()
+            if re.match(r"^Processing barcode\d+", r_detail):
+                if getattr(self, "_nanotel_seen_barcode_processing", False):
+                    self._append_log_blank()
+                self._nanotel_seen_barcode_processing = True
             if r_detail == "Summary statistics of the sample reads length:":
                 self._nanotel_stat_title = "Sample read length"
                 self._nanotel_stat_tables = {}
@@ -211,6 +235,15 @@ class AppWindow(
                         self._nanotel_stat_tables = {}
                     self._nanotel_stat_title = None
                     continue
+            if (
+                r_detail.startswith("NanoTel completed for ")
+                and " in " not in r_detail
+            ):
+                continue
+            if r_detail.endswith("R analysis completed"):
+                continue
+            if r_detail.startswith("Command completed in "):
+                continue
             if r_detail.startswith("Work started at:"):
                 continue
             if r_detail in {"WORKFLOW COMPLETED SUCCESSFULLY", "=== WORKFLOW SUMMARY ==="}:
@@ -229,9 +262,9 @@ class AppWindow(
                     self._hide_r_environment_details = False
                 continue
             if not line:
-                self.log.append("")
+                self._append_log_blank()
             elif re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} - ', line):
-                self.log.append(line)
+                self._append_log_line(line)
             else:
                 ts = datetime.now().strftime("%H:%M:%S")
                 is_stage_title = line in {
@@ -240,7 +273,7 @@ class AppWindow(
                     "BAM to FASTQ conversion",
                     "NanoTel analysis",
                     "Alignment",
-                    "R analysis",
+                    "Post-analysis",
                 }
                 is_key_update = (
                     line == "Run started"
@@ -278,23 +311,26 @@ class AppWindow(
                     or " completed successfully" in lower_line
                 ) and not is_failure
                 status = "✗ " if is_failure else "✓ " if is_success else ""
-                text = escape(status + line)
+                leading = re.match(r"^\s*", line).group(0)
+                body = line[len(leading):]
+                text = escape(f"{leading}{status}{body}")
                 if is_key_update:
                     text = f"<b>{text}</b>"
                 timestamp = f'<span style="color: #777;">[{ts}]</span> '
                 if is_major_milestone:
-                    self.log.append('<span style="color: #999;">============================================================</span>')
-                elif is_section_title:
-                    self.log.append("")
-                self.log.append(f'{timestamp}<span style="white-space: pre-wrap;">{text}</span>')
+                    self._append_log_line('<span style="color: #999;">============================================================</span>')
+                elif is_section_title and line not in {"Run started", "Setting up workflow"}:
+                    self._append_log_blank()
+                self._append_log_line(f'{timestamp}<span style="white-space: pre-wrap;">{text}</span>')
                 if is_major_milestone:
-                    self.log.append('<span style="color: #999;">============================================================</span>')
+                    self._append_log_line('<span style="color: #999;">============================================================</span>')
                 elif is_section_title:
-                    self.log.append(f'{timestamp}<span style="color: #999;">========================</span>')
+                    self._append_log_line(f'{timestamp}<span style="color: #999;">========================</span>')
 
     def _append_nanotel_stats_table(self, tables):
         """Render NanoTel read and telomere distributions in one compact table."""
         timestamp = datetime.now().strftime("%H:%M:%S")
+        content_indent = self.log.fontMetrics().horizontalAdvance(f"[{timestamp}]     ")
         headers = ("Min.", "1st Qu.", "Median", "Mean", "3rd Qu.", "Max.")
         table_order = (
             "Sample read length",
@@ -326,15 +362,20 @@ class AppWindow(
         title = "NanoTel analysis summary statistics"
         if barcode:
             title = f"{title} — {barcode}"
-        self.log.append(
-            f'<span style="color: #777;">[{timestamp}]</span> {escape(title)}'
+        if barcode:
+            title = f"NanoTel analysis summary statistics for {barcode}"
+        self._append_log_line(
+            f'<span style="color: #777;">[{timestamp}]</span> '
+            f'<span style="white-space: pre-wrap;">    {escape(title)}</span>'
         )
-        self.log.append(
-            '<table style="margin: 2px 0 5px 150px; border-collapse: collapse;">'
+        self._append_log_blank()
+        self._append_log_line(
+            f'<table style="border-collapse: collapse; margin: 2px 0 5px {content_indent}px;">'
             '<tr><th style="padding: 3px 7px; text-align: left; color: #555; '
             'background: #f1f3f5; border: 1px solid #d7dce1;">Statistic</th>'
             f'{header_html}</tr>{rows_html}</table>'
         )
+        self._append_log_blank()
 
     def _set_workflow_running(self, running):
         """

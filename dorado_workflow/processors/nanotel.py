@@ -44,6 +44,7 @@ class NanoTelProcessor(ProcessorBase):
         self.output_dir = self.context.path_manager.get_nanotel_output_dir_path()
         self._pending_result_file = None
         self._hiding_environment_details = False
+        self._shown_result_dirs = set()
 
     def validate_inputs(self, fastq_dir: str) -> bool:
         """
@@ -241,12 +242,22 @@ class NanoTelProcessor(ProcessorBase):
                     stream_output=True,
                     gui_output_transform=self._format_gui_output,
                 )
+                duration = self._last_command_duration()
 
                 # Mark as successful in barcode manager
                 self.context.barcode_manager.register_success(barcode, 'nanotel')
 
                 results[barcode] = True
                 self.context.logger.info(f"✓ NanoTel completed for {barcode}")
+
+                if duration is None:
+                    self.context.logger.info(
+                        f"    NanoTel completed for {barcode}"
+                    )
+                else:
+                    self.context.logger.info(
+                        f"    NanoTel completed for {barcode} in {duration:.1f}s"
+                    )
 
             except Exception as e:
                 # Mark as failed in barcode manager
@@ -258,6 +269,14 @@ class NanoTelProcessor(ProcessorBase):
                 self.context.logger.error(f"✗ NanoTel failed for {barcode}: {str(e)}")
 
         return results
+
+    def _last_command_duration(self) -> Optional[float]:
+        """Return the most recent command duration, if the logger recorded one."""
+        commands = getattr(self.context.logger, "executed_commands", [])
+        if not commands:
+            return None
+        duration = commands[-1].get("duration_seconds")
+        return duration if isinstance(duration, (int, float)) else None
 
     def _format_gui_output(self, line: str) -> Optional[str]:
         """Turn verbose NanoTel result-writing diagnostics into concise GUI updates."""
@@ -276,14 +295,18 @@ class NanoTelProcessor(ProcessorBase):
 
         if self._pending_result_file:
             self._pending_result_file = None
-            return line
+            result_dir = str(Path(text).parent) if text else ""
+            if result_dir and result_dir not in self._shown_result_dirs:
+                self._shown_result_dirs.add(result_dir)
+                return f"Barcode results saved under: {result_dir}"
+            return None
 
         if text == "NanoTel summary CSV saved to:":
             self._pending_result_file = True
-            return line
+            return None
         if text == "NanoTel read IDs saved to:":
             self._pending_result_file = True
-            return line
+            return None
         if text.startswith("Adding barcode prefix to generated NanoTel files under:"):
             return "Saving NanoTel results..."
         if (

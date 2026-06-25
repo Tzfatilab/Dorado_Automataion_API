@@ -122,9 +122,9 @@ class AlignmentProcessor(ProcessorBase):
 
             # Execute alignment
             self.context.logger.info(
-                f"Running command: dorado aligner ({input_type.upper()} input)"
+                f"Running Dorado alignment ({input_type.upper()} input)"
             )
-            self.context.logger.info(f"Command: {command}")
+            self.context.logger.info(f"Command: {command}", gui_visible=False)
             self.context.command_executor.execute(command)
 
             # Collect statistics
@@ -194,7 +194,7 @@ class AlignmentProcessor(ProcessorBase):
         # Join command parts
         command = self._format_command(cmd_parts)
 
-        self.context.logger.info(f"Alignment command: {command}")
+        self.context.logger.info(f"Alignment command: {command}", gui_visible=False)
         return command
 
     def _format_command(self, cmd_parts: list) -> str:

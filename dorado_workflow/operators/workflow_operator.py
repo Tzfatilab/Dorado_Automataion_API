@@ -73,7 +73,7 @@ class WorkflowOperator:
             'Aligns reads to the reference genome',
             'aligned reads and mapping results',
         ),
-        'R analysis': (
+        'Post-analysis': (
             'Builds the requested analysis results',
             'tables and summary reports',
         ),
@@ -196,8 +196,8 @@ class WorkflowOperator:
                               self.aligner, str(demuxed_dir), organism) is None:
                 return False
 
-        # R analysis (filtration, plus mapping/methylation when enabled)
-        if self._run_step('r_analyzer', 'R analysis', self.r_analyzer,
+        # Post-analysis (filtration, plus mapping/methylation when enabled)
+        if self._run_step('r_analyzer', 'Post-analysis', self.r_analyzer,
                           run_filtration=True,
                           run_mapping=methylation_enabled,
                           run_methylation=methylation_enabled) is None:
@@ -256,13 +256,13 @@ class WorkflowOperator:
                               step=f"Step 2/{total_steps}") is None:
                 return False
 
-        # R analysis (filtration only - no methylation in FASTQ from MinKNOW)
+        # Post-analysis (filtration only - no methylation in FASTQ from MinKNOW)
         self.context.logger.info(
             "Note: FASTQ workflow runs NanoTel filtration only.\n"
             "For mapping/methylation analysis, use POD5 workflow with basecalling."
         )
         final_step = total_steps if align else 2
-        if self._run_step('r_analyzer', 'R analysis', self.r_analyzer,
+        if self._run_step('r_analyzer', 'Post-analysis', self.r_analyzer,
                           run_filtration=True,
                           run_mapping=do_mapping,
                           run_methylation=has_methylation and do_mapping,
@@ -319,13 +319,14 @@ class WorkflowOperator:
         Returns:
             True if succeeds, False otherwise
         """
-        self.context.logger.section_header("R ANALYSIS ONLY")
-        result = self._run_step('r_analyzer', 'R analysis', self.r_analyzer,
+        self.context.logger.section_header("POST-ANALYSIS ONLY")
+        result = self._run_step('r_analyzer', 'Post-analysis', self.r_analyzer,
                                 run_filtration=run_filtration,
                                 run_mapping=run_mapping,
                                 run_methylation=run_methylation)
         if result is not None:
             self.context.logger.info("✓ R analysis completed")
+            self.context.logger.info("Post-analysis completed")
             if run_filtration:
                 self.context.logger.info(f"Filtered summaries: {result.get_output('nanotel_filtered')}")
             if run_mapping:
