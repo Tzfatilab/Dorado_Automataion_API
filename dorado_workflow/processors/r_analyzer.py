@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Dict, Optional, List
 import subprocess
 import json
+import os
+import shlex
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
 
 
@@ -188,7 +190,12 @@ class RAnalyzer(ProcessorBase):
             r_analysis_dir = r_script_path.parent
             trial_name = path_mgr.trial_name
 
-            command = f"Rscript {r_script_path} {config_path} {trial_name}"
+            command = self._format_command([
+                "Rscript",
+                str(r_script_path),
+                str(config_path),
+                str(trial_name),
+            ])
 
             self.context.logger.info(f"Command: {command}", gui_visible=False)
             self.context.command_executor.execute(command, cwd=r_analysis_dir)
@@ -222,6 +229,13 @@ class RAnalyzer(ProcessorBase):
             )
             self.log_complete(result)
             return result
+
+    def _format_command(self, cmd_parts: List[str]) -> str:
+        """Quote a command safely for the current platform."""
+        args = [str(part) for part in cmd_parts]
+        if os.name == "nt":
+            return subprocess.list2cmdline(args)
+        return shlex.join(args)
 
     def _validate_nanotel_summaries(self) -> bool:
         """

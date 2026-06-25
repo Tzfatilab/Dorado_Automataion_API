@@ -281,6 +281,8 @@ class AppWindow(
                 continue
             if r_detail.endswith("R analysis completed"):
                 continue
+            if r_detail.startswith("Post-analysis failed: Post-analysis failed:"):
+                continue
             if r_detail.startswith("Command completed in "):
                 continue
             if r_detail.startswith("Work started at:"):
