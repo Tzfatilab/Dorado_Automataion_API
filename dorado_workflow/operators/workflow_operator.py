@@ -190,16 +190,20 @@ class WorkflowOperator:
                           self.nanotel, str(fastq_dir)) is None:
             return False
 
-        # Alignment (skip only if already aligned during basecalling and no methylation needed)
-        if not align_during_basecalling or methylation_enabled:
+        # R mapping expects the aligned/ directory and Dorado sequencing summary.
+        # Even if basecalling used a reference, run the alignment step to produce
+        # the normalized inputs consumed by the post-analysis scripts.
+        if align_during_basecalling or methylation_enabled:
             if self._run_step('aligner', 'Alignment',
                               self.aligner, str(demuxed_dir), organism) is None:
                 return False
 
-        # Post-analysis (filtration, plus mapping/methylation when enabled)
+        run_mapping = align_during_basecalling or methylation_enabled
+
+        # Post-analysis (filtration, plus mapping when requested and methylation when enabled)
         if self._run_step('r_analyzer', 'Post-analysis', self.r_analyzer,
                           run_filtration=True,
-                          run_mapping=methylation_enabled,
+                          run_mapping=run_mapping,
                           run_methylation=methylation_enabled) is None:
             return False
 

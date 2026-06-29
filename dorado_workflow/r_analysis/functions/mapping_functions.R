@@ -38,6 +38,7 @@ process_barcode_mapping <- function(alignment_summary_path,
                                     tail_min_end = 35000) {
 
   log_message(paste("Processing mapping for barcode:", barcode_name))
+  log_message("Mapping filter mode: MAPQ + Head/Tail position; strand is diagnostic only")
 
   # Validate input files
   validate_file_exists(alignment_summary_path, "Alignment summary")
@@ -72,6 +73,24 @@ process_barcode_mapping <- function(alignment_summary_path,
  if (all(is.na(minimap$alignment_mapq))) {
    stop("MAPQ column '", mapq_col, "' could not be converted to numeric values")
  }
+ required_cols <- c(
+   "read_id",
+   "alignment_direction",
+   "alignment_genome",
+   "alignment_genome_start",
+   "alignment_genome_end"
+ )
+ missing_cols <- required_cols[!(required_cols %in% names(minimap))]
+ if (length(missing_cols) > 0) {
+   stop(
+     "Alignment summary is missing required columns: ",
+     paste(missing_cols, collapse = ", "),
+     ". Found columns: ",
+     paste(names(minimap), collapse = ", ")
+   )
+ }
+ minimap$alignment_genome_start <- suppressWarnings(as.numeric(minimap$alignment_genome_start))
+ minimap$alignment_genome_end <- suppressWarnings(as.numeric(minimap$alignment_genome_end))
 
   # Read filtered NanoTel data
   nanotel_data <- safe_read_csv(filtered_nanotel_path, col_types = cols())
@@ -83,6 +102,11 @@ process_barcode_mapping <- function(alignment_summary_path,
   nanotel_data <- nanotel_data[, !(names(nanotel_data) %in% unwanted_nanotel_cols)]
 
   log_message(paste("Loaded NanoTel data:", nrow(nanotel_data), "reads"))
+  diagnostic_counts <- data.frame(
+    step = c("alignment_summary_rows", "nanotel_filtered_rows"),
+    count = c(nrow(minimap), nrow(nanotel_data)),
+    stringsAsFactors = FALSE
+  )
 
   # FIXED: Create read_id_clean columns more safely
   # Clean read IDs in both datasets first
@@ -96,30 +120,62 @@ process_barcode_mapping <- function(alignment_summary_path,
     filter(read_id_clean %in% nanotel_data$read_id_clean)
 
   log_message(paste("After NanoTel matching:", nrow(minimap_filtered), "alignments"))
+  diagnostic_counts <- rbind(
+    diagnostic_counts,
+    data.frame(step = "after_nanotel_read_id_match", count = nrow(minimap_filtered))
+  )
 
   # Remove unmapped reads (those with "*" in alignment_direction)
   minimap_filtered <- minimap_filtered %>%
-    filter(!grepl("\\*", alignment_direction))
+    filter(!is.na(alignment_direction), !grepl("\\*", alignment_direction))
 
   log_message(paste("After removing unmapped:", nrow(minimap_filtered), "alignments"))
+  diagnostic_counts <- rbind(
+    diagnostic_counts,
+    data.frame(step = "after_removing_unmapped", count = nrow(minimap_filtered))
+  )
 
-  # Apply quality and position filters
-  minimap_filtered <- minimap_filtered %>%
+  mapq_filtered <- minimap_filtered %>%
+    filter(alignment_mapq >= min_mapq)
+
+  diagnostic_counts <- rbind(
+    diagnostic_counts,
+    data.frame(step = "after_mapq_filtering", count = nrow(mapq_filtered))
+  )
+
+  position_filtered <- mapq_filtered %>%
     filter(
-      # Direction and genome position rules
-      (grepl("Tail", alignment_genome) & alignment_direction == "-") |
-        (grepl("Head", alignment_genome) & alignment_direction == "+"),
-      # Quality filter
-      alignment_mapq >= min_mapq,
-      # Position-specific filters
-      (grepl("Tail", alignment_genome) & alignment_genome_end >= tail_min_end) |
-        (grepl("Head", alignment_genome) & alignment_genome_start <= head_max_start)
+      (grepl("Tail", alignment_genome, ignore.case = TRUE) & alignment_genome_end >= tail_min_end) |
+        (grepl("Head", alignment_genome, ignore.case = TRUE) & alignment_genome_start <= head_max_start)
     )
 
-  log_message(paste("After quality/position filtering:", nrow(minimap_filtered), "alignments"))
+  diagnostic_counts <- rbind(
+    diagnostic_counts,
+    data.frame(step = "after_position_filtering", count = nrow(position_filtered))
+  )
+
+  strand_position_filtered <- mapq_filtered %>%
+    filter(
+      (grepl("Tail", alignment_genome, ignore.case = TRUE) & alignment_direction == "-") |
+        (grepl("Head", alignment_genome, ignore.case = TRUE) & alignment_direction == "+"),
+      (grepl("Tail", alignment_genome, ignore.case = TRUE) & alignment_genome_end >= tail_min_end) |
+        (grepl("Head", alignment_genome, ignore.case = TRUE) & alignment_genome_start <= head_max_start)
+    )
+
+  log_message(paste("After MAPQ/position filtering:", nrow(position_filtered), "alignments"))
+  diagnostic_counts <- rbind(
+    diagnostic_counts,
+    data.frame(step = "after_strand_position_filtering", count = nrow(strand_position_filtered))
+  )
+  minimap_filtered <- position_filtered
+  diagnostic_file <- file.path(output_dir, paste0("mapping_diagnostics_", barcode_name, ".csv"))
+  safe_write_csv(diagnostic_counts, diagnostic_file)
 
   if (nrow(minimap_filtered) == 0) {
-    warning("No alignments passed filters for barcode: ", barcode_name)
+    warning(
+      "No alignments passed filters for barcode: ", barcode_name,
+      ". Diagnostic counts saved to: ", diagnostic_file
+    )
     return(list(mapped_data = data.frame(), filtered_ids = character()))
   }
 

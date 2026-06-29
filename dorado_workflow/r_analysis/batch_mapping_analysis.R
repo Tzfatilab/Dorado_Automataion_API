@@ -218,6 +218,8 @@ main_mapping_analysis <- function(config_file) {
       result <- process_barcode_multiple_bams(barcode_configs_list)
       if (!is.null(result)) {
         results[[barcode_name]] <- result
+      } else {
+        failed_barcodes <- c(failed_barcodes, barcode_name)
       }
     }, error = function(e) {
       log_message(paste("Error processing", barcode_name, ":", e$message), "ERROR")
@@ -230,6 +232,13 @@ main_mapping_analysis <- function(config_file) {
 
   if (length(failed_barcodes) > 0) {
     log_message(paste("Failed barcodes:", paste(failed_barcodes, collapse = ", ")), "WARNING")
+  }
+
+  if (length(results) == 0) {
+    stop(
+      "Mapping analysis produced no mapped barcodes. ",
+      "All NanoTel-filtered reads were unmapped or failed mapping filters."
+    )
   }
 
   # Generate summary report

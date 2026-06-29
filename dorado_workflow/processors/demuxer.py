@@ -9,6 +9,9 @@ Separates reads by barcode and organizes output into barcode directories.
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
+import os
+import shlex
+import subprocess
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
 
 
@@ -102,7 +105,7 @@ class DemuxProcessor(ProcessorBase):
 
             # Execute demultiplexing
             self.context.logger.info(f"Starting demultiplexing for: {basecalled_bam}")
-            self.context.command_executor.execute(command)
+            self.context.command_executor.execute(command, capture_output=True)
 
             # Organize files into barcode subdirectories
             self.context.logger.info("Organizing demuxed files into barcode directories...")
@@ -169,12 +172,12 @@ class DemuxProcessor(ProcessorBase):
         # Build command parts
         cmd_parts = [
             "dorado", "demux",
-            f"--output-dir {self.output_dir}",
+            "--output-dir", self.output_dir,
         ]
 
         # Add kit name if specified
         if kit_name:
-            cmd_parts.append(f"--kit-name {kit_name}")
+            cmd_parts.extend(["--kit-name", kit_name])
 
         # Add optional flags
         if no_trim:
@@ -187,13 +190,19 @@ class DemuxProcessor(ProcessorBase):
             cmd_parts.append("--emit-summary")
 
         # Add input BAM
-        cmd_parts.append(f'"{basecalled_bam}"')
+        cmd_parts.append(basecalled_bam)
 
         # Join command parts
-        command = " ".join(cmd_parts)
+        command = self._format_command(cmd_parts)
 
         self.context.logger.info(f"Demux command: {command}")
         return command
+
+    def _format_command(self, cmd_parts: list) -> str:
+        args = [str(part) for part in cmd_parts]
+        if os.name == "nt":
+            return subprocess.list2cmdline(args)
+        return shlex.join(args)
 
     def _organize_demuxed_files(self) -> Dict[str, Path]:
         """

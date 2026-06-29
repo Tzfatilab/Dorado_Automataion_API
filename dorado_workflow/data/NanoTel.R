@@ -2017,6 +2017,11 @@ create_dirs <- function(output_dir) {
   if (!dir.exists(reads_dir)) {
     dir.create(reads_dir)
   }
+
+  log_dir <- paste(output_dir, "log", sep = "/")
+  if (!dir.exists(log_dir)) {
+    dir.create(log_dir)
+  }
 }
 
 get_barcode_file_prefix <- function(input_path) {
@@ -2488,7 +2493,8 @@ lockBinding("global_min_density", globalenv())
 # log function blueprint : summary(sample), %telomeric_reads , summary(telo_read) ...
 # I need to create a log funcion : with ifelse ( if telomeric patterns were found or not -> no one passed the filteration or df isempty ....)
 # test log file
-tmp <- file.path(opt$save_path, "run.log")
+create_dirs(output_dir = opt$save_path)
+tmp <- file.path(opt$save_path, "log", "run.log")
 
 # Open log
 lf <- log_open(tmp) 
@@ -2528,8 +2534,6 @@ if(dir.exists(opt$i) ){
 } else {
   log_print(opt$i, hide_notes = TRUE, console = FALSE)
 }
-
-create_dirs(output_dir = opt$save_path)
 
 # Use one barcode prefix for all files produced by this NanoTel run. It must be
 # initialized before run_future_worker_chuncks because per-read plots and FASTA

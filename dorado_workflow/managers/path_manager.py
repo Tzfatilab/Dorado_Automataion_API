@@ -9,8 +9,10 @@ Works with ConfigManager to use configured directory naming conventions.
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
+import os
 import re
 import shutil
+import stat
 
 class PathManager:
     """
@@ -146,6 +148,86 @@ class PathManager:
         self._ensure_directory(self.get_r_mapping_output_dir())
         self._ensure_directory(self.get_r_methylation_output_dir())
 
+    def reset_generated_outputs(self, include_results: bool = True) -> None:
+        """
+        Clear generated workflow outputs for a fresh run.
+
+        The GUI intentionally uses a stable "Telomere Analyzer" trial folder.
+        Without clearing these folders, stale barcodes/BAMs/FASTQs from a
+        previous run can be picked up by later workflow stages.
+        """
+        targets = [
+            self.get_rebasecalled_dir_path(),
+            self.get_demuxed_dir_path(),
+            self.get_fastq_dir_path(),
+            self.get_aligned_dir_path(),
+            self.get_processing_dir_path() / "alignment_input",
+        ]
+
+        if include_results:
+            targets.extend([
+                self.get_nanotel_output_dir_path(),
+                self.get_r_mapping_output_dir_path(),
+                self.get_r_methylation_output_dir_path(),
+                self.get_reports_dir_path(),
+            ])
+
+        for target in targets:
+            self._reset_generated_path(target)
+
+    def _reset_generated_path(self, target: Path) -> None:
+        """Remove and recreate a generated path, guarded to stay inside trial_dir."""
+        trial_root = self.trial_dir.resolve(strict=False)
+        resolved = target.resolve(strict=False)
+
+        if resolved == trial_root or trial_root not in resolved.parents:
+            raise ValueError(f"Refusing to clear path outside trial directory: {target}")
+
+        if target.exists():
+            if target.is_dir():
+                self._clear_generated_dir(target)
+            else:
+                self._make_writable(target)
+                target.unlink()
+
+        self._created_dirs.discard(target)
+        self._ensure_directory(target)
+
+    def _clear_generated_dir(self, target: Path) -> None:
+        """Clear a generated directory while tolerating Windows/OneDrive locks."""
+        try:
+            shutil.rmtree(target, onerror=self._handle_remove_readonly)
+            return
+        except PermissionError:
+            pass
+
+        # If Windows refuses to remove the directory itself, remove its children
+        # and leave the empty directory in place for the new run.
+        if not target.exists():
+            return
+
+        for child in target.iterdir():
+            try:
+                if child.is_dir():
+                    shutil.rmtree(child, onerror=self._handle_remove_readonly)
+                else:
+                    self._make_writable(child)
+                    child.unlink()
+            except PermissionError:
+                continue
+
+    def _handle_remove_readonly(self, func, path, exc_info) -> None:
+        self._make_writable(Path(path))
+        try:
+            func(path)
+        except PermissionError:
+            pass
+
+    @staticmethod
+    def _make_writable(path: Path) -> None:
+        if path.exists():
+            os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+
     # ==================== Main Directory Getters ====================
 
     def _raw_data_path(self) -> Path:
@@ -206,7 +288,10 @@ class PathManager:
 
     def get_r_analysis_dir_path(self) -> Path:
         """Get the R analysis base directory path without creating it."""
-        return self._results_path()
+        return self.trial_dir / self.dir_structure.get(
+            'r_analysis',
+            self.dir_structure.get('results', 'results')
+        )
 
     def get_r_nanotel_output_dir_path(self) -> Path:
         """Get the R NanoTel analysis output directory path without creating it."""
@@ -415,9 +500,17 @@ class PathManager:
         Get path to alignment summary file.
 
         Returns:
-            Path to sequencing_summary.txt
+            Path to Dorado alignment summary.
         """
-        return self.get_aligned_dir_path() / "sequencing_summary.txt"
+        aligned_dir = self.get_aligned_dir_path()
+        candidates = [
+            aligned_dir / "sequencing_summary.txt",
+            aligned_dir / "alignment_summary.txt",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[0]
 
     # ==================== R Config Generation ====================
 

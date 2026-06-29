@@ -92,8 +92,9 @@ class CommandExecutor:
 
                 returncode = process.wait()
                 if check and returncode:
+                    output = "\n".join(output_lines)
                     raise subprocess.CalledProcessError(
-                        returncode, command, output="\n".join(output_lines)
+                        returncode, command, output=output, stdout=output
                     )
                 result = subprocess.CompletedProcess(command, returncode)
             elif capture_output:
@@ -130,7 +131,7 @@ class CommandExecutor:
                 str(e),
                 returncode=e.returncode,
                 # Streamed output has already reached the GUI line-by-line.
-                stdout=e.stdout if capture_output else None,
+                stdout=e.stdout if (capture_output or stream_output) else None,
                 stderr=e.stderr if capture_output else None,
             )
             raise

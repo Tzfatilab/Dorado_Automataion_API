@@ -134,6 +134,8 @@ def run_pipeline(
         log_callback=log,
     )
     log(f"Results will be saved under: {context.path_manager.get_results_dir_path()}")
+    context.path_manager.reset_generated_outputs(include_results=True)
+    log("Cleared previous generated outputs for this run")
     has_methylation = str(methylation_type or "").strip().lower() != "none"
     align_during_basecalling = chromosome_mapping
     basecalling_overrides = _build_basecalling_overrides(methylation_type)

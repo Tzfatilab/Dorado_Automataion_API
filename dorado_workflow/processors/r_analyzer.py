@@ -342,23 +342,16 @@ class RAnalyzer(ProcessorBase):
 
     @staticmethod
     def _count_methylation_tags(bam: Path, limit: int = 100) -> int:
-        """Count reads with MM methylation tags using pysam when available."""
-        try:
-            import pysam
-            with pysam.AlignmentFile(str(bam), "rb", check_sq=False) as alignment:
-                return sum(
-                    1 for _, read in zip(range(limit), alignment.fetch(until_eof=True))
-                    if read.has_tag("MM") or read.has_tag("Mm")
-                )
-        except ImportError:
-            result = subprocess.run(
-                f"samtools view {bam} | head -100 | grep -c 'MM:Z:' || echo 0",
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return int(result.stdout.strip())
+        """Count reads with MM methylation tags using samtools."""
+        command = f"samtools view {shlex.quote(str(bam))} | head -{limit} | grep -c 'M[Mm]:Z:' || echo 0"
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        return int(result.stdout.strip().splitlines()[-1])
 
     def _collect_statistics(self) -> Dict:
         """
