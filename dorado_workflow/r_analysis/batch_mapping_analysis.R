@@ -171,7 +171,27 @@ main_mapping_analysis <- function(config_file) {
                                          "filtered_summary.*\\.csv$", recursive = TRUE)
 
   if (length(nanotel_files) == 0) {
-    stop("No filtered NanoTel files found in: ", config$filtered_nanotel_dir)
+    log_message(
+      paste(
+        "No filtered NanoTel files found in:",
+        config$filtered_nanotel_dir,
+        "- mapping will be reported as empty."
+      ),
+      "WARNING"
+    )
+    write_empty_mapping_report(
+      config,
+      reason_lines = c(
+        "No filtered NanoTel summary files were produced.",
+        "NanoTel filtering may have removed all reads for this run."
+      ),
+      failed_barcodes = character()
+    )
+    return(list(
+      successful_results = list(),
+      failed_barcodes = character(),
+      total_processed = 0
+    ))
   }
 
   # Find BAM files
@@ -235,10 +255,28 @@ main_mapping_analysis <- function(config_file) {
   }
 
   if (length(results) == 0) {
-    stop(
-      "Mapping analysis produced no mapped barcodes. ",
-      "All NanoTel-filtered reads were unmapped or failed mapping filters."
+    log_message(
+      paste(
+        "Mapping analysis produced no mapped barcodes.",
+        "All NanoTel-filtered reads were unmapped or failed mapping filters."
+      ),
+      "WARNING"
     )
+    write_empty_mapping_report(
+      config,
+      reason_lines = c(
+        "No mapped barcodes were produced.",
+        "All NanoTel-filtered reads were unmapped, did not match alignment read IDs,",
+        "or failed the configured mapping filters."
+      ),
+      failed_barcodes = failed_barcodes
+    )
+
+    return(list(
+      successful_results = results,
+      failed_barcodes = failed_barcodes,
+      total_processed = length(grouped_barcode_configs)
+    ))
   }
 
   # Generate summary report
@@ -254,6 +292,35 @@ main_mapping_analysis <- function(config_file) {
     failed_barcodes = failed_barcodes,
     total_processed = length(grouped_barcode_configs)
   ))
+}
+
+write_empty_mapping_report <- function(config, reason_lines, failed_barcodes = character()) {
+  ensure_directory_exists(config$output_dir)
+  report_file <- file.path(config$output_dir, "mapping_analysis_report.txt")
+  failed_text <- if (length(failed_barcodes) > 0) {
+    paste(failed_barcodes, collapse = ", ")
+  } else {
+    "none"
+  }
+
+  report_lines <- c(
+    rep_str("=", 80),
+    "MAPPING BATCH ANALYSIS REPORT",
+    rep_str("=", 80),
+    paste("Analysis date:", Sys.Date()),
+    paste("Analysis time:", format(Sys.time(), "%H:%M:%S")),
+    "",
+    reason_lines,
+    "",
+    paste("Failed barcodes:", failed_text),
+    paste("Alignment summary:", config$alignment_summary_path),
+    paste("Filtered NanoTel dir:", config$filtered_nanotel_dir),
+    paste("BAM directory:", config$bam_dir),
+    rep_str("=", 80)
+  )
+  writeLines(report_lines, report_file)
+  log_message(paste("Empty mapping report saved to:", report_file))
+  invisible(report_file)
 }
 
 # Updated report generation for multiple BAM files

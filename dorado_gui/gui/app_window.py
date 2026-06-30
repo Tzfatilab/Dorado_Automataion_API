@@ -33,7 +33,11 @@ from gui.sections.advanced_section import AdvancedSection
 from gui.sections.sidebar_section import SidebarSection
 from gui.sections.action_section import ActionSection
 
-from core.validators import validate_input_directories, validate_mode_inputs
+from core.validators import (
+    inspect_bam_directory,
+    validate_input_directories,
+    validate_mode_inputs,
+)
 from core.workflow_constants import BASE_DIR
 
 
@@ -58,6 +62,8 @@ class AppWindow(
         self.worker = None
         self.worker_thread = None
         self.non_pod5_trim_status = "auto"
+        self.bam_is_aligned = None
+        self.bam_has_modifications = None
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.setFont(QFont("Consolas", 10))
@@ -165,15 +171,7 @@ class AppWindow(
         self._last_gui_log_blank = True
 
     def _append_log(self, message):
-        """
-        Append a log message to the execution log widget.
-
-        Args:
-            message (str | None): Text emitted by the worker thread.
-
-        Returns:
-            None
-        """
+        """Append a worker log message to the execution log widget."""
         if message is None:
             return
 
@@ -181,192 +179,297 @@ class AppWindow(
         if message == "":
             return
 
-        for line in message.split("\n"):
-            # Keep execution logs text-first even when a tool emits status emojis.
-            line = line.translate(str.maketrans("", "", "✅❌✓✗▶✕•↳"))
-            line = re.sub(r"^\s+(?=All .+ prerequisites validated$)", "", line)
-            r_detail = line.strip()
-            if r_detail == "The input files:":
-                self._hide_next_nanotel_input_path = True
-                continue
-            if (
-                "The input argumetns for this run" in r_detail
-                or "The input arguments for this run" in r_detail
-            ):
-                line = line.replace(r_detail, "NanoTel settings")
-                r_detail = "NanoTel settings"
-            if r_detail and set(r_detail) <= {"#"}:
-                continue
-            if r_detail.startswith("The patterns to search:"):
-                line = line.replace("The patterns to search:", "Telomere pattern:", 1)
-                r_detail = line.strip()
-            if r_detail.startswith("The sub-sequence length"):
-                value = r_detail.split(":", 1)[1].strip() if ":" in r_detail else ""
-                line = f"Sub-sequence length: {value}"
-                r_detail = line
-            if r_detail.startswith("The minimal density for a telomeric subseq:"):
-                line = line.replace(
-                    "The minimal density for a telomeric subseq:",
-                    "Minimum telomere density:",
-                    1,
-                )
-                r_detail = line.strip()
-            if (
-                r_detail.startswith("NanoTel summary CSV saved to:")
-                or r_detail.startswith("NanoTel read IDs saved to:")
-            ):
-                result_path = r_detail.split(":", 1)[1].strip()
-                if result_path:
-                    result_dir = str(Path(result_path).parent)
-                    shown_dirs = getattr(self, "_shown_nanotel_result_dirs", set())
-                    if result_dir not in shown_dirs:
-                        shown_dirs.add(result_dir)
-                        self._shown_nanotel_result_dirs = shown_dirs
-                        ts = datetime.now().strftime("%H:%M:%S")
-                        self._append_log_line(
-                            f'<span style="color: #777;">[{ts}]</span> '
-                            f'<span style="white-space: pre-wrap;">    '
-                            f'{escape(f"Barcode results saved under: {result_dir}")}</span>'
-                        )
-                    continue
-                self._hide_next_nanotel_result_path = True
-                continue
-            if getattr(self, "_hide_next_nanotel_result_path", False):
-                self._hide_next_nanotel_result_path = False
-                continue
-            if r_detail == "NanoTel analysis":
-                self._nanotel_seen_barcode_processing = False
-            if getattr(self, "_hide_next_nanotel_input_path", False):
-                self._hide_next_nanotel_input_path = False
-                continue
-            if r_detail.startswith("Resolved barcode file prefix:"):
-                self._nanotel_current_barcode = r_detail.split(":", 1)[1].strip()
-            if re.match(r"^Processing barcode\d+", r_detail):
-                if getattr(self, "_nanotel_seen_barcode_processing", False):
-                    self._append_log_blank()
-                self._nanotel_seen_barcode_processing = True
-            if r_detail == "Summary statistics of the sample reads length:":
-                self._nanotel_stat_title = "Sample read length"
-                self._nanotel_stat_tables = {}
-                continue
-            if r_detail == "Summary statistics for the Telomeric reads:":
-                continue
-            stat_titles = {
-                "reads length:": "Telomeric read length",
-                "Telomere length:": "Telomere length",
-                "Telomere length with 1 mismatch allowed:": "Telomere length (1 mismatch)",
-            }
-            if r_detail in stat_titles:
-                self._nanotel_stat_title = stat_titles[r_detail]
-                continue
-            if getattr(self, "_nanotel_stat_title", None) and r_detail.startswith("Min."):
-                self._nanotel_stat_values_pending = True
-                continue
-            if getattr(self, "_nanotel_stat_values_pending", False):
-                values = r_detail.split()
-                self._nanotel_stat_values_pending = False
-                if len(values) == 6:
-                    tables = getattr(self, "_nanotel_stat_tables", {})
-                    tables[self._nanotel_stat_title] = values
-                    self._nanotel_stat_tables = tables
-                    if self._nanotel_stat_title == "Telomere length (1 mismatch)":
-                        self._append_nanotel_stats_table(tables)
-                        self._nanotel_stat_tables = {}
-                    self._nanotel_stat_title = None
-                    continue
-            if (
+        for raw_line in message.split("\n"):
+            self._append_worker_log_line(raw_line)
+
+    def _append_worker_log_line(self, line):
+        """Normalize, filter, and render one worker log line."""
+        line = self._prepare_log_line(line)
+        if line is None:
+            return
+
+        r_detail = line.strip()
+        if self._handle_nanotel_result_path(r_detail):
+            return
+        if self._consume_next_nanotel_result_path():
+            return
+        if self._handle_nanotel_state_line(r_detail):
+            return
+        if self._handle_nanotel_stats_line(r_detail):
+            return
+        if self._should_skip_log_detail(r_detail):
+            return
+        if self._handle_hidden_log_section(r_detail):
+            return
+
+        self._render_log_line(line)
+
+    def _prepare_log_line(self, line):
+        """Clean status glyphs and rewrite verbose NanoTel phrases."""
+        line = line.translate(str.maketrans("", "", "\u2705\u274c\u2713\u2717\u25b6\u2715\u2022\u21b3"))
+        for bad_status in ("ג“", "ג—"):
+            line = line.replace(bad_status, "")
+        line = re.sub(r"^(\s*)(OK|ERROR)\s+", r"\1", line)
+        line = re.sub(r"^\s+(?=All .+ prerequisites validated$)", "", line)
+        r_detail = line.strip()
+
+        chunk_match = re.match(r"processing chunk\s+(\d+)", r_detail, re.IGNORECASE)
+        if chunk_match:
+            chunk_index = int(chunk_match.group(1))
+            return f"NanoTel: chunk {chunk_index} complete"
+
+        if (
+            "The input argumetns for this run" in r_detail
+            or "The input arguments for this run" in r_detail
+        ):
+            return line.replace(r_detail, "NanoTel settings")
+        if r_detail and set(r_detail) <= {"#"}:
+            return None
+        if r_detail.startswith("The patterns to search:"):
+            return line.replace("The patterns to search:", "Telomere pattern:", 1)
+        if r_detail.startswith("The sub-sequence length"):
+            value = r_detail.split(":", 1)[1].strip() if ":" in r_detail else ""
+            return f"Sub-sequence length: {value}"
+        if r_detail.startswith("The minimal density for a telomeric subseq:"):
+            return line.replace(
+                "The minimal density for a telomeric subseq:",
+                "Minimum telomere density:",
+                1,
+            )
+        return line
+
+    def _handle_nanotel_result_path(self, r_detail):
+        """Collapse NanoTel output file paths into one result-directory line."""
+        if not (
+            r_detail.startswith("NanoTel summary CSV saved to:")
+            or r_detail.startswith("NanoTel read IDs saved to:")
+        ):
+            return False
+
+        result_path = r_detail.split(":", 1)[1].strip()
+        if not result_path:
+            self._hide_next_nanotel_result_path = True
+            return True
+
+        result_dir = str(Path(result_path).parent)
+        shown_dirs = getattr(self, "_shown_nanotel_result_dirs", set())
+        if result_dir not in shown_dirs:
+            shown_dirs.add(result_dir)
+            self._shown_nanotel_result_dirs = shown_dirs
+            self._append_timestamped_text(
+                f"    Barcode results saved under: {result_dir}"
+            )
+        return True
+
+    def _consume_next_nanotel_result_path(self):
+        """Hide wrapped NanoTel result paths emitted on the following line."""
+        if getattr(self, "_hide_next_nanotel_result_path", False):
+            self._hide_next_nanotel_result_path = False
+            return True
+        return False
+
+    def _handle_nanotel_state_line(self, r_detail):
+        """Track NanoTel state while suppressing raw helper lines."""
+        if r_detail == "The input files:":
+            self._hide_next_nanotel_input_path = True
+            return True
+        if r_detail == "NanoTel analysis":
+            self._nanotel_seen_barcode_processing = False
+            return False
+        if getattr(self, "_hide_next_nanotel_input_path", False):
+            self._hide_next_nanotel_input_path = False
+            return True
+        if r_detail.startswith("Resolved barcode file prefix:"):
+            self._nanotel_current_barcode = r_detail.split(":", 1)[1].strip()
+            return False
+        if re.match(r"^Processing barcode\d+", r_detail):
+            if getattr(self, "_nanotel_seen_barcode_processing", False):
+                self._append_log_blank()
+            self._nanotel_seen_barcode_processing = True
+        return False
+
+    def _handle_nanotel_stats_line(self, r_detail):
+        """Collect NanoTel stat-table lines and render one compact table."""
+        if r_detail == "Summary statistics of the sample reads length:":
+            self._nanotel_stat_title = "Sample read length"
+            self._nanotel_stat_tables = {}
+            return True
+        if r_detail == "Summary statistics for the Telomeric reads:":
+            return True
+
+        stat_titles = {
+            "reads length:": "Telomeric read length",
+            "Telomere length:": "Telomere length",
+            "Telomere length with 1 mismatch allowed:": "Telomere length (1 mismatch)",
+        }
+        if r_detail in stat_titles:
+            self._nanotel_stat_title = stat_titles[r_detail]
+            return True
+        if getattr(self, "_nanotel_stat_title", None) and r_detail.startswith("Min."):
+            self._nanotel_stat_values_pending = True
+            return True
+        if getattr(self, "_nanotel_stat_values_pending", False):
+            self._nanotel_stat_values_pending = False
+            self._store_nanotel_stat_values(r_detail.split())
+            return True
+        return False
+
+    def _store_nanotel_stat_values(self, values):
+        """Store one NanoTel stats row and render when the table is complete."""
+        if len(values) != 6:
+            return
+        tables = getattr(self, "_nanotel_stat_tables", {})
+        tables[self._nanotel_stat_title] = values
+        self._nanotel_stat_tables = tables
+        if self._nanotel_stat_title == "Telomere length (1 mismatch)":
+            self._append_nanotel_stats_table(tables)
+            self._nanotel_stat_tables = {}
+        self._nanotel_stat_title = None
+
+    def _should_skip_log_detail(self, r_detail):
+        """Skip duplicate or low-value details from verbose tools."""
+        return (
+            (
                 r_detail.startswith("NanoTel completed for ")
                 and " in " not in r_detail
+            )
+            or r_detail.endswith("R analysis completed")
+            or r_detail.startswith("Post-analysis failed: Post-analysis failed:")
+            or r_detail.startswith("Command completed in ")
+            or r_detail.startswith("Work started at:")
+        )
+
+    def _handle_hidden_log_section(self, r_detail):
+        """Hide workflow summaries and long R environment blocks."""
+        if r_detail in {"WORKFLOW COMPLETED SUCCESSFULLY", "=== WORKFLOW SUMMARY ==="}:
+            self._hide_workflow_summary = True
+            return True
+        if getattr(self, "_hide_workflow_summary", False):
+            if (
+                "PIPELINE COMPLETED SUCCESSFULLY" in r_detail
+                or "PIPELINE FAILED" in r_detail
+                or r_detail == "Pipeline finished successfully"
             ):
-                continue
-            if r_detail.endswith("R analysis completed"):
-                continue
-            if r_detail.startswith("Post-analysis failed: Post-analysis failed:"):
-                continue
-            if r_detail.startswith("Command completed in "):
-                continue
-            if r_detail.startswith("Work started at:"):
-                continue
-            if r_detail in {"WORKFLOW COMPLETED SUCCESSFULLY", "=== WORKFLOW SUMMARY ==="}:
-                self._hide_workflow_summary = True
-                continue
-            if getattr(self, "_hide_workflow_summary", False):
-                if "PIPELINE COMPLETED SUCCESSFULLY" in r_detail or "PIPELINE FAILED" in r_detail:
-                    self._hide_workflow_summary = False
-                else:
-                    continue
-            if r_detail.startswith("Log Path:"):
-                self._hide_r_environment_details = True
-                continue
-            if getattr(self, "_hide_r_environment_details", False):
-                if r_detail.startswith("Log Start Time:"):
-                    self._hide_r_environment_details = False
-                continue
-            if not line:
-                self._append_log_blank()
-            elif re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} - ', line):
-                self._append_log_line(line)
-            else:
-                ts = datetime.now().strftime("%H:%M:%S")
-                is_stage_title = line in {
-                    "Basecalling",
-                    "Demultiplexing",
-                    "BAM to FASTQ conversion",
-                    "NanoTel analysis",
-                    "Alignment",
-                    "Post-analysis",
-                }
-                is_key_update = (
-                    line == "Run started"
-                    or line.endswith(" workflow")
-                    or line == "Run details"
-                    or line.startswith("Step ")
-                    or is_stage_title
-                    or line.startswith("Command failed")
-                    or line.startswith("Basecalling:")
-                    or line.endswith(" completed.")
-                    or "pipeline completed" in line.lower()
-                    or " failed" in line.lower()
-                )
-                is_section_title = (
-                    line == "Run started"
-                    or line.endswith(" workflow")
-                    or line == "Run details"
-                    or line.startswith("Step ")
-                    or is_stage_title
-                )
-                is_major_milestone = (
-                    line == "Run started"
-                    or "pipeline completed" in line.lower()
-                    or "pipeline failed" in line.lower()
-                )
-                lower_line = line.lower()
-                is_failure = (
-                    " failed" in lower_line
-                    or line.startswith("Required tool not found:")
-                    or line.startswith("Missing tools:")
-                    or " requires samtools or" in lower_line
-                )
-                is_success = (
-                    " completed" in lower_line
-                    or " completed successfully" in lower_line
-                ) and not is_failure
-                status = "✗ " if is_failure else "✓ " if is_success else ""
-                leading = re.match(r"^\s*", line).group(0)
-                body = line[len(leading):]
-                text = escape(f"{leading}{status}{body}")
-                if is_key_update:
-                    text = f"<b>{text}</b>"
-                timestamp = f'<span style="color: #777;">[{ts}]</span> '
-                if is_major_milestone:
-                    self._append_log_line('<span style="color: #999;">============================================================</span>')
-                elif is_section_title and line not in {"Run started", "Setting up workflow"}:
-                    self._append_log_blank()
-                self._append_log_line(f'{timestamp}<span style="white-space: pre-wrap;">{text}</span>')
-                if is_major_milestone:
-                    self._append_log_line('<span style="color: #999;">============================================================</span>')
-                elif is_section_title:
-                    self._append_log_line(f'{timestamp}<span style="color: #999;">========================</span>')
+                self._hide_workflow_summary = False
+                return False
+            return True
+        if r_detail.startswith("Log Path:"):
+            self._hide_r_environment_details = True
+            return True
+        if getattr(self, "_hide_r_environment_details", False):
+            if r_detail.startswith("Log Start Time:"):
+                self._hide_r_environment_details = False
+            return True
+        return False
+
+    def _append_timestamped_text(self, text):
+        """Append escaped text with the standard GUI timestamp prefix."""
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._append_log_line(
+            f'<span style="color: #777;">[{ts}]</span> '
+            f'<span style="white-space: pre-wrap;">{escape(text)}</span>'
+        )
+
+    def _render_log_line(self, line):
+        """Render one normalized log line with timestamp and emphasis."""
+        if not line:
+            self._append_log_blank()
+            return
+
+        if re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} - ', line):
+            self._append_log_line(line)
+            return
+
+        ts = datetime.now().strftime("%H:%M:%S")
+        is_stage_title = self._is_stage_title(line)
+        is_key_update = self._is_key_update(line, is_stage_title)
+        is_section_title = self._is_section_title(line, is_stage_title)
+        is_major_milestone = self._is_major_milestone(line)
+        status = self._line_status_prefix(line)
+
+        leading = re.match(r"^\s*", line).group(0)
+        body = line[len(leading):]
+        text = escape(f"{leading}{status}{body}")
+        if is_key_update:
+            text = f"<b>{text}</b>"
+
+        timestamp = f'<span style="color: #777;">[{ts}]</span> '
+        if is_major_milestone:
+            self._append_log_line('<span style="color: #999;">============================================================</span>')
+        elif is_section_title and line not in {"Run started", "Setting up workflow"}:
+            self._append_log_blank()
+
+        self._append_log_line(f'{timestamp}<span style="white-space: pre-wrap;">{text}</span>')
+
+        if is_major_milestone:
+            self._append_log_line('<span style="color: #999;">============================================================</span>')
+        elif is_section_title:
+            self._append_log_line(f'{timestamp}<span style="color: #999;">========================</span>')
+
+    @staticmethod
+    def _is_stage_title(line):
+        return line in {
+            "Basecalling",
+            "Demultiplexing",
+            "BAM to FASTQ conversion",
+            "NanoTel analysis",
+            "Alignment",
+            "Post-analysis",
+        }
+
+    @staticmethod
+    def _is_key_update(line, is_stage_title):
+        lower_line = line.lower()
+        return (
+            line == "Run started"
+            or line.endswith(" workflow")
+            or line == "Run details"
+            or line.startswith("Step ")
+            or is_stage_title
+            or line.startswith("Command failed")
+            or line.startswith("Basecalling:")
+            or line.endswith(" completed.")
+            or "pipeline completed" in lower_line
+            or " failed" in lower_line
+        )
+
+    @staticmethod
+    def _is_section_title(line, is_stage_title):
+        return (
+            line == "Run started"
+            or line.endswith(" workflow")
+            or line == "Run details"
+            or line.startswith("Step ")
+            or is_stage_title
+        )
+
+    @staticmethod
+    def _is_major_milestone(line):
+        lower_line = line.lower()
+        return (
+            line == "Run started"
+            or line == "Pipeline finished successfully"
+            or "pipeline completed" in lower_line
+            or "pipeline failed" in lower_line
+        )
+
+    @staticmethod
+    def _line_status_prefix(line):
+        if line == "Pipeline finished successfully":
+            return ""
+
+        lower_line = line.lower()
+        is_failure = (
+            " failed" in lower_line
+            or line.startswith("Required tool not found:")
+            or line.startswith("Missing tools:")
+            or " requires samtools or" in lower_line
+        )
+        is_success = (
+            " completed" in lower_line
+            or " completed successfully" in lower_line
+        ) and not is_failure
+        return "ERROR " if is_failure else "OK " if is_success else ""
 
     def _append_nanotel_stats_table(self, tables):
         """Render NanoTel read and telomere distributions in one compact table."""
@@ -466,9 +569,13 @@ class AppWindow(
             do_nanotel=flags["do_nanotel"],
 
             non_pod5_trim_status=self.non_pod5_trim_status,
+            bam_is_aligned=self.bam_is_aligned,
+            bam_has_modifications=self.bam_has_modifications,
 
             methylation_type=self._get_methylation_type(),
             chromosome_mapping=self.chromosome_mapping.isChecked(),
+            nanotel_mapping=self.nanotel_mapping.isChecked(),
+            summary_only=self.summary_only.isChecked(),
 
             tvr_mode=self.selected_tvr_mode,
             tvr_manual=self.tvr_manual.text().strip(),
@@ -521,6 +628,48 @@ class AppWindow(
             self.non_pod5_trim_status = "untrimmed"
         else:
             return False
+
+        return True
+
+    def _detect_bam_metadata(self, inputs, flags):
+        """
+        Detect BAM alignment and modification state.
+
+        Trim state remains a separate prompt because it affects NanoTel
+        filtering thresholds and cannot be proven reliably from a BAM file.
+        """
+        self.bam_is_aligned = None
+        self.bam_has_modifications = None
+
+        if not inputs.get("bam"):
+            return True
+
+        if not flags.get("do_nanotel", False):
+            return True
+
+        inspection = inspect_bam_directory(inputs["bam"])
+        self.bam_is_aligned = inspection["is_aligned"]
+        self.bam_has_modifications = inspection["has_modifications"]
+
+        aligned_text = (
+            "aligned" if self.bam_is_aligned is True
+            else "not aligned" if self.bam_is_aligned is False
+            else "alignment unknown"
+        )
+        modified_text = (
+            "has modifications" if self.bam_has_modifications is True
+            else "no modifications detected" if self.bam_has_modifications is False
+            else "modification state unknown"
+        )
+
+        message = (
+            f"BAM inspection: {inspection['bam_files']} BAM file(s), "
+            f"{aligned_text}, {modified_text}."
+        )
+        if hasattr(self, "_append_log"):
+            self._append_log(message)
+            for error in inspection["errors"]:
+                self._append_log(f"BAM inspection warning: {error}")
 
         return True
 
@@ -628,6 +777,8 @@ class AppWindow(
         
         flags = self._build_workflow_flags(inputs)
         if not self._prompt_non_pod5_trim_status(inputs, flags):
+            return
+        if not self._detect_bam_metadata(inputs, flags):
             return
 
         self._start_workflow(inputs, flags)

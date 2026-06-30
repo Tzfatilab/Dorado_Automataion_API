@@ -4,8 +4,8 @@ Action section - run / cancel buttons.
 Provides a reusable mixin that builds the action button row used by the main UI.
 """
 from PySide6.QtWidgets import (
-    QPushButton,
     QHBoxLayout,
+    QPushButton,
 )
 
 
@@ -21,17 +21,12 @@ class ActionSection:
         """
         layout = QHBoxLayout()
 
-        # Primary action button: Run workflow
-        self.run_btn = QPushButton("▶ Run Workflow")
-        # Connect to the window's log dialog/show handler
+        self.run_btn = QPushButton("Run Workflow")
         self.run_btn.clicked.connect(self.show_log_dialog)
 
-        # Secondary action button: Cancel / close
-        self.cancel_btn = QPushButton("✖ Cancel")
-        # Connect to the window's cancel handler (stops worker or closes window)
+        self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self._handle_cancel)
 
-        # Styles for the primary (run) button
         run_style = """
             QPushButton {
                 background: #2563EB;
@@ -52,7 +47,6 @@ class ActionSection:
             }
         """
 
-        # Styles for the secondary (cancel) button
         cancel_style = """
             QPushButton {
                 background: white;
@@ -75,7 +69,6 @@ class ActionSection:
             }
         """
 
-        # Apply styles and assemble layout
         self.run_btn.setStyleSheet(run_style)
         self.cancel_btn.setStyleSheet(cancel_style)
 

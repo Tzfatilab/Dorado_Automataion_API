@@ -1,4 +1,4 @@
-"""
+﻿"""
 NanoTel Processor Module
 ========================
 
@@ -9,6 +9,7 @@ Processes FASTQ files to identify and analyze telomeric sequences.
 from pathlib import Path
 from typing import Dict, List, Optional
 import os
+import re
 import subprocess
 import shlex
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
@@ -91,7 +92,7 @@ class NanoTelProcessor(ProcessorBase):
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        self.context.logger.info("✓ All NanoTel prerequisites validated")
+        self.context.logger.info("OK All NanoTel prerequisites validated")
         return True
     
     def execute(self, fastq_dir: str, parallel: bool = False) -> ProcessorResult:
@@ -250,7 +251,7 @@ class NanoTelProcessor(ProcessorBase):
                 self.context.barcode_manager.register_success(barcode, 'nanotel')
 
                 results[barcode] = True
-                self.context.logger.info(f"✓ NanoTel completed for {barcode}")
+                self.context.logger.info(f"OK NanoTel completed for {barcode}")
 
                 if duration is None:
                     self.context.logger.info(
@@ -268,7 +269,7 @@ class NanoTelProcessor(ProcessorBase):
                 )
 
                 results[barcode] = False
-                self.context.logger.error(f"✗ NanoTel failed for {barcode}: {str(e)}")
+                self.context.logger.error(f"ERROR NanoTel failed for {barcode}: {str(e)}")
 
         return results
 
@@ -283,6 +284,11 @@ class NanoTelProcessor(ProcessorBase):
     def _format_gui_output(self, line: str) -> Optional[str]:
         """Turn verbose NanoTel result-writing diagnostics into concise GUI updates."""
         text = line.strip()
+
+        chunk_match = re.match(r"processing chunk\s+(\d+)", text, re.IGNORECASE)
+        if chunk_match:
+            chunk_index = int(chunk_match.group(1))
+            return f"NanoTel: chunk {chunk_index} complete"
 
         if text.startswith("Work started at:"):
             return None
@@ -337,11 +343,8 @@ class NanoTelProcessor(ProcessorBase):
                     return f"Barcode results saved under: {result_dir}"
             self._pending_result_file = True
             return None
-        if text.startswith("Adding barcode prefix to generated NanoTel files under:"):
-            return "Saving NanoTel results..."
         if (
             text.startswith("Checking ")
-            or text.startswith("Barcode filename update complete.")
             or text.startswith("Work ended at:")
             or text.startswith(("C:\\", "C:/"))
         ):
@@ -367,6 +370,10 @@ class NanoTelProcessor(ProcessorBase):
         telomere_pattern = nanotel_params.get('telomere_pattern', 'CCCTAA')
         min_density = nanotel_params.get('min_density', 0.5)
         tvr_patterns = nanotel_params.get('tvr_patterns', [])
+        summary_only = nanotel_params.get(
+            'summary_only',
+            nanotel_params.get('quick_run', False),
+        )
 
         # Build command parts as individual arguments so paths with spaces
         # (for example "Telomere Analyzer") are quoted correctly.
@@ -379,6 +386,9 @@ class NanoTelProcessor(ProcessorBase):
             "--min_density", str(min_density),
         ]
 
+        if summary_only:
+            cmd_parts.append(self._summary_only_flag(nanotel_script))
+
         if tvr_patterns:
             if isinstance(tvr_patterns, str):
                 tvr_patterns_arg = tvr_patterns
@@ -387,6 +397,20 @@ class NanoTelProcessor(ProcessorBase):
             cmd_parts.extend(["--tvr_patterns", str(tvr_patterns_arg)])
 
         return self._format_command(cmd_parts)
+
+    @staticmethod
+    def _summary_only_flag(nanotel_script: str) -> str:
+        """Use the clearest supported summary-only flag for the NanoTel script."""
+        try:
+            script_text = Path(nanotel_script).read_text(encoding="utf-8")
+        except OSError:
+            return "--skip_single_read_outputs"
+
+        if "--summary_only" in script_text:
+            return "--summary_only"
+        if "--quick_run" in script_text:
+            return "--quick_run"
+        return "--skip_single_read_outputs"
 
     def _format_command(self, cmd_parts: List[str]) -> str:
         """Quote a command safely for the current platform."""

@@ -94,7 +94,7 @@ class CommandExecutor:
                 if check and returncode:
                     output = "\n".join(output_lines)
                     raise subprocess.CalledProcessError(
-                        returncode, command, output=output, stdout=output
+                        returncode, command, output=output
                     )
                 result = subprocess.CompletedProcess(command, returncode)
             elif capture_output:
@@ -125,13 +125,14 @@ class CommandExecutor:
             return result
 
         except subprocess.CalledProcessError as e:
+            stdout = getattr(e, "stdout", None) or getattr(e, "output", None)
             # Mark as failed
             self.logger.mark_command_failed(
                 cmd_index,
                 str(e),
                 returncode=e.returncode,
                 # Streamed output has already reached the GUI line-by-line.
-                stdout=e.stdout if (capture_output or stream_output) else None,
+                stdout=stdout if (capture_output or stream_output) else None,
                 stderr=e.stderr if capture_output else None,
             )
             raise

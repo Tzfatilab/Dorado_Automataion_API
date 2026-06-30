@@ -36,6 +36,7 @@
     "telomere_pattern": "CCCTAA",
     "min_density": 0.5,
     "use_filter": true,
+    "summary_only": false,
     "density_threshold": 0.75,
     "max_telomere_start": 150,
     "tvr_patterns": [
@@ -54,6 +55,7 @@
   },
 
   "alignment": {
+    "minimap_preset": "map-ont",
     "emit_summary": true,
     "sort_bam": true
   },

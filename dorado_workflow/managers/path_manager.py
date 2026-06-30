@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import stat
+import time
 
 class PathManager:
     """
@@ -146,21 +147,44 @@ class PathManager:
         self._ensure_directory(self.get_r_analysis_dir())
         self._ensure_directory(self.get_r_nanotel_output_dir())
         self._ensure_directory(self.get_r_mapping_output_dir())
-        self._ensure_directory(self.get_r_methylation_output_dir())
 
-    def reset_generated_outputs(self, include_results: bool = True) -> None:
+    def reset_generated_outputs(
+            self,
+            include_results: bool = True,
+            archive_existing: bool = False,
+            include_basecalling_outputs: bool = True,
+            include_fastq_outputs: bool = True,
+            include_aligned_outputs: bool = True,
+    ) -> None:
         """
-        Clear generated workflow outputs for a fresh run.
+        Prepare generated workflow outputs for a fresh run.
 
         The GUI intentionally uses a stable "Telomere Analyzer" trial folder.
         Without clearing these folders, stale barcodes/BAMs/FASTQs from a
         previous run can be picked up by later workflow stages.
+
+        When archive_existing is enabled, previous outputs are moved under
+        previous_runs/<timestamp>/ instead of being deleted.
         """
-        targets = [
-            self.get_rebasecalled_dir_path(),
-            self.get_demuxed_dir_path(),
-            self.get_fastq_dir_path(),
-            self.get_aligned_dir_path(),
+        archive_root = None
+        if archive_existing:
+            archive_root = (
+                self.get_trial_dir_path()
+                / "previous_runs"
+                / datetime.now().strftime("%Y%m%d_%H%M%S")
+            )
+
+        targets = []
+        if include_basecalling_outputs:
+            targets.extend([
+                self.get_rebasecalled_dir_path(),
+                self.get_demuxed_dir_path(),
+            ])
+        if include_fastq_outputs:
+            targets.append(self.get_fastq_dir_path())
+        if include_aligned_outputs:
+            targets.append(self.get_aligned_dir_path())
+        remove_only_targets = [
             self.get_processing_dir_path() / "alignment_input",
         ]
 
@@ -168,15 +192,25 @@ class PathManager:
             targets.extend([
                 self.get_nanotel_output_dir_path(),
                 self.get_r_mapping_output_dir_path(),
-                self.get_r_methylation_output_dir_path(),
                 self.get_reports_dir_path(),
             ])
 
         for target in targets:
-            self._reset_generated_path(target)
+            self._reset_generated_path(target, archive_root=archive_root)
+        for target in remove_only_targets:
+            self._reset_generated_path(
+                target,
+                archive_root=archive_root,
+                recreate=False,
+            )
 
-    def _reset_generated_path(self, target: Path) -> None:
-        """Remove and recreate a generated path, guarded to stay inside trial_dir."""
+    def _reset_generated_path(
+            self,
+            target: Path,
+            archive_root: Optional[Path] = None,
+            recreate: bool = True,
+    ) -> None:
+        """Archive or remove a generated path, guarded to stay inside trial_dir."""
         trial_root = self.trial_dir.resolve(strict=False)
         resolved = target.resolve(strict=False)
 
@@ -184,22 +218,61 @@ class PathManager:
             raise ValueError(f"Refusing to clear path outside trial directory: {target}")
 
         if target.exists():
-            if target.is_dir():
+            if archive_root is not None:
+                self._archive_generated_path(target, archive_root)
+            elif target.is_dir():
                 self._clear_generated_dir(target)
             else:
                 self._make_writable(target)
                 target.unlink()
 
         self._created_dirs.discard(target)
-        self._ensure_directory(target)
+        if recreate:
+            self._ensure_directory(target)
+
+    def _archive_generated_path(self, target: Path, archive_root: Path) -> None:
+        """Move a generated path into previous_runs while preserving its layout."""
+        trial_root = self.trial_dir.resolve(strict=False)
+        resolved_archive = archive_root.resolve(strict=False)
+
+        if resolved_archive == trial_root or trial_root not in resolved_archive.parents:
+            raise ValueError(f"Refusing to archive outside trial directory: {archive_root}")
+
+        relative_target = target.resolve(strict=False).relative_to(trial_root)
+        destination = archive_root / relative_target
+
+        for _ in range(3):
+            try:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination = self._unique_archive_destination(destination)
+                shutil.move(str(target), str(destination))
+                return
+            except (OSError, PermissionError):
+                time.sleep(0.2)
+
+        raise OSError(
+            f"Could not archive previous output path: {target}. "
+            "Close any open files in that folder and try again."
+        )
+
+    @staticmethod
+    def _unique_archive_destination(destination: Path) -> Path:
+        """Avoid replacing an existing archived path in the same timestamp folder."""
+        if not destination.exists():
+            return destination
+
+        suffix = datetime.now().strftime("%H%M%S_%f")
+        return destination.with_name(f"{destination.name}_{suffix}")
 
     def _clear_generated_dir(self, target: Path) -> None:
         """Clear a generated directory while tolerating Windows/OneDrive locks."""
-        try:
-            shutil.rmtree(target, onerror=self._handle_remove_readonly)
-            return
-        except PermissionError:
-            pass
+        for _ in range(3):
+            try:
+                shutil.rmtree(target, onerror=self._handle_remove_readonly)
+                if not target.exists() or not any(target.iterdir()):
+                    return
+            except (OSError, PermissionError):
+                time.sleep(0.2)
 
         # If Windows refuses to remove the directory itself, remove its children
         # and leave the empty directory in place for the new run.
@@ -207,20 +280,27 @@ class PathManager:
             return
 
         for child in target.iterdir():
+            self._remove_generated_child(child)
+
+    def _remove_generated_child(self, child: Path) -> None:
+        """Best-effort removal for generated files/folders on Windows."""
+        for _ in range(3):
             try:
                 if child.is_dir():
                     shutil.rmtree(child, onerror=self._handle_remove_readonly)
                 else:
                     self._make_writable(child)
                     child.unlink()
-            except PermissionError:
-                continue
+                if not child.exists():
+                    return
+            except (OSError, PermissionError):
+                time.sleep(0.2)
 
     def _handle_remove_readonly(self, func, path, exc_info) -> None:
         self._make_writable(Path(path))
         try:
             func(path)
-        except PermissionError:
+        except (OSError, PermissionError):
             pass
 
     @staticmethod

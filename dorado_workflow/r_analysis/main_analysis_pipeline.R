@@ -193,7 +193,8 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
   }
 
   # Step 3: Methylation Analysis
-  if (config$run_methylation_analysis %||% TRUE) {
+  has_mapping_results <- mapping_has_successful_results(results$mapping)
+  if ((config$run_methylation_analysis %||% TRUE) && has_mapping_results) {
     log_message("==================================================")
     log_message("STEP 3: METHYLATION ANALYSIS")
     log_message("==================================================")
@@ -257,6 +258,10 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
         stop("Pipeline stopped due to methylation analysis failure")
       }
     })
+  } else if (config$run_methylation_analysis %||% TRUE) {
+    log_message(
+      "Skipping methylation analysis because mapping produced no successful barcodes"
+    )
   } else {
     log_message("Skipping methylation analysis (disabled in config)")
   }
@@ -273,6 +278,13 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
   log_message(paste("Total duration:", round(pipeline_duration, 1), "minutes"))
 
   return(results)
+}
+
+mapping_has_successful_results <- function(mapping_result) {
+  if (is.null(mapping_result) || is.null(mapping_result$successful_results)) {
+    return(FALSE)
+  }
+  length(mapping_result$successful_results) > 0
 }
 
 # Create temporary configuration file
