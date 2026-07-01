@@ -126,6 +126,7 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
       if (!is.null(config$trial_name)) {
         mapping_config$trial_name <- config$trial_name
       }
+      mapping_config$run_modkit_pileup <- config$run_methylation_analysis %||% FALSE
 
       # Create temporary config file for mapping analysis
       mapping_config_file <- create_temp_config(mapping_config, "mapping_temp_config.json")

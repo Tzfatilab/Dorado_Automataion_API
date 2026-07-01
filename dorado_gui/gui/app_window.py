@@ -290,9 +290,20 @@ class AppWindow(
 
     def _handle_nanotel_stats_line(self, r_detail):
         """Collect NanoTel stat-table lines and render one compact table."""
+        tvr_title = "Telomere length with 1 mismatch allowed + tvr patterns.:"
+
+        if (
+            getattr(self, "_nanotel_pending_stats_render", False)
+            and r_detail != tvr_title
+        ):
+            self._append_nanotel_stats_table(getattr(self, "_nanotel_stat_tables", {}))
+            self._nanotel_stat_tables = {}
+            self._nanotel_pending_stats_render = False
+
         if r_detail == "Summary statistics of the sample reads length:":
             self._nanotel_stat_title = "Sample read length"
             self._nanotel_stat_tables = {}
+            self._nanotel_pending_stats_render = False
             return True
         if r_detail == "Summary statistics for the Telomeric reads:":
             return True
@@ -301,6 +312,7 @@ class AppWindow(
             "reads length:": "Telomeric read length",
             "Telomere length:": "Telomere length",
             "Telomere length with 1 mismatch allowed:": "Telomere length (1 mismatch)",
+            tvr_title: "Telomere length (1 mismatch + TVR)",
         }
         if r_detail in stat_titles:
             self._nanotel_stat_title = stat_titles[r_detail]
@@ -321,9 +333,12 @@ class AppWindow(
         tables = getattr(self, "_nanotel_stat_tables", {})
         tables[self._nanotel_stat_title] = values
         self._nanotel_stat_tables = tables
-        if self._nanotel_stat_title == "Telomere length (1 mismatch)":
+        if self._nanotel_stat_title == "Telomere length (1 mismatch + TVR)":
             self._append_nanotel_stats_table(tables)
             self._nanotel_stat_tables = {}
+            self._nanotel_pending_stats_render = False
+        elif self._nanotel_stat_title == "Telomere length (1 mismatch)":
+            self._nanotel_pending_stats_render = True
         self._nanotel_stat_title = None
 
     def _should_skip_log_detail(self, r_detail):
@@ -481,6 +496,7 @@ class AppWindow(
             "Telomeric read length",
             "Telomere length",
             "Telomere length (1 mismatch)",
+            "Telomere length (1 mismatch + TVR)",
         )
         header_html = "".join(
             f'<th style="padding: 3px 7px; text-align: right; color: #555; '

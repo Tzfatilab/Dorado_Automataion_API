@@ -274,12 +274,25 @@ run_modkit_pileup <- function(filtered_bam_path,
                               output_bed_path,
                               filter_threshold_c = 0.75,
                               filter_threshold_g = 0.75,
-                              mod_threshold_m = 0.75) {
+                              mod_threshold_m = 0.75,
+                              timeout_seconds = 900) {
 
   log_message(paste("Running modkit pileup on:", basename(filtered_bam_path)))
 
   validate_file_exists(filtered_bam_path, "Filtered BAM file")
   ensure_directory_exists(dirname(output_bed_path))
+
+  if (!bam_has_modified_base_tags(filtered_bam_path)) {
+    log_message(
+      paste(
+        "Skipping modkit pileup for",
+        basename(filtered_bam_path),
+        "- filtered telomeric reads do not contain MM/ML tags"
+      ),
+      "WARNING"
+    )
+    return(NULL)
+  }
 
   # Build modkit command
   modkit_cmd <- paste(
@@ -292,12 +305,44 @@ run_modkit_pileup <- function(filtered_bam_path,
   )
 
   tryCatch({
-    run_system_command(modkit_cmd, "Modkit pileup")
+    run_system_command(modkit_cmd, "Modkit pileup", timeout_seconds = timeout_seconds)
     log_message(paste("Modkit pileup completed:", basename(output_bed_path)))
     return(output_bed_path)
   }, error = function(e) {
     stop("Modkit pileup failed: ", e$message)
   })
+}
+
+bam_has_modified_base_tags <- function(bam_file_path) {
+  validate_file_exists(bam_file_path, "Filtered BAM file")
+
+  check_cmd <- paste("samtools view", shQuote(bam_file_path))
+
+  tryCatch({
+    alignments <- system(check_cmd, intern = TRUE)
+    if (length(alignments) == 0) {
+      return(FALSE)
+    }
+
+    any(grepl("\\tM[Mm]:Z:|\\tM[Ll]:B:C,", alignments))
+  }, error = function(e) {
+    log_message(
+      paste("Could not inspect modified-base tags in", basename(bam_file_path), ":", e$message),
+      "WARNING"
+    )
+    TRUE
+  })
+}
+
+get_modkit_timeout_seconds <- function(read_count,
+                                       configured_timeout_seconds = 900) {
+  if (is.null(read_count) || is.na(read_count) || read_count <= 0) {
+    return(configured_timeout_seconds)
+  }
+
+  # Small filtered BAMs should finish quickly; larger barcodes get more time.
+  dynamic_timeout <- max(120, ceiling(read_count / 1000) * 60)
+  min(dynamic_timeout, configured_timeout_seconds)
 }
 
 # Complete mapping workflow for a single barcode
@@ -333,17 +378,24 @@ process_complete_barcode_workflow <- function(barcode_config) {
     output_bam_path = filtered_bam_path
   )
 
-  # Step 3: Run modkit pileup
-  pileup_bed_path <- file.path(barcode_config$output_dir,
-                               paste0("pileup-", tolower(barcode_name), ".bed"))
+  # Step 3: Run methylation pileup only when methylation analysis is enabled.
+  pileup_result <- NULL
+  if (barcode_config$run_modkit_pileup %||% FALSE) {
+    pileup_bed_path <- file.path(barcode_config$output_dir,
+                                 paste0("pileup-", tolower(barcode_name), ".bed"))
 
-  run_modkit_pileup(
-    filtered_bam_path = filtered_bam_path,
-    output_bed_path = pileup_bed_path,
-    filter_threshold_c = barcode_config$filter_threshold_c,
-    filter_threshold_g = barcode_config$filter_threshold_g,
-    mod_threshold_m = barcode_config$mod_threshold_m
-  )
+    pileup_result <- run_modkit_pileup(
+      filtered_bam_path = filtered_bam_path,
+      output_bed_path = pileup_bed_path,
+      filter_threshold_c = barcode_config$filter_threshold_c,
+      filter_threshold_g = barcode_config$filter_threshold_g,
+      mod_threshold_m = barcode_config$mod_threshold_m,
+      timeout_seconds = get_modkit_timeout_seconds(
+        length(mapping_result$filtered_ids),
+        barcode_config$modkit_timeout_seconds %||% 900
+      )
+    )
+  }
 
   log_message(paste("Complete workflow finished for:", barcode_name))
 
@@ -351,7 +403,7 @@ process_complete_barcode_workflow <- function(barcode_config) {
     barcode = barcode_name,
     mapped_file = mapping_result$output_file,
     filtered_bam = filtered_bam_path,
-    pileup_bed = pileup_bed_path,
+    pileup_bed = pileup_result,
     read_count = length(mapping_result$filtered_ids)
   ))
 }

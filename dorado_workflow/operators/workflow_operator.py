@@ -222,12 +222,20 @@ class WorkflowOperator:
                           self.nanotel, str(fastq_dir)) is None:
             return False
 
-        # R mapping expects the aligned/ directory and Dorado sequencing summary.
-        # Even if basecalling used a reference, run the alignment step to produce
-        # the normalized inputs consumed by the post-analysis scripts.
         if align_during_basecalling or methylation_enabled:
+            alignment_kwargs = {}
+            if align_during_basecalling:
+                self.context.logger.info(
+                    "Using BAM alignment produced during basecalling"
+                )
+                alignment_kwargs = {
+                    "input_type": "bam",
+                    "use_existing_alignment": True,
+                }
+
             if self._run_step('aligner', 'Alignment',
-                              self.aligner, str(demuxed_dir), organism) is None:
+                              self.aligner, str(demuxed_dir), organism,
+                              **alignment_kwargs) is None:
                 return False
 
         run_mapping = align_during_basecalling or methylation_enabled
