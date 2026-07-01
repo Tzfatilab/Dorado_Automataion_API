@@ -292,15 +292,8 @@ class AppWindow(
         """Collect NanoTel stat-table lines and render one compact table."""
         tvr_title = "Telomere length with 1 mismatch allowed + tvr patterns.:"
 
-        if (
-            getattr(self, "_nanotel_pending_stats_render", False)
-            and r_detail != tvr_title
-        ):
-            self._append_nanotel_stats_table(getattr(self, "_nanotel_stat_tables", {}))
-            self._nanotel_stat_tables = {}
-            self._nanotel_pending_stats_render = False
-
         if r_detail == "Summary statistics of the sample reads length:":
+            self._flush_pending_nanotel_stats_table()
             self._nanotel_stat_title = "Sample read length"
             self._nanotel_stat_tables = {}
             self._nanotel_pending_stats_render = False
@@ -334,12 +327,28 @@ class AppWindow(
         tables[self._nanotel_stat_title] = values
         self._nanotel_stat_tables = tables
         if self._nanotel_stat_title == "Telomere length (1 mismatch + TVR)":
-            self._append_nanotel_stats_table(tables)
-            self._nanotel_stat_tables = {}
-            self._nanotel_pending_stats_render = False
+            self._flush_pending_nanotel_stats_table()
         elif self._nanotel_stat_title == "Telomere length (1 mismatch)":
-            self._nanotel_pending_stats_render = True
+            if self._nanotel_tvr_is_enabled():
+                self._nanotel_pending_stats_render = True
+            else:
+                self._flush_pending_nanotel_stats_table()
         self._nanotel_stat_title = None
+
+    def _nanotel_tvr_is_enabled(self):
+        """Return True when the current NanoTel run should print TVR statistics."""
+        mode = getattr(self, "selected_tvr_mode", "None")
+        return str(mode).strip().lower() not in {"", "none"}
+
+    def _flush_pending_nanotel_stats_table(self):
+        """Render any collected NanoTel statistics once, then clear the buffer."""
+        tables = getattr(self, "_nanotel_stat_tables", {})
+        if not tables:
+            self._nanotel_pending_stats_render = False
+            return
+        self._append_nanotel_stats_table(tables)
+        self._nanotel_stat_tables = {}
+        self._nanotel_pending_stats_render = False
 
     def _should_skip_log_detail(self, r_detail):
         """Skip duplicate or low-value details from verbose tools."""
