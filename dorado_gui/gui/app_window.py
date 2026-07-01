@@ -222,6 +222,7 @@ class AppWindow(
             "The input argumetns for this run" in r_detail
             or "The input arguments for this run" in r_detail
         ):
+            self._nanotel_actual_tvr_enabled = False
             return line.replace(r_detail, "NanoTel settings")
         if r_detail and set(r_detail) <= {"#"}:
             return None
@@ -236,6 +237,8 @@ class AppWindow(
                 "Minimum telomere density:",
                 1,
             )
+        if r_detail.startswith("Additional Telomere variant repeats patterns were added:"):
+            self._nanotel_actual_tvr_enabled = True
         return line
 
     def _handle_nanotel_result_path(self, r_detail):
@@ -246,6 +249,7 @@ class AppWindow(
         ):
             return False
 
+        self._flush_pending_nanotel_stats_table()
         result_path = r_detail.split(":", 1)[1].strip()
         if not result_path:
             self._hide_next_nanotel_result_path = True
@@ -336,9 +340,8 @@ class AppWindow(
         self._nanotel_stat_title = None
 
     def _nanotel_tvr_is_enabled(self):
-        """Return True when the current NanoTel run should print TVR statistics."""
-        mode = getattr(self, "selected_tvr_mode", "None")
-        return str(mode).strip().lower() not in {"", "none"}
+        """Return True when this NanoTel process confirmed TVR patterns."""
+        return bool(getattr(self, "_nanotel_actual_tvr_enabled", False))
 
     def _flush_pending_nanotel_stats_table(self):
         """Render any collected NanoTel statistics once, then clear the buffer."""
@@ -352,6 +355,8 @@ class AppWindow(
 
     def _should_skip_log_detail(self, r_detail):
         """Skip duplicate or low-value details from verbose tools."""
+        if r_detail.startswith("NanoTel completed for "):
+            self._flush_pending_nanotel_stats_table()
         return (
             (
                 r_detail.startswith("NanoTel completed for ")
