@@ -126,6 +126,7 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
       if (!is.null(config$trial_name)) {
         mapping_config$trial_name <- config$trial_name
       }
+      mapping_config$run_modkit_pileup <- config$run_methylation_analysis %||% FALSE
 
       # Create temporary config file for mapping analysis
       mapping_config_file <- create_temp_config(mapping_config, "mapping_temp_config.json")
@@ -144,23 +145,13 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
         combined_files <- list.files(mapping_output_dir, pattern = "mapped.*_combined\\.csv$", recursive = TRUE)
         merged_bed_files <- list.files(mapping_output_dir, pattern = "pileup-barcode[0-9]+\\.bed$", recursive = TRUE)
 
-        # Extract barcode numbers from filenames
-        successful_barcodes <- character()
+        # Extract barcode numbers from mapping and methylation-prep outputs.
+        mapped_barcodes <- extract_barcode_names(combined_files)
+        methylation_barcodes <- extract_barcode_names(merged_bed_files)
 
-        # Extract from combined files (pattern: mapped_barcode01_combined.csv)
-        if (length(combined_files) > 0) {
-          barcode_matches <- regmatches(combined_files, regexpr("barcode[0-9]+", combined_files))
-          successful_barcodes <- c(successful_barcodes, barcode_matches)
-        }
-
-        # Extract from bed files (pattern: pileup-barcode01.bed)
-        if (length(merged_bed_files) > 0) {
-          barcode_matches <- regmatches(merged_bed_files, regexpr("barcode[0-9]+", merged_bed_files))
-          successful_barcodes <- c(successful_barcodes, barcode_matches)
-        }
-
-        # Remove duplicates and get unique successful barcodes
-        successful_barcodes <- unique(successful_barcodes)
+        # Mapping is successful when mapped CSVs exist. Methylation readiness is
+        # tracked separately by pileup BED files.
+        successful_barcodes <- unique(mapped_barcodes)
 
         # Determine failed barcodes (assuming barcodes are numbered 01-10 based on NanoTel results)
         if (!is.null(results$nanotel)) {
@@ -172,6 +163,8 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
 
         results$mapping <- list(
           successful_results = successful_barcodes,  # Now a vector of barcode names
+          mapped_barcodes = mapped_barcodes,
+          methylation_barcodes = methylation_barcodes,
           failed_barcodes = failed_barcodes,         # Vector of failed barcode names
           total_processed = length(successful_barcodes) + length(failed_barcodes)
         )
@@ -193,7 +186,9 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
   }
 
   # Step 3: Methylation Analysis
-  if (config$run_methylation_analysis %||% TRUE) {
+  has_mapping_results <- mapping_has_successful_results(results$mapping)
+  has_methylation_beds <- mapping_has_methylation_results(results$mapping)
+  if ((config$run_methylation_analysis %||% TRUE) && has_methylation_beds) {
     log_message("==================================================")
     log_message("STEP 3: METHYLATION ANALYSIS")
     log_message("==================================================")
@@ -257,6 +252,14 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
         stop("Pipeline stopped due to methylation analysis failure")
       }
     })
+  } else if ((config$run_methylation_analysis %||% TRUE) && has_mapping_results) {
+    log_message(
+      "Skipping methylation analysis because no pileup BED files were produced"
+    )
+  } else if (config$run_methylation_analysis %||% TRUE) {
+    log_message(
+      "Skipping methylation analysis because mapping produced no successful barcodes"
+    )
   } else {
     log_message("Skipping methylation analysis (disabled in config)")
   }
@@ -273,6 +276,29 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
   log_message(paste("Total duration:", round(pipeline_duration, 1), "minutes"))
 
   return(results)
+}
+
+mapping_has_successful_results <- function(mapping_result) {
+  if (is.null(mapping_result) || is.null(mapping_result$successful_results)) {
+    return(FALSE)
+  }
+  length(mapping_result$successful_results) > 0
+}
+
+mapping_has_methylation_results <- function(mapping_result) {
+  if (is.null(mapping_result) || is.null(mapping_result$methylation_barcodes)) {
+    return(FALSE)
+  }
+  length(mapping_result$methylation_barcodes) > 0
+}
+
+extract_barcode_names <- function(paths) {
+  if (length(paths) == 0) {
+    return(character())
+  }
+  matches <- regmatches(paths, gregexpr("barcode[0-9]+", paths, ignore.case = TRUE))
+  barcodes <- unique(tolower(unlist(matches)))
+  barcodes[nzchar(barcodes)]
 }
 
 # Create temporary configuration file

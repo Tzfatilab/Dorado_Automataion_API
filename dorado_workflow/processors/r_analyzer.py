@@ -1,4 +1,4 @@
-"""
+﻿"""
 R Analyzer Processor Module
 ===========================
 
@@ -14,7 +14,6 @@ import os
 import shlex
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
 
-
 class RAnalyzer(ProcessorBase):
     """
     Processor for running R analysis pipeline.
@@ -26,14 +25,14 @@ class RAnalyzer(ProcessorBase):
     - Collect statistics
 
     The R analysis consists of three main components:
-    1. NanoTel filtration - Filters telomere reads (requires FASTQ → nanotel_output)
+    1. NanoTel filtration - Filters telomere reads (requires FASTQ ג†’ nanotel_output)
     2. Mapping analysis - Alignment and genomic position analysis (requires BAMs)
     3. Methylation analysis - CpG methylation patterns (requires BAMs)
 
     Workflow logic:
-    - FASTQ files → Can run NanoTel filtration only
-    - BAM files → Can run mapping and methylation only
-    - Both FASTQ+BAM → Can run complete R analysis
+    - FASTQ files ג†’ Can run NanoTel filtration only
+    - BAM files ג†’ Can run mapping and methylation only
+    - Both FASTQ+BAM ג†’ Can run complete R analysis
 
     Configuration used:
     - Uses existing config from ConfigManager (no separate JSON file)
@@ -87,10 +86,11 @@ class RAnalyzer(ProcessorBase):
             if not self._validate_nanotel_summaries():
                 return False
 
-        # Validate mapping/methylation prerequisites (need BAMs with methylation)
+        # Validate mapping/methylation prerequisites.
         if run_mapping or run_methylation:
             if not self._validate_aligned_bams():
                 return False
+        if run_methylation:
             if not self._check_bam_methylation():
                 return False
 
@@ -98,10 +98,8 @@ class RAnalyzer(ProcessorBase):
         self.r_analysis_dir.mkdir(parents=True, exist_ok=True)
         if run_mapping:
             self.mapping_output_dir.mkdir(parents=True, exist_ok=True)
-        if run_methylation:
-            self.methylation_output_dir.mkdir(parents=True, exist_ok=True)
 
-        self.context.logger.info("✓ All post-analysis prerequisites validated")
+        self.context.logger.info("OK All post-analysis prerequisites validated")
         return True
 
     def execute(self, run_filtration: bool = True,
@@ -216,7 +214,6 @@ class RAnalyzer(ProcessorBase):
                 statistics=stats
             )
 
-            self.context.logger.info("Post-analysis pipeline completed successfully")
             self.log_complete(result)
             return result
 
@@ -271,6 +268,44 @@ class RAnalyzer(ProcessorBase):
         self.context.logger.info(f"Found NanoTel summaries for {len(found_summaries)} barcodes")
         return True
 
+
+    def bam_has_mapped_reads(bam_path: Path) -> bool:
+        """
+        Validate that a BAM file has mapped reads using samtools.
+        Args:
+            bam_path: Path to the BAM file
+        Returns True if mapped reads are found, False otherwise.
+        """
+        result = subprocess.run(
+            ["samtools", "view", "-c", "-F", "4", str(bam_path)],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        )
+        return int(result.stdout.strip() or "0") > 0
+
+    def bam_has_methylation_tags(bam_path: Path, limit: int = 1000) -> bool:
+        """
+        Validate that a BAM file has methylation tags using samtools.
+        Args:
+            bam_path: Path to the BAM file
+            limit: Maximum number of lines to check
+        Returns True if methylation tags are found, False otherwise.
+        """
+        view = subprocess.run(
+            ["samtools", "view", str(bam_path)],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        )
+        for i, line in enumerate(view.stdout.splitlines()):
+            if i >= limit:
+                break
+            if "\tMM:Z:" in line or "\tMm:Z:" in line or "\tML:B:" in line:
+                return True
+        return False
     def _validate_aligned_bams(self) -> bool:
         """
         Validate that aligned directory has BAM files (for mapping/methylation).
@@ -299,7 +334,7 @@ class RAnalyzer(ProcessorBase):
         self.context.logger.info(f"Found {len(bam_files)} BAM files for mapping/methylation analysis")
         return True
 
-    def _check_bam_methylation(self) -> bool:
+    def _check_bam_methylation(self, read_limit: int = 1000) -> bool:
         """
         Check if BAM files contain methylation data.
 
@@ -318,7 +353,7 @@ class RAnalyzer(ProcessorBase):
 
         for bam in bam_files[:check_count]:
             try:
-                count = self._count_methylation_tags(bam)
+                count = self._count_methylation_tags(bam, limit=read_limit)
 
                 if count > 0:
                     has_methylation = True
@@ -330,35 +365,43 @@ class RAnalyzer(ProcessorBase):
 
         if not has_methylation:
             self.context.logger.warning(
-                "No methylation data found in BAM files.\n"
+                f"No methylation data found in the first {read_limit} reads of sampled BAM files.\n"
                 "BAMs must be basecalled with --modified-bases flag.\n"
                 "Methylation analysis may fail or produce empty results."
             )
             # Return True anyway - let R analysis handle this
             return True
 
-        self.context.logger.info("✓ Methylation data detected in BAM files")
+        self.context.logger.info("OK Methylation data detected in BAM files")
         return True
 
     @staticmethod
     def _count_methylation_tags(bam: Path, limit: int = 100) -> int:
-        """Count reads with MM methylation tags using pysam when available."""
+        """Count reads with modified-base tags using samtools."""
+        command = ["samtools", "view", str(bam)]
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        count = 0
+        checked = 0
         try:
-            import pysam
-            with pysam.AlignmentFile(str(bam), "rb", check_sq=False) as alignment:
-                return sum(
-                    1 for _, read in zip(range(limit), alignment.fetch(until_eof=True))
-                    if read.has_tag("MM") or read.has_tag("Mm")
-                )
-        except ImportError:
-            result = subprocess.run(
-                f"samtools view {bam} | head -100 | grep -c 'MM:Z:' || echo 0",
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return int(result.stdout.strip())
+            for line in process.stdout or []:
+                checked += 1
+                if "\tMM:Z:" in line or "\tMm:Z:" in line or "\tML:B:" in line:
+                    count += 1
+                if checked >= limit:
+                    break
+        finally:
+            if process.stdout:
+                process.stdout.close()
+            process.terminate()
+            process.wait(timeout=5)
+
+        return count
 
     def _collect_statistics(self) -> Dict:
         """

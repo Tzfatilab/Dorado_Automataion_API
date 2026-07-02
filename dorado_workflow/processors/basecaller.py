@@ -9,6 +9,9 @@ Converts POD5 files to BAM format with base modifications.
 from pathlib import Path
 from typing import Dict, Optional
 from datetime import datetime
+import os
+import shlex
+import subprocess
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
 
 
@@ -86,12 +89,6 @@ class BasecallerProcessor(ProcessorBase):
             self.context.logger.error(f"Dorado model not found: {model_path}")
             return False
 
-        # Validate reference path exists
-        reference_path = self.context.config_manager.get_reference_path(organism)
-        if not Path(reference_path).exists():
-            self.context.logger.error(f"Reference genome not found: {reference_path}")
-            return False
-
         # A reference is required only when aligning during basecalling.
         if align:
             reference_path = self.context.config_manager.get_reference_path(organism)
@@ -135,17 +132,19 @@ class BasecallerProcessor(ProcessorBase):
 
             # Execute basecalling and forward Dorado's live progress to the GUI.
             self.context.logger.info("Basecalling: Dorado is running; live progress follows")
-            self.context.command_executor.execute(command, stream_output=True)
+            self.context.command_executor.execute(
+                command,
+                stream_output=True,
+                gui_output_filter=self._show_dorado_gui_line,
+            )
 
-            # Find the actual output file
-            # (Dorado creates the file, we need to locate it)
             self.context.logger.info("Basecalling: verifying output")
-            actual_output = self._find_output_bam()
+            actual_output = expected_output
 
-            if not actual_output:
+            if not actual_output.exists() or actual_output.stat().st_size == 0:
                 result = ProcessorResult(
                     success=False,
-                    error="No BAM output file found after basecalling"
+                    error=f"No BAM output file found after basecalling: {actual_output}"
                 )
                 self.log_complete(result)
                 return result
@@ -208,7 +207,7 @@ class BasecallerProcessor(ProcessorBase):
         # Build command parts
         cmd_parts = [
             "dorado", "basecaller",
-            f"--min-qscore {int(min_qscore)}",
+            "--min-qscore", int(min_qscore),
         ]
 
         # Add optional flags
@@ -216,31 +215,44 @@ class BasecallerProcessor(ProcessorBase):
             cmd_parts.append("-r")
 
         if modified_bases:
-            cmd_parts.append(f"--modified-bases {modified_bases}")
+            cmd_parts.extend(["--modified-bases", modified_bases])
 
         if no_trim:
             cmd_parts.append("--no-trim")
 
         if kit_name:
-            cmd_parts.append(f"--kit-name {kit_name}")
+            cmd_parts.extend(["--kit-name", kit_name])
 
         if align:
             reference = config.get_reference_path(organism)
-            cmd_parts.append(f"--reference {reference}")
+            cmd_parts.extend(["--reference", reference])
 
-        # Add reference and output
+        # Dorado basecaller writes BAM to stdout; redirect it to the known output file.
         cmd_parts.extend([
-            #f"--reference {reference}",
-            f"--output-dir {self.output_dir}",
             model,
-            f'"{pod5_input}"'
+            pod5_input,
         ])
 
-        # Join command parts
-        command = " ".join(cmd_parts)
+        command = f"{self._format_command(cmd_parts)} > {self._quote_shell_path(output_file)}"
 
         self.context.logger.info(f"Basecall command: {command}")
         return command, output_file
+
+    def _format_command(self, cmd_parts: list) -> str:
+        args = [str(part) for part in cmd_parts]
+        if os.name == "nt":
+            return subprocess.list2cmdline(args)
+        return shlex.join(args)
+
+    def _quote_shell_path(self, path: Path) -> str:
+        if os.name == "nt":
+            return subprocess.list2cmdline([str(path)])
+        return shlex.quote(str(path))
+
+    @staticmethod
+    def _show_dorado_gui_line(line: str) -> bool:
+        lower = line.lower()
+        return "[error]" in lower or "[warning]" in lower
 
     def _find_output_bam(self) -> Optional[Path]:
         # Look for any BAM file (not per-barcode, so exclude barcode subdirs)

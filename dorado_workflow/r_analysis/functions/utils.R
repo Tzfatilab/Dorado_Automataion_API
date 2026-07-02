@@ -139,13 +139,22 @@ normalize_barcode_name <- function(barcode_value) {
 }
 
 # System command wrapper with error handling
-run_system_command <- function(command, description = "Command") {
+run_system_command <- function(command, description = "Command", timeout_seconds = NULL) {
   cat("Running:", description, "\n")
   cat("Command:", command, "\n")
 
-  result <- system(command, intern = FALSE)
+  if (is.null(timeout_seconds) || is.na(timeout_seconds) || timeout_seconds <= 0) {
+    result <- system(command, intern = FALSE)
+  } else {
+    shell <- if (.Platform$OS.type == "windows") "cmd" else "sh"
+    shell_args <- if (.Platform$OS.type == "windows") c("/c", command) else c("-c", command)
+    result <- suppressWarnings(system2(shell, shell_args, timeout = timeout_seconds))
+  }
 
   if (result != 0) {
+    if (!is.null(timeout_seconds) && !is.na(timeout_seconds) && timeout_seconds > 0 && result == 124) {
+      stop(paste(description, "timed out after", timeout_seconds, "seconds"))
+    }
     stop(paste(description, "failed with exit code:", result))
   }
 

@@ -26,8 +26,12 @@ class WorkerThread(QObject):
             do_basecalling: bool = False,
             do_nanotel: bool = False,
             non_pod5_trim_status: str = "auto",
+            bam_is_aligned=None,
+            bam_has_modifications=None,
             methylation_type: str = "None",
             chromosome_mapping: bool = False,
+            nanotel_mapping: bool = False,
+            summary_only: bool = False,
             tvr_mode: str = "Use preset",
             tvr_manual: str = "",
             read_length: str = "",
@@ -47,9 +51,13 @@ class WorkerThread(QObject):
         self.do_basecalling = do_basecalling
         self.do_nanotel = do_nanotel
         self.non_pod5_trim_status = non_pod5_trim_status
+        self.bam_is_aligned = bam_is_aligned
+        self.bam_has_modifications = bam_has_modifications
 
         self.methylation_type = methylation_type
         self.chromosome_mapping = chromosome_mapping
+        self.nanotel_mapping = nanotel_mapping
+        self.summary_only = summary_only
         self.tvr_mode = tvr_mode
         self.tvr_manual = tvr_manual
         self.read_length = read_length
@@ -78,8 +86,12 @@ class WorkerThread(QObject):
                 do_basecalling=self.do_basecalling,
                 do_nanotel=self.do_nanotel,
                 non_pod5_trim_status=self.non_pod5_trim_status,
+                bam_is_aligned=self.bam_is_aligned,
+                bam_has_modifications=self.bam_has_modifications,
                 methylation_type=self.methylation_type,
                 chromosome_mapping=self.chromosome_mapping,
+                nanotel_mapping=self.nanotel_mapping,
+                summary_only=self.summary_only,
                 tvr_mode=self.tvr_mode,
                 tvr_manual=self.tvr_manual,
                 read_length=self.read_length,

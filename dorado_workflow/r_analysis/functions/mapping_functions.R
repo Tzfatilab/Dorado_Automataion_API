@@ -38,6 +38,7 @@ process_barcode_mapping <- function(alignment_summary_path,
                                     tail_min_end = 35000) {
 
   log_message(paste("Processing mapping for barcode:", barcode_name))
+  log_message("Mapping filter mode: MAPQ + Head/Tail position; strand is diagnostic only")
 
   # Validate input files
   validate_file_exists(alignment_summary_path, "Alignment summary")
@@ -72,6 +73,24 @@ process_barcode_mapping <- function(alignment_summary_path,
  if (all(is.na(minimap$alignment_mapq))) {
    stop("MAPQ column '", mapq_col, "' could not be converted to numeric values")
  }
+ required_cols <- c(
+   "read_id",
+   "alignment_direction",
+   "alignment_genome",
+   "alignment_genome_start",
+   "alignment_genome_end"
+ )
+ missing_cols <- required_cols[!(required_cols %in% names(minimap))]
+ if (length(missing_cols) > 0) {
+   stop(
+     "Alignment summary is missing required columns: ",
+     paste(missing_cols, collapse = ", "),
+     ". Found columns: ",
+     paste(names(minimap), collapse = ", ")
+   )
+ }
+ minimap$alignment_genome_start <- suppressWarnings(as.numeric(minimap$alignment_genome_start))
+ minimap$alignment_genome_end <- suppressWarnings(as.numeric(minimap$alignment_genome_end))
 
   # Read filtered NanoTel data
   nanotel_data <- safe_read_csv(filtered_nanotel_path, col_types = cols())
@@ -83,6 +102,11 @@ process_barcode_mapping <- function(alignment_summary_path,
   nanotel_data <- nanotel_data[, !(names(nanotel_data) %in% unwanted_nanotel_cols)]
 
   log_message(paste("Loaded NanoTel data:", nrow(nanotel_data), "reads"))
+  diagnostic_counts <- data.frame(
+    step = c("alignment_summary_rows", "nanotel_filtered_rows"),
+    count = c(nrow(minimap), nrow(nanotel_data)),
+    stringsAsFactors = FALSE
+  )
 
   # FIXED: Create read_id_clean columns more safely
   # Clean read IDs in both datasets first
@@ -96,30 +120,62 @@ process_barcode_mapping <- function(alignment_summary_path,
     filter(read_id_clean %in% nanotel_data$read_id_clean)
 
   log_message(paste("After NanoTel matching:", nrow(minimap_filtered), "alignments"))
+  diagnostic_counts <- rbind(
+    diagnostic_counts,
+    data.frame(step = "after_nanotel_read_id_match", count = nrow(minimap_filtered))
+  )
 
   # Remove unmapped reads (those with "*" in alignment_direction)
   minimap_filtered <- minimap_filtered %>%
-    filter(!grepl("\\*", alignment_direction))
+    filter(!is.na(alignment_direction), !grepl("\\*", alignment_direction))
 
   log_message(paste("After removing unmapped:", nrow(minimap_filtered), "alignments"))
+  diagnostic_counts <- rbind(
+    diagnostic_counts,
+    data.frame(step = "after_removing_unmapped", count = nrow(minimap_filtered))
+  )
 
-  # Apply quality and position filters
-  minimap_filtered <- minimap_filtered %>%
+  mapq_filtered <- minimap_filtered %>%
+    filter(alignment_mapq >= min_mapq)
+
+  diagnostic_counts <- rbind(
+    diagnostic_counts,
+    data.frame(step = "after_mapq_filtering", count = nrow(mapq_filtered))
+  )
+
+  position_filtered <- mapq_filtered %>%
     filter(
-      # Direction and genome position rules
-      (grepl("Tail", alignment_genome) & alignment_direction == "-") |
-        (grepl("Head", alignment_genome) & alignment_direction == "+"),
-      # Quality filter
-      alignment_mapq >= min_mapq,
-      # Position-specific filters
-      (grepl("Tail", alignment_genome) & alignment_genome_end >= tail_min_end) |
-        (grepl("Head", alignment_genome) & alignment_genome_start <= head_max_start)
+      (grepl("Tail", alignment_genome, ignore.case = TRUE) & alignment_genome_end >= tail_min_end) |
+        (grepl("Head", alignment_genome, ignore.case = TRUE) & alignment_genome_start <= head_max_start)
     )
 
-  log_message(paste("After quality/position filtering:", nrow(minimap_filtered), "alignments"))
+  diagnostic_counts <- rbind(
+    diagnostic_counts,
+    data.frame(step = "after_position_filtering", count = nrow(position_filtered))
+  )
+
+  strand_position_filtered <- mapq_filtered %>%
+    filter(
+      (grepl("Tail", alignment_genome, ignore.case = TRUE) & alignment_direction == "-") |
+        (grepl("Head", alignment_genome, ignore.case = TRUE) & alignment_direction == "+"),
+      (grepl("Tail", alignment_genome, ignore.case = TRUE) & alignment_genome_end >= tail_min_end) |
+        (grepl("Head", alignment_genome, ignore.case = TRUE) & alignment_genome_start <= head_max_start)
+    )
+
+  log_message(paste("After MAPQ/position filtering:", nrow(position_filtered), "alignments"))
+  diagnostic_counts <- rbind(
+    diagnostic_counts,
+    data.frame(step = "after_strand_position_filtering", count = nrow(strand_position_filtered))
+  )
+  minimap_filtered <- position_filtered
+  diagnostic_file <- file.path(output_dir, paste0("mapping_diagnostics_", barcode_name, ".csv"))
+  safe_write_csv(diagnostic_counts, diagnostic_file)
 
   if (nrow(minimap_filtered) == 0) {
-    warning("No alignments passed filters for barcode: ", barcode_name)
+    warning(
+      "No alignments passed filters for barcode: ", barcode_name,
+      ". Diagnostic counts saved to: ", diagnostic_file
+    )
     return(list(mapped_data = data.frame(), filtered_ids = character()))
   }
 
@@ -218,12 +274,25 @@ run_modkit_pileup <- function(filtered_bam_path,
                               output_bed_path,
                               filter_threshold_c = 0.75,
                               filter_threshold_g = 0.75,
-                              mod_threshold_m = 0.75) {
+                              mod_threshold_m = 0.75,
+                              timeout_seconds = 900) {
 
   log_message(paste("Running modkit pileup on:", basename(filtered_bam_path)))
 
   validate_file_exists(filtered_bam_path, "Filtered BAM file")
   ensure_directory_exists(dirname(output_bed_path))
+
+  if (!bam_has_modified_base_tags(filtered_bam_path)) {
+    log_message(
+      paste(
+        "Skipping modkit pileup for",
+        basename(filtered_bam_path),
+        "- filtered telomeric reads do not contain MM/ML tags"
+      ),
+      "WARNING"
+    )
+    return(NULL)
+  }
 
   # Build modkit command
   modkit_cmd <- paste(
@@ -236,12 +305,44 @@ run_modkit_pileup <- function(filtered_bam_path,
   )
 
   tryCatch({
-    run_system_command(modkit_cmd, "Modkit pileup")
+    run_system_command(modkit_cmd, "Modkit pileup", timeout_seconds = timeout_seconds)
     log_message(paste("Modkit pileup completed:", basename(output_bed_path)))
     return(output_bed_path)
   }, error = function(e) {
     stop("Modkit pileup failed: ", e$message)
   })
+}
+
+bam_has_modified_base_tags <- function(bam_file_path) {
+  validate_file_exists(bam_file_path, "Filtered BAM file")
+
+  check_cmd <- paste("samtools view", shQuote(bam_file_path))
+
+  tryCatch({
+    alignments <- system(check_cmd, intern = TRUE)
+    if (length(alignments) == 0) {
+      return(FALSE)
+    }
+
+    any(grepl("\\tM[Mm]:Z:|\\tM[Ll]:B:C,", alignments))
+  }, error = function(e) {
+    log_message(
+      paste("Could not inspect modified-base tags in", basename(bam_file_path), ":", e$message),
+      "WARNING"
+    )
+    TRUE
+  })
+}
+
+get_modkit_timeout_seconds <- function(read_count,
+                                       configured_timeout_seconds = 900) {
+  if (is.null(read_count) || is.na(read_count) || read_count <= 0) {
+    return(configured_timeout_seconds)
+  }
+
+  # Small filtered BAMs should finish quickly; larger barcodes get more time.
+  dynamic_timeout <- max(120, ceiling(read_count / 1000) * 60)
+  min(dynamic_timeout, configured_timeout_seconds)
 }
 
 # Complete mapping workflow for a single barcode
@@ -277,17 +378,24 @@ process_complete_barcode_workflow <- function(barcode_config) {
     output_bam_path = filtered_bam_path
   )
 
-  # Step 3: Run modkit pileup
-  pileup_bed_path <- file.path(barcode_config$output_dir,
-                               paste0("pileup-", tolower(barcode_name), ".bed"))
+  # Step 3: Run methylation pileup only when methylation analysis is enabled.
+  pileup_result <- NULL
+  if (barcode_config$run_modkit_pileup %||% FALSE) {
+    pileup_bed_path <- file.path(barcode_config$output_dir,
+                                 paste0("pileup-", tolower(barcode_name), ".bed"))
 
-  run_modkit_pileup(
-    filtered_bam_path = filtered_bam_path,
-    output_bed_path = pileup_bed_path,
-    filter_threshold_c = barcode_config$filter_threshold_c,
-    filter_threshold_g = barcode_config$filter_threshold_g,
-    mod_threshold_m = barcode_config$mod_threshold_m
-  )
+    pileup_result <- run_modkit_pileup(
+      filtered_bam_path = filtered_bam_path,
+      output_bed_path = pileup_bed_path,
+      filter_threshold_c = barcode_config$filter_threshold_c,
+      filter_threshold_g = barcode_config$filter_threshold_g,
+      mod_threshold_m = barcode_config$mod_threshold_m,
+      timeout_seconds = get_modkit_timeout_seconds(
+        length(mapping_result$filtered_ids),
+        barcode_config$modkit_timeout_seconds %||% 900
+      )
+    )
+  }
 
   log_message(paste("Complete workflow finished for:", barcode_name))
 
@@ -295,7 +403,7 @@ process_complete_barcode_workflow <- function(barcode_config) {
     barcode = barcode_name,
     mapped_file = mapping_result$output_file,
     filtered_bam = filtered_bam_path,
-    pileup_bed = pileup_bed_path,
+    pileup_bed = pileup_result,
     read_count = length(mapping_result$filtered_ids)
   ))
 }

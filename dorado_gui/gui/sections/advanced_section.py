@@ -22,8 +22,10 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize, QRectF
 from PySide6.QtGui import (
+    QColor,
+    QPainter,
     QPixmap,
     QIntValidator,
     QDoubleValidator,
@@ -55,6 +57,44 @@ class MappingCheckBox(QCheckBox):
             return
 
         super().nextCheckState()
+
+
+class ToggleSwitch(QCheckBox):
+    """Small switch control with a sliding knob."""
+
+    def __init__(self):
+        super().__init__()
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedSize(42, 22)
+        self.toggled.connect(lambda _: self.update())
+
+    def sizeHint(self):
+        return QSize(42, 22)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self.isEnabled():
+            self.setChecked(not self.isChecked())
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        track = QRectF(1, 2, 40, 18)
+        checked = self.isChecked()
+        track_color = QColor("#2563EB") if checked else QColor("#E5E7EB")
+        border_color = QColor("#2563EB") if checked else QColor("#D1D5DB")
+        knob_x = 22 if checked else 3
+
+        painter.setPen(border_color)
+        painter.setBrush(track_color)
+        painter.drawRoundedRect(track, 9, 9)
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#FFFFFF"))
+        painter.drawEllipse(QRectF(knob_x, 4, 14, 14))
 
 
 class AdvancedSection:
@@ -356,12 +396,47 @@ class AdvancedSection:
         title_row.addWidget(title)
         title_row.addStretch()
 
-        toggle = QCheckBox()
         header.addLayout(title_row)
         header.addStretch()
-        header.addWidget(toggle)
+        summary_toggle = QWidget()
+        summary_toggle.setCursor(Qt.PointingHandCursor)
+        summary_toggle.setStyleSheet("background: transparent; border: none;")
+        summary_layout = QHBoxLayout(summary_toggle)
+        summary_layout.setContentsMargins(0, 0, 0, 0)
+        summary_layout.setSpacing(8)
+
+        summary_label = QLabel("Summary only")
+        summary_label.setCursor(Qt.PointingHandCursor)
+        summary_label.setStyleSheet("""
+            QLabel {
+                color: #4B5563;
+                font-size: 12px;
+                font-weight: 600;
+                background: transparent;
+                border: none;
+            }
+        """)
+
+        self.summary_only = ToggleSwitch()
+        self.summary_only.setToolTip(
+            "Skip per-read FASTA/plot files and create only summary outputs."
+        )
+        self.summary_only.setChecked(False)
+        summary_layout.addWidget(summary_label)
+        summary_layout.addWidget(self.summary_only)
+        summary_toggle.mouseReleaseEvent = self._toggle_summary_only_from_row
+        summary_label.mouseReleaseEvent = self._toggle_summary_only_from_row
+        header.addWidget(summary_toggle)
 
         return header_widget
+
+    def _toggle_summary_only_from_row(self, event):
+        """Toggle summary-only mode when the label or surrounding row is clicked."""
+        if event.button() == Qt.LeftButton and self.summary_only.isEnabled():
+            self.summary_only.setChecked(not self.summary_only.isChecked())
+            event.accept()
+            return
+        event.ignore()
 
     def _build_nanotel_body(self):
         """Build the TVR mode controls and numeric NanoTel fields."""
@@ -375,6 +450,41 @@ class AdvancedSection:
         body.addLayout(self._build_nanotel_fields())
 
         return body_widget
+
+    def _build_nanotel_mapping_option(self):
+        """Build the mapping toggle for NanoTel workflows."""
+        self.nanotel_mapping = QCheckBox(
+            "Run mapping"
+        )
+
+        self.nanotel_mapping.setStyleSheet("""
+            QCheckBox {
+                font-size: 14px;
+                color: #111827;
+                spacing: 10px;
+                border: none;
+                background: transparent;
+            }
+
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+            }
+
+            QCheckBox::indicator:unchecked {
+                background: white;
+                border: 2px solid #9CA3AF;
+                border-radius: 4px;
+            }
+
+            QCheckBox::indicator:checked {
+                background: #2563EB;
+                border: 2px solid #2563EB;
+                border-radius: 4px;
+            }
+        """)
+
+        return self.nanotel_mapping
 
     def _build_tvr_mode_controls(self):
         """Build the segmented TVR mode buttons."""
@@ -510,6 +620,7 @@ class AdvancedSection:
         grid.addWidget(self.max_distance_edge, 0, 3)
         grid.addWidget(density_label, 1, 0)
         grid.addWidget(self.min_density_threshold, 1, 1)
+        grid.addWidget(self._build_nanotel_mapping_option(), 1, 2, 1, 2)
         return grid
 
     @staticmethod

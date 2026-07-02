@@ -72,22 +72,31 @@ process_barcode_multiple_bams <- function(barcode_configs_list) {
         output_bam_path = filtered_bam_path
       )
 
-      # Step 3: Run modkit pileup on this filtered BAM
-      pileup_bed_path <- file.path(barcode_output_dir,
-                                   paste0("pileup-", tolower(barcode_name), "_bam", i, ".bed"))
+      # Step 3: Run methylation pileup only when methylation analysis is enabled.
+      pileup_result <- NULL
+      if (config$run_modkit_pileup %||% FALSE) {
+        pileup_bed_path <- file.path(barcode_output_dir,
+                                     paste0("pileup-", tolower(barcode_name), "_bam", i, ".bed"))
 
-      run_modkit_pileup(
-        filtered_bam_path = filtered_bam_path,
-        output_bed_path = pileup_bed_path,
-        filter_threshold_c = config$filter_threshold_c,
-        filter_threshold_g = config$filter_threshold_g,
-        mod_threshold_m = config$mod_threshold_m
-      )
+        pileup_result <- run_modkit_pileup(
+          filtered_bam_path = filtered_bam_path,
+          output_bed_path = pileup_bed_path,
+          filter_threshold_c = config$filter_threshold_c,
+          filter_threshold_g = config$filter_threshold_g,
+          mod_threshold_m = config$mod_threshold_m,
+          timeout_seconds = get_modkit_timeout_seconds(
+            length(mapping_result$filtered_ids),
+            config$modkit_timeout_seconds %||% 900
+          )
+        )
+      }
 
       # Store results
       all_mapped_data[[i]] <- mapping_result$mapped_data
       all_filtered_bam_paths <- c(all_filtered_bam_paths, filtered_bam_path)
-      all_pileup_bed_paths <- c(all_pileup_bed_paths, pileup_bed_path)
+      if (!is.null(pileup_result)) {
+        all_pileup_bed_paths <- c(all_pileup_bed_paths, pileup_result)
+      }
       total_reads <- total_reads + length(mapping_result$filtered_ids)
 
       log_message(paste("Successfully processed BAM file", i, "for", barcode_name))
@@ -112,11 +121,17 @@ process_barcode_multiple_bams <- function(barcode_configs_list) {
   if (length(all_pileup_bed_paths) > 1) {
     merged_bed_path <- merge_pileup_bed_files(all_pileup_bed_paths, barcode_name,
                                               barcode_output_dir)
-  } else {
+  } else if (length(all_pileup_bed_paths) == 1) {
     # Rename single BED file to standard name
     merged_bed_path <- file.path(barcode_output_dir,
                                  paste0("pileup-", tolower(barcode_name), ".bed"))
     file.copy(all_pileup_bed_paths[1], merged_bed_path, overwrite = TRUE)
+  } else {
+    merged_bed_path <- NA
+    log_message(
+      paste("No methylation BED file produced for", barcode_name),
+      "WARNING"
+    )
   }
 
   log_message(paste("Completed processing for", barcode_name, "- Total reads:", total_reads))
@@ -159,6 +174,8 @@ main_mapping_analysis <- function(config_file) {
   filter_threshold_c <- config$filter_threshold_c %||% 0.75
   filter_threshold_g <- config$filter_threshold_g %||% 0.75
   mod_threshold_m <- config$mod_threshold_m %||% 0.75
+  modkit_timeout_seconds <- config$modkit_timeout_seconds %||% 900
+  run_modkit_pileup <- config$run_modkit_pileup %||% FALSE
 
   log_message("Configuration loaded successfully")
   log_message(paste("Alignment summary:", config$alignment_summary_path))
@@ -171,7 +188,27 @@ main_mapping_analysis <- function(config_file) {
                                          "filtered_summary.*\\.csv$", recursive = TRUE)
 
   if (length(nanotel_files) == 0) {
-    stop("No filtered NanoTel files found in: ", config$filtered_nanotel_dir)
+    log_message(
+      paste(
+        "No filtered NanoTel files found in:",
+        config$filtered_nanotel_dir,
+        "- mapping will be reported as empty."
+      ),
+      "WARNING"
+    )
+    write_empty_mapping_report(
+      config,
+      reason_lines = c(
+        "No filtered NanoTel summary files were produced.",
+        "NanoTel filtering may have removed all reads for this run."
+      ),
+      failed_barcodes = character()
+    )
+    return(list(
+      successful_results = list(),
+      failed_barcodes = character(),
+      total_processed = 0
+    ))
   }
 
   # Find BAM files
@@ -195,7 +232,9 @@ main_mapping_analysis <- function(config_file) {
     tail_min_end = tail_min_end,
     filter_threshold_c = filter_threshold_c,
     filter_threshold_g = filter_threshold_g,
-    mod_threshold_m = mod_threshold_m
+    mod_threshold_m = mod_threshold_m,
+    modkit_timeout_seconds = modkit_timeout_seconds,
+    run_modkit_pileup = run_modkit_pileup
   )
 
   if (length(grouped_barcode_configs) == 0) {
@@ -218,6 +257,8 @@ main_mapping_analysis <- function(config_file) {
       result <- process_barcode_multiple_bams(barcode_configs_list)
       if (!is.null(result)) {
         results[[barcode_name]] <- result
+      } else {
+        failed_barcodes <- c(failed_barcodes, barcode_name)
       }
     }, error = function(e) {
       log_message(paste("Error processing", barcode_name, ":", e$message), "ERROR")
@@ -230,6 +271,31 @@ main_mapping_analysis <- function(config_file) {
 
   if (length(failed_barcodes) > 0) {
     log_message(paste("Failed barcodes:", paste(failed_barcodes, collapse = ", ")), "WARNING")
+  }
+
+  if (length(results) == 0) {
+    log_message(
+      paste(
+        "Mapping analysis produced no mapped barcodes.",
+        "All NanoTel-filtered reads were unmapped or failed mapping filters."
+      ),
+      "WARNING"
+    )
+    write_empty_mapping_report(
+      config,
+      reason_lines = c(
+        "No mapped barcodes were produced.",
+        "All NanoTel-filtered reads were unmapped, did not match alignment read IDs,",
+        "or failed the configured mapping filters."
+      ),
+      failed_barcodes = failed_barcodes
+    )
+
+    return(list(
+      successful_results = results,
+      failed_barcodes = failed_barcodes,
+      total_processed = length(grouped_barcode_configs)
+    ))
   }
 
   # Generate summary report
@@ -245,6 +311,35 @@ main_mapping_analysis <- function(config_file) {
     failed_barcodes = failed_barcodes,
     total_processed = length(grouped_barcode_configs)
   ))
+}
+
+write_empty_mapping_report <- function(config, reason_lines, failed_barcodes = character()) {
+  ensure_directory_exists(config$output_dir)
+  report_file <- file.path(config$output_dir, "mapping_analysis_report.txt")
+  failed_text <- if (length(failed_barcodes) > 0) {
+    paste(failed_barcodes, collapse = ", ")
+  } else {
+    "none"
+  }
+
+  report_lines <- c(
+    rep_str("=", 80),
+    "MAPPING BATCH ANALYSIS REPORT",
+    rep_str("=", 80),
+    paste("Analysis date:", Sys.Date()),
+    paste("Analysis time:", format(Sys.time(), "%H:%M:%S")),
+    "",
+    reason_lines,
+    "",
+    paste("Failed barcodes:", failed_text),
+    paste("Alignment summary:", config$alignment_summary_path),
+    paste("Filtered NanoTel dir:", config$filtered_nanotel_dir),
+    paste("BAM directory:", config$bam_dir),
+    rep_str("=", 80)
+  )
+  writeLines(report_lines, report_file)
+  log_message(paste("Empty mapping report saved to:", report_file))
+  invisible(report_file)
 }
 
 # Updated report generation for multiple BAM files
@@ -295,6 +390,11 @@ generate_mapping_report_multiple_bams <- function(results, failed_barcodes, outp
   # Add successful barcode details
   for (barcode in names(results)) {
     result <- results[[barcode]]
+    merged_bed_label <- if (is.na(result$merged_bed)) {
+      "not generated"
+    } else {
+      basename(result$merged_bed)
+    }
     report_lines <- c(report_lines,
                       paste("  ", result$barcode, ":"),
                       paste("    BAM files processed:", result$bam_files_processed),
@@ -302,27 +402,38 @@ generate_mapping_report_multiple_bams <- function(results, failed_barcodes, outp
                       paste("    Combined mapped file:", basename(result$mapped_file)),
                       paste("    Individual filtered BAMs:", length(result$filtered_bams)),
                       paste("    Individual BED files:", length(result$individual_beds)),
-                      paste("    Merged BED file:", basename(result$merged_bed)),
+                      paste("    Merged BED file:", merged_bed_label),
                       ""
     )
   }
 
-  report_lines <- c(report_lines,
-                    "OUTPUT FILES GENERATED:",
-                    "  For each barcode:",
-                    "    - mapped<BARCODE>_combined.csv (combined alignment + NanoTel data)",
-                    "    - filtered_<BARCODE>_bam1.bam, bam2.bam, etc. (individual filtered BAMs)",
-                    "    - pileup-<barcode>_bam1.bed, bam2.bed, etc. (individual methylation data)",
-                    "    - pileup-<barcode>.bed (merged methylation data for barcode)",
-                    "",
-                    "NEXT STEPS:",
-                    "  1. Review combined mapped CSV files for data quality",
-                    "  2. Check merged BED files for methylation analysis",
-                    "  3. Proceed with methylation analysis using merged BED files",
-                    "  4. Investigate any failed barcodes",
-                    "",
-                    rep_str("=", 80)
+  output_lines <- c(
+    "OUTPUT FILES GENERATED:",
+    "  For each barcode:",
+    "    - mapped<BARCODE>_combined.csv (combined alignment + NanoTel data)",
+    "    - filtered_<BARCODE>_bam1.bam, bam2.bam, etc. (individual filtered BAMs)"
   )
+  next_steps <- c(
+    "NEXT STEPS:",
+    "  1. Review combined mapped CSV files for data quality",
+    "  2. Investigate any failed barcodes"
+  )
+
+  if (config$run_modkit_pileup %||% FALSE) {
+    output_lines <- c(
+      output_lines,
+      "    - pileup-<barcode>_bam1.bed, bam2.bed, etc. (individual methylation data when available)",
+      "    - pileup-<barcode>.bed (merged methylation data when available)"
+    )
+    next_steps <- c(
+      "NEXT STEPS:",
+      "  1. Review combined mapped CSV files for data quality",
+      "  2. Check merged BED files for methylation analysis",
+      "  3. Investigate any failed barcodes"
+    )
+  }
+
+  report_lines <- c(report_lines, output_lines, "", next_steps, "", rep_str("=", 80))
 
   # Write report
   writeLines(report_lines, output_file)
