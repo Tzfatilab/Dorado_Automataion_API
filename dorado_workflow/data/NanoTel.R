@@ -2605,21 +2605,25 @@ write_lines(x = ans_list$df_summary$sequence_ID  , file = file.path(opt$save_pat
 # POST-PROCESSING ANALYSIS (only runs when --analysis flag is set)
 # =====================================================================
 if (isTRUE(opt$analysis)) {
+  include_km_metrics <- FALSE
 
   # --- Step 1: Filter ---
   df_step1_filtered <- ans_list$df_summary %>%
     dplyr::filter(telo_density_mismatch >= 0.75,
                   Telomere_start_mismatch <= 134)
 
-  # KM median is computed after the density/start filter and before the
-  # running-median filtration steps.
-  df_km <- df_step1_filtered %>%
-    dplyr::mutate(
-      margin = sequence_length - Telomere_end_mismatch,
-      event  = as.integer(margin >= BUFFER)
-    )
-  km_fit    <- survfit(Surv(Telomere_length_mismatch, event) ~ 1, data = df_km)
-  km_median <- summary(km_fit)$table[["median"]]
+  if (include_km_metrics) {
+    # KM median is computed after the density/start filter and before the
+    # running-median filtration steps. This developer-level feature is hidden
+    # until the KM metrics are ready for user-facing output.
+    df_km <- df_step1_filtered %>%
+      dplyr::mutate(
+        margin = sequence_length - Telomere_end_mismatch,
+        event  = as.integer(margin >= BUFFER)
+      )
+    km_fit    <- survfit(Surv(Telomere_length_mismatch, event) ~ 1, data = df_km)
+    km_median <- summary(km_fit)$table[["median"]]
+  }
 
   df_filtered <- df_step1_filtered %>%
 
@@ -2663,48 +2667,53 @@ if (isTRUE(opt$analysis)) {
 
   med_telo  <- median(df_filtered$Telomere_length_mismatch)
   pct_short <- round(100 * sum(df_filtered$Telomere_length_mismatch < 2000) / n_reads, 1)
-  min_len   <- min(df_filtered$sequence_length)
-  max_len   <- max(df_filtered$sequence_length)
 
-  # WORK IN PROGRESS: the model-based expected KM bias calculation below is a
-  # provisional working feature, not the final calibrated implementation.
-  # Keep it functional for now, but treat this block as subject to revision.
-  # Expected KM bias from polynomial calibration model
-  model_path <- if (!is.null(opt$bias_prediction_model)) {
-    opt$bias_prediction_model
-  } else {
-    file.path(.script_dir, "models", "poly_regression_model.rds")
-  }
-  calibration_obj  <- readRDS(model_path)
-  expected_bias    <- predict(
-    calibration_obj$calibration_models$fit_km_bias,
-    newdata = data.frame(
-      censoring_for_model = censoring_rate,
-      log10_n_reads       = log10(n_reads)
+  if (include_km_metrics) {
+    # WORK IN PROGRESS: the model-based expected KM bias calculation below is a
+    # provisional working feature, not the final calibrated implementation.
+    # Keep it functional for now, but treat this block as subject to revision.
+    # Expected KM bias from polynomial calibration model
+    model_path <- if (!is.null(opt$bias_prediction_model)) {
+      opt$bias_prediction_model
+    } else {
+      file.path(.script_dir, "models", "poly_regression_model.rds")
+    }
+    calibration_obj  <- readRDS(model_path)
+    expected_bias    <- predict(
+      calibration_obj$calibration_models$fit_km_bias,
+      newdata = data.frame(
+        censoring_for_model = censoring_rate,
+        log10_n_reads       = log10(n_reads)
+      )
     )
-  )
-  bias_label <- ifelse(expected_bias >= 0,
-                       paste0("+", round(expected_bias), " bp"),
-                       paste0(round(expected_bias), " bp"))
+    bias_label <- ifelse(expected_bias >= 0,
+                         paste0("+", round(expected_bias), " bp"),
+                         paste0(round(expected_bias), " bp"))
+  }
 
   fmt <- function(x) format(round(x), big.mark = ",", scientific = FALSE)
 
   results_lines <- c(
     paste0("Results for ", barcode_name),
     "==========================================",
-    paste0("Total Reads             : ", fmt(n_reads)),
-    paste0("Complete Reads          : ", fmt(n_complete)),
-    paste0("Censored Reads          : ", fmt(n_censored)),
-    paste0("Censoring Rate          : ", round(100 * censoring_rate, 1), "%"),
+    paste0("Number of telomeric reads (post-filtration) : ", fmt(n_reads)),
+    paste0("Complete Telomeric Reads                    : ", fmt(n_complete)),
+    paste0("Incomplete Telomeric Reads                  : ", fmt(n_censored)),
+    paste0("Censoring Rate                              : ", round(100 * censoring_rate, 1), "%"),
     "",
-    paste0("Regular Median (post-filtration) : ", fmt(med_telo), " bp"),
-    paste0("KM Median               : ", fmt(km_median), " bp"),
-    "",
-    paste0("Expected KM Median Bias : ", bias_label),
-    paste0("Min Read Length         : ", fmt(min_len), " bp"),
-    paste0("Max Read Length         : ", fmt(max_len), " bp"),
-    paste0("% < 2kb                 : ", pct_short, "%")
+    paste0("Median Telomeric Length (post-filtration)  : ", fmt(med_telo), " bp"),
+    paste0("% of telomeres shorter than 2kb             : ", pct_short, "%")
   )
+
+  if (include_km_metrics) {
+    results_lines <- c(
+      results_lines,
+      "",
+      paste0("KM Median                                  : ", fmt(km_median), " bp"),
+      paste0("Expected KM Median Bias                    : ", bias_label)
+    )
+  }
+
   write_lines(results_lines,
               file.path(opt$save_path, paste0(barcode_name, "_results.txt")))
 

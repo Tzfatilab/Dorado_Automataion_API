@@ -133,9 +133,12 @@ class NanoTelProcessor(ProcessorBase):
             # Process each barcode
             # Note: parallel processing could be added later if needed
             results_per_barcode = self._process_barcodes_sequential(barcode_tasks)
+            combined_results_path = self._write_combined_results_table(results_per_barcode)
 
             # Collect statistics
             stats = self._collect_statistics(results_per_barcode)
+            if combined_results_path is not None:
+                stats['combined_results_file'] = combined_results_path
 
             # Determine overall success
             failed_barcodes = [bc for bc, success in results_per_barcode.items() if not success]
@@ -271,6 +274,151 @@ class NanoTelProcessor(ProcessorBase):
                 self.context.logger.error(f"✗ NanoTel failed for {barcode}: {str(e)}")
 
         return results
+
+    def _write_combined_results_table(self, results_per_barcode: Dict[str, bool]) -> Optional[Path]:
+        """
+        Write a run-level text table comparing NanoTel results for successful barcodes.
+
+        Args:
+            results_per_barcode: Dictionary mapping barcode names to success status
+
+        Returns:
+            Path to the combined results file, or None if no table was written
+        """
+        rows = []
+        for barcode, success in results_per_barcode.items():
+            if not success:
+                continue
+
+            result_file = self._find_barcode_results_file(barcode)
+            if result_file is None:
+                self.context.logger.warning(
+                    f"NanoTel results file not found for {barcode}; skipping combined table row"
+                )
+                continue
+
+            parsed_row = self._parse_barcode_results_file(barcode, result_file)
+            if parsed_row is None:
+                self.context.logger.warning(
+                    f"Could not parse NanoTel results file for {barcode}; skipping combined table row"
+                )
+                continue
+
+            rows.append(parsed_row)
+
+        if not rows:
+            self.context.logger.warning("No barcode result files available for combined NanoTel table")
+            return None
+
+        output_path = self.output_dir / "combined_barcodes_results.txt"
+        table_lines = self._format_combined_results_table(rows)
+        output_path.write_text("\n".join(table_lines) + "\n", encoding="utf-8")
+        self.context.logger.info(f"Combined NanoTel barcode results saved to: {output_path}")
+        return output_path
+
+    def _find_barcode_results_file(self, barcode: str) -> Optional[Path]:
+        """Find the per-barcode NanoTel results text file."""
+        barcode_dir = self.output_dir / barcode
+        expected_path = barcode_dir / f"{barcode}_results.txt"
+        if expected_path.exists():
+            return expected_path
+
+        if not barcode_dir.exists():
+            return None
+
+        result_files = sorted(barcode_dir.glob("*_results.txt"))
+        return result_files[0] if result_files else None
+
+    def _parse_barcode_results_file(self, barcode: str, result_file: Path) -> Optional[Dict[str, str]]:
+        """Parse the user-facing values from a per-barcode NanoTel results file."""
+        values = {"Barcode": barcode}
+        required_fields = (
+            "Number of telomeric reads (post-filtration)",
+            "Complete Telomeric Reads",
+            "Incomplete Telomeric Reads",
+            "Censoring Rate",
+            "Median Telomeric Length (post-filtration)",
+            "% of telomeres shorter than 2kb",
+        )
+
+        for line in result_file.read_text(encoding="utf-8").splitlines():
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            key = key.strip()
+            if key in required_fields:
+                values[key] = value.strip()
+
+        if any(field not in values for field in required_fields):
+            return None
+
+        return values
+
+    def _format_combined_results_table(self, rows: List[Dict[str, str]]) -> List[str]:
+        """Format combined barcode results as a compact fixed-width text table."""
+        columns = [
+            {
+                "key": "Barcode",
+                "header": ("Barcode", ""),
+            },
+            {
+                "key": "Number of telomeric reads (post-filtration)",
+                "header": ("Number of telomeric reads", "(post-filtration)"),
+            },
+            {
+                "key": "Complete Telomeric Reads",
+                "header": ("Complete Telomeric Reads", ""),
+            },
+            {
+                "key": "Incomplete Telomeric Reads",
+                "header": ("Incomplete Telomeric Reads", ""),
+            },
+            {
+                "key": "Censoring Rate",
+                "header": ("Censoring Rate", ""),
+            },
+            {
+                "key": "Median Telomeric Length (post-filtration)",
+                "header": ("Median Telomeric Length", "(post-filtration)"),
+            },
+            {
+                "key": "% of telomeres shorter than 2kb",
+                "header": ("% of telomeres", "shorter than 2kb"),
+            },
+        ]
+
+        widths = []
+        for column in columns:
+            header_top, header_bottom = column["header"]
+            values = [row[column["key"]] for row in rows]
+            widths.append(max(len(header_top), len(header_bottom), *(len(value) for value in values)))
+
+        def separator() -> str:
+            return "+" + "+".join("-" * (width + 2) for width in widths) + "+"
+
+        def format_row(values: List[str]) -> str:
+            cells = [
+                f" {value.ljust(width)} "
+                for value, width in zip(values, widths)
+            ]
+            return "|" + "|".join(cells) + "|"
+
+        title = "Combined Barcode Results"
+        lines = [
+            title,
+            "=" * len(title),
+            "",
+            separator(),
+            format_row([column["header"][0] for column in columns]),
+            format_row([column["header"][1] for column in columns]),
+            separator(),
+        ]
+
+        for row in rows:
+            lines.append(format_row([row[column["key"]] for column in columns]))
+
+        lines.append(separator())
+        return lines
 
     def _last_command_duration(self) -> Optional[float]:
         """Return the most recent command duration, if the logger recorded one."""
