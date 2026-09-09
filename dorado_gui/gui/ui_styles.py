@@ -77,13 +77,13 @@ def apply_global_style(widget):
 
         QLabel#progressStageLabel {
             color: #1e293b;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 700;
         }
 
         QLabel#progressLabel, QLabel#progressPercentLabel {
             color: #334155;
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 400;
         }
 
