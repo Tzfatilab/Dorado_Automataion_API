@@ -745,8 +745,10 @@ class AppWindow(
             return False
         elif clicked is trimmed_btn:
             self.non_pod5_trim_status = "trimmed"
+            self.max_distance_edge.setText("50")
         elif clicked is untrimmed_btn:
             self.non_pod5_trim_status = "untrimmed"
+            self.max_distance_edge.setText("134")
         else:
             return False
 

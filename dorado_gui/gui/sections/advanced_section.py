@@ -588,7 +588,7 @@ class AdvancedSection:
         grid.setAlignment(Qt.AlignLeft)
 
         self.read_length = QLineEdit("2000")
-        self.max_distance_edge = QLineEdit("134")
+        self.max_distance_edge = QLineEdit("50")
         self.max_telomere_start = QLineEdit("134")
         self.min_density_threshold = QLineEdit("0.75")
 
