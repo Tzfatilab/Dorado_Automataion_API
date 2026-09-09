@@ -8,6 +8,8 @@ Processes FASTQ files to identify and analyze telomeric sequences.
 
 from pathlib import Path
 from typing import Dict, List, Optional
+import gzip
+import math
 import os
 import re
 import subprocess
@@ -217,10 +219,27 @@ class NanoTelProcessor(ProcessorBase):
                 'barcode': barcode_name,
                 'input_dir': barcode_dir,
                 'output_dir': barcode_output_dir,
-                'fastq_count': len(fastq_files)
+                'fastq_count': len(fastq_files),
+                'total_chunks': self._count_fastq_chunks(fastq_files),
             })
 
         return tasks
+
+    @staticmethod
+    def _count_fastq_chunks(
+        fastq_files: List[Path], records_per_chunk: int = 10000
+    ) -> Optional[int]:
+        """Count NanoTel chunks without loading the FASTQ reads into memory."""
+        try:
+            line_count = 0
+            for fastq_file in fastq_files:
+                opener = gzip.open if fastq_file.name.lower().endswith(".gz") else open
+                with opener(fastq_file, "rb") as handle:
+                    line_count += sum(1 for _ in handle)
+            record_count = line_count // 4
+            return max(1, math.ceil(record_count / records_per_chunk)) if record_count else None
+        except OSError:
+            return None
 
     def _process_barcodes_sequential(self, tasks: List[Dict]) -> Dict[str, bool]:
         """
@@ -246,7 +265,9 @@ class NanoTelProcessor(ProcessorBase):
                 self.context.command_executor.execute(
                     command,
                     stream_output=True,
-                    gui_output_transform=self._format_gui_output,
+                    gui_output_transform=lambda line, total=task.get('total_chunks'): (
+                        self._format_gui_output(line, total)
+                    ),
                 )
                 duration = self._last_command_duration()
 
@@ -429,13 +450,17 @@ class NanoTelProcessor(ProcessorBase):
         duration = commands[-1].get("duration_seconds")
         return duration if isinstance(duration, (int, float)) else None
 
-    def _format_gui_output(self, line: str) -> Optional[str]:
+    def _format_gui_output(
+        self, line: str, total_chunks: Optional[int] = None
+    ) -> Optional[str]:
         """Turn verbose NanoTel result-writing diagnostics into concise GUI updates."""
         text = line.strip()
 
         chunk_match = re.match(r"processing chunk\s+(\d+)", text, re.IGNORECASE)
         if chunk_match:
             chunk_index = int(chunk_match.group(1))
+            if total_chunks:
+                return f"NanoTel: chunk {chunk_index} of {total_chunks} complete"
             return f"NanoTel: chunk {chunk_index} complete"
 
         if text.startswith("Work started at:"):

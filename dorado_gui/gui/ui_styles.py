@@ -63,6 +63,41 @@ def apply_global_style(widget):
             color: #2c2c2c; 
         }
 
+        QWidget#progressPanel {
+            background: #f8fafc;
+            border: 1px solid #d7dce1;
+            border-radius: 8px;
+        }
+
+        QLabel#progressStageLabel {
+            color: #1e293b;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        QLabel#progressLabel, QLabel#progressPercentLabel {
+            color: #334155;
+            font-weight: 600;
+        }
+
+        QLabel#progressPercentLabel { min-width: 44px; }
+
+        QProgressBar#workflowProgress {
+            min-height: 12px;
+            max-height: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            background: #e2e8f0;
+            color: #0f172a;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        QProgressBar#workflowProgress::chunk {
+            border-radius: 5px;
+            background-color: #4A6EDB;
+        }
+
 
         QWidget#sidebar {
             background: qlineargradient(

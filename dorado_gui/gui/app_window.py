@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QVBoxLayout,
     QHBoxLayout,
+    QProgressBar,
 )
 
 from PySide6.QtCore import (
@@ -66,8 +67,19 @@ class AppWindow(
         self.bam_has_modifications = None
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        self.log.setFont(QFont("Consolas", 10))
+        self.log.setFont(QFont("Consolas", 9))
         self.log.setLineWrapMode(QTextEdit.NoWrap)
+        self.progress_stage_label = QLabel("Workflow")
+        self.progress_stage_label.setObjectName("progressStageLabel")
+        self.progress_label = QLabel("Preparing workflow...")
+        self.progress_label.setObjectName("progressLabel")
+        self.progress_percent_label = QLabel("")
+        self.progress_percent_label.setObjectName("progressPercentLabel")
+        self.progress_percent_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setObjectName("workflowProgress")
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setRange(0, 0)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setAutoFillBackground(True)
 
@@ -148,11 +160,25 @@ class AppWindow(
             self.log_dialog.setWindowTitle("Execution Log")
 
             layout = QVBoxLayout()
-            layout.addWidget(QLabel("Execution Log"))
+            layout.setContentsMargins(8, 8, 8, 8)
+            layout.setSpacing(6)
             layout.addWidget(self.log)
 
+            progress_panel = QWidget()
+            progress_panel.setObjectName("progressPanel")
+            progress_layout = QVBoxLayout(progress_panel)
+            progress_layout.setContentsMargins(8, 6, 8, 7)
+            progress_layout.setSpacing(3)
+            progress_layout.addWidget(self.progress_stage_label)
+            detail_row = QHBoxLayout()
+            detail_row.addWidget(self.progress_label, 1)
+            detail_row.addWidget(self.progress_percent_label)
+            progress_layout.addLayout(detail_row)
+            progress_layout.addWidget(self.progress_bar)
+            layout.addWidget(progress_panel)
+
             self.log_dialog.setLayout(layout)
-            self.log_dialog.resize(860, 520)
+            self.log_dialog.resize(700, 420)
 
         self.log_dialog.show()
         self.log_dialog.raise_()
@@ -180,7 +206,68 @@ class AppWindow(
             return
 
         for raw_line in message.split("\n"):
+            self._update_progress_from_log(raw_line.strip())
             self._append_worker_log_line(raw_line)
+
+    def _update_progress_from_log(self, line):
+        """Keep the progress panel moving from the worker's streamed messages."""
+        if not line:
+            return
+
+        barcode_match = re.match(r"Processing\s+(barcode\d+)", line, re.IGNORECASE)
+        if barcode_match:
+            self._nanotel_current_barcode = barcode_match.group(1)
+            self.progress_stage_label.setText("NanoTel analysis")
+            self._show_busy_progress(f"Processing {self._nanotel_current_barcode} · starting...")
+            return
+
+        # Accept both NanoTel's current output and a total-aware form, so the GUI
+        # becomes determinate automatically if the backend reports "of N".
+        chunk_match = re.search(
+            r"(?:processing\s+chunk|NanoTel:\s*chunk)\s+(\d+)"
+            r"(?:\s+of\s+(\d+))?",
+            line,
+            re.IGNORECASE,
+        )
+        if chunk_match:
+            chunk = int(chunk_match.group(1))
+            total = int(chunk_match.group(2)) if chunk_match.group(2) else None
+            barcode = getattr(self, "_nanotel_current_barcode", "sample")
+            if total and total > 0:
+                percent = min(100, round(chunk * 100 / total))
+                self.progress_bar.setRange(0, 100)
+                if chunk >= total:
+                    # Reading the final chunk does not mean NanoTel has finished:
+                    # it still combines results, calculates statistics, and writes files.
+                    # Reserve 100% for the worker's real completion signal.
+                    self.progress_bar.setValue(95)
+                    self.progress_label.setText(f"Finalizing {barcode}...")
+                    self.progress_percent_label.setText("Finishing...")
+                else:
+                    self.progress_bar.setValue(percent)
+                    self.progress_label.setText(f"Processing {barcode}")
+                    self.progress_percent_label.setText(f"{percent}%")
+            else:
+                self._show_busy_progress(f"Processing {barcode}")
+            return
+
+        if line.strip().startswith("NanoTel completed for "):
+            self._show_busy_progress("NanoTel complete · continuing workflow...")
+            return
+
+        stage = line.strip()
+        if stage in {
+            "Basecalling", "Demultiplexing", "BAM to FASTQ conversion",
+            "NanoTel analysis", "Alignment", "Post-analysis",
+        }:
+            self.progress_stage_label.setText(stage)
+            self._show_busy_progress("Running...")
+
+    def _show_busy_progress(self, text):
+        """Show Qt's animated indeterminate bar for work with no known total."""
+        self.progress_label.setText(text)
+        self.progress_percent_label.setText("")
+        self.progress_bar.setRange(0, 0)
 
     def _append_worker_log_line(self, line):
         """Normalize, filter, and render one worker log line."""
@@ -189,6 +276,8 @@ class AppWindow(
             return
 
         r_detail = line.strip()
+        if re.match(r"^NanoTel:\s*chunk\s+\d+", r_detail, re.IGNORECASE):
+            return
         if self._handle_nanotel_result_path(r_detail):
             return
         if self._consume_next_nanotel_result_path():
@@ -719,6 +808,7 @@ class AppWindow(
             self.log = QTextEdit()
 
         self.log.clear()
+        self._show_busy_progress("Preparing workflow…")
         self._open_execution_log_dialog()
         self._set_workflow_running(True)
 
@@ -751,6 +841,13 @@ class AppWindow(
             None
         """
         self._set_workflow_running(False)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100 if success else 0)
+        self.progress_percent_label.setText("100%" if success else "Stopped")
+        self.progress_stage_label.setText("Workflow")
+        self.progress_label.setText(
+            "Workflow completed" if success else "Workflow stopped before completion"
+        )
         if message and not success:
             self._append_log(message)
 
