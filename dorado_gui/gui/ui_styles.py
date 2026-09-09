@@ -69,14 +69,21 @@ def apply_global_style(widget):
             border-radius: 8px;
         }
 
+        QLabel#progressStageLabel,
+        QLabel#progressLabel,
+        QLabel#progressPercentLabel {
+            font-family: sans-serif;
+        }
+
         QLabel#progressStageLabel {
             color: #1e293b;
-            font-size: 12px;
+            font-size: 14px;
             font-weight: 700;
         }
 
         QLabel#progressLabel, QLabel#progressPercentLabel {
             color: #334155;
+            font-size: 11px;
             font-weight: 400;
         }
 
