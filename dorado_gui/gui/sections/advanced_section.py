@@ -341,7 +341,9 @@ class AdvancedSection:
 
         widget = QWidget()
         widget.setLayout(layout)
-        widget.setFixedWidth(224)
+        # Keep a sensible minimum, but allow this column to grow when responsive
+        # screen scaling makes the label wider (especially with Linux fonts).
+        widget.setMinimumWidth(224)
         return widget
 
     def _build_nanotel_options(self):

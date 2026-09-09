@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QProgressBar,
+    QLayout,
 )
 
 from PySide6.QtCore import (
@@ -84,6 +85,74 @@ class AppWindow(
         self.setAutoFillBackground(True)
 
         self._build_ui()
+        self._apply_screen_scaling()
+
+    @staticmethod
+    def _screen_scale_factor(width, height):
+        """Return a restrained UI scale for screens larger than 1600x900."""
+        if width <= 0 or height <= 0:
+            return 1.0
+        size_ratio = min(width / 1600.0, height / 900.0)
+        return round(max(1.0, min(1.20, 1.0 + (size_ratio - 1.0) * 0.40)), 2)
+
+    @staticmethod
+    def _scale_stylesheet(stylesheet, factor):
+        """Scale pixel measurements in a Qt stylesheet."""
+        if not stylesheet or factor == 1.0:
+            return stylesheet
+
+        def scaled_pixel(match):
+            value = int(match.group(1))
+            if value <= 1:
+                return match.group(0)
+            return f"{max(1, round(value * factor))}px"
+
+        return re.sub(r"(?<![\w.])(\d+)px\b", scaled_pixel, stylesheet)
+
+    def _apply_screen_scaling(self):
+        """Enlarge the complete interface moderately on larger displays."""
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            self.ui_scale = 1.0
+            return
+
+        available = screen.availableGeometry()
+        factor = self._screen_scale_factor(available.width(), available.height())
+        self.ui_scale = factor
+        if factor == 1.0:
+            return
+
+        widgets = [self, *self.findChildren(QWidget)]
+        for widget in widgets:
+            stylesheet = widget.styleSheet()
+            if stylesheet:
+                widget.setStyleSheet(self._scale_stylesheet(stylesheet, factor))
+
+            if widget.testAttribute(Qt.WA_SetFont):
+                font = widget.font()
+                if font.pixelSize() > 0:
+                    font.setPixelSize(round(font.pixelSize() * factor))
+                elif font.pointSizeF() > 0:
+                    font.setPointSizeF(font.pointSizeF() * factor)
+                widget.setFont(font)
+
+            minimum = widget.minimumSize()
+            maximum = widget.maximumSize()
+            if minimum.width() == maximum.width() and maximum.width() < 16777215:
+                widget.setFixedWidth(round(maximum.width() * factor))
+            if minimum.height() == maximum.height() and maximum.height() < 16777215:
+                widget.setFixedHeight(round(maximum.height() * factor))
+
+        for layout in self.findChildren(QLayout):
+            margins = layout.contentsMargins()
+            layout.setContentsMargins(
+                round(margins.left() * factor),
+                round(margins.top() * factor),
+                round(margins.right() * factor),
+                round(margins.bottom() * factor),
+            )
+            if layout.spacing() >= 0:
+                layout.setSpacing(round(layout.spacing() * factor))
 
     def _build_ui(self):
         """
