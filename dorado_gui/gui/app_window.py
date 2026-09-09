@@ -69,7 +69,7 @@ class AppWindow(
         self.log.setReadOnly(True)
         self.log.setFont(QFont("Consolas", 9))
         self.log.setLineWrapMode(QTextEdit.NoWrap)
-        self.progress_stage_label = QLabel("Workflow")
+        self.progress_stage_label = QLabel("Workflow ·")
         self.progress_stage_label.setObjectName("progressStageLabel")
         self.progress_label = QLabel("Preparing workflow...")
         self.progress_label.setObjectName("progressLabel")
@@ -169,8 +169,9 @@ class AppWindow(
             progress_layout = QVBoxLayout(progress_panel)
             progress_layout.setContentsMargins(8, 6, 8, 7)
             progress_layout.setSpacing(3)
-            progress_layout.addWidget(self.progress_stage_label)
             detail_row = QHBoxLayout()
+            detail_row.setSpacing(5)
+            detail_row.addWidget(self.progress_stage_label)
             detail_row.addWidget(self.progress_label, 1)
             detail_row.addWidget(self.progress_percent_label)
             progress_layout.addLayout(detail_row)
@@ -217,7 +218,7 @@ class AppWindow(
         barcode_match = re.match(r"Processing\s+(barcode\d+)", line, re.IGNORECASE)
         if barcode_match:
             self._nanotel_current_barcode = barcode_match.group(1)
-            self.progress_stage_label.setText("NanoTel analysis")
+            self.progress_stage_label.setText("NanoTel analysis ·")
             self._show_busy_progress(f"Processing {self._nanotel_current_barcode} · starting...")
             return
 
@@ -241,8 +242,8 @@ class AppWindow(
                     # it still combines results, calculates statistics, and writes files.
                     # Reserve 100% for the worker's real completion signal.
                     self.progress_bar.setValue(95)
-                    self.progress_label.setText(f"Finalizing {barcode}...")
-                    self.progress_percent_label.setText("Finishing...")
+                    self.progress_label.setText(f"Processing {barcode}")
+                    self.progress_percent_label.setText("")
                 else:
                     self.progress_bar.setValue(percent)
                     self.progress_label.setText(f"Processing {barcode}")
@@ -260,7 +261,7 @@ class AppWindow(
             "Basecalling", "Demultiplexing", "BAM to FASTQ conversion",
             "NanoTel analysis", "Alignment", "Post-analysis",
         }:
-            self.progress_stage_label.setText(stage)
+            self.progress_stage_label.setText(f"{stage} ·")
             self._show_busy_progress("Running...")
 
     def _show_busy_progress(self, text):
@@ -844,7 +845,7 @@ class AppWindow(
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(100 if success else 0)
         self.progress_percent_label.setText("100%" if success else "Stopped")
-        self.progress_stage_label.setText("Workflow")
+        self.progress_stage_label.setText("Workflow ·")
         self.progress_label.setText(
             "Workflow completed" if success else "Workflow stopped before completion"
         )

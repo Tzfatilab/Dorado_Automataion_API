@@ -77,7 +77,7 @@ def apply_global_style(widget):
 
         QLabel#progressLabel, QLabel#progressPercentLabel {
             color: #334155;
-            font-weight: 600;
+            font-weight: 400;
         }
 
         QLabel#progressPercentLabel { min-width: 44px; }
