@@ -36,6 +36,26 @@ def _build_parser():
     return parser
 
 
+def _show_initial_window(window, screen):
+    """Open large displays restored and smaller displays maximized."""
+    if screen is None:
+        window.showMaximized()
+        window._apply_screen_scaling()
+        return
+
+    available = screen.availableGeometry()
+    is_large_screen = available.width() >= 2200 or available.height() >= 1200
+    if not is_large_screen:
+        window.showMaximized()
+        window._apply_screen_scaling()
+        return
+
+    # This is the same window state produced by clicking the Restore square
+    # beside the close button on a maximized window.
+    window.showNormal()
+    window._apply_screen_scaling()
+
+
 def main(argv=None):
     """Launch the installed GUI application."""
     args = sys.argv[1:] if argv is None else argv
@@ -43,8 +63,7 @@ def main(argv=None):
 
     app = QApplication([sys.argv[0]])
     window = AppWindow()
-    window.showMaximized()
-    window.show()
+    _show_initial_window(window, app.primaryScreen())
     return app.exec()
 
 

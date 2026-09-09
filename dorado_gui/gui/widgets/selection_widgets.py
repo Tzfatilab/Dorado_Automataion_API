@@ -107,8 +107,7 @@ class SelectCard(QFrame):
 
         main.addWidget(self.radio)
         main.addWidget(icon)
-        main.addLayout(text_layout)
-        main.addStretch()
+        main.addLayout(text_layout, 1)
         icon.setAlignment(Qt.AlignCenter)
 
     def set_selected(self, selected: bool):

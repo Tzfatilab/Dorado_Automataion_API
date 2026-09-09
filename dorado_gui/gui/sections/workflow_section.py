@@ -44,12 +44,12 @@ class WorkflowSection:
             (
                 "basecalling",
                 "Basecalling",
-                "Convert POD5 to BAM with\nbase modifications."
+                "Convert POD5 to BAM with base modifications."
             ),
             (
                 "nanotel",
                 "NanoTel Analysis",
-                "Analyze telomere content and \n generate statistics."
+                "Analyze telomere content and generate statistics."
             ),
         ]
 

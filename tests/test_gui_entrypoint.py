@@ -9,15 +9,18 @@ from dorado_gui import main as gui_main
 class GuiEntrypointTests(unittest.TestCase):
     @patch.object(gui_main, "AppWindow")
     @patch.object(gui_main, "QApplication")
-    def test_main_launches_existing_window(self, application, app_window):
+    @patch.object(gui_main, "_show_initial_window")
+    def test_main_launches_existing_window(self, show_window, application, app_window):
         application.return_value.exec.return_value = 0
 
         result = gui_main.main([])
 
         application.assert_called_once()
         app_window.assert_called_once_with()
-        app_window.return_value.showMaximized.assert_called_once_with()
-        app_window.return_value.show.assert_called_once_with()
+        show_window.assert_called_once_with(
+            app_window.return_value,
+            application.return_value.primaryScreen.return_value,
+        )
         application.return_value.exec.assert_called_once_with()
         self.assertEqual(result, 0)
 

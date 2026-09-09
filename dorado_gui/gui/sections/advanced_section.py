@@ -306,8 +306,7 @@ class AdvancedSection:
         layout.addWidget(chrom_title)
 
         self.chromosome_mapping = MappingCheckBox(
-            "Align reads to reference genome\n"
-            "during basecalling",
+            "Enable during basecalling",
             # Mapping is mandatory while either methylation mode is selected.
             # The callback is evaluated on each click, not only during setup.
             can_uncheck=lambda: self.none_option.selected,
@@ -616,15 +615,15 @@ class AdvancedSection:
         ]:
             widget.setFixedHeight(32)
             widget.setAlignment(Qt.AlignCenter)
-            widget.setStyleSheet("font-size: 11px; padding: 2px 6px;")
+            widget.setStyleSheet("font-size: 13px; padding: 2px 6px;")
 
         label_style = """
             QLabel {
                 background: transparent;
                 border: none;
                 color: #111827;
-                font-size: 13px;
-                font-weight: 500;
+                font-size: 14px;
+                font-weight: 400;
             }
         """
         read_label = self._build_field_label("Min Read Length (bp)", 140, label_style)
