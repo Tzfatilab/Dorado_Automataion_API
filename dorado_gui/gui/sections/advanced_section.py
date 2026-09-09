@@ -314,7 +314,9 @@ class AdvancedSection:
 
         self.chromosome_mapping.setStyleSheet("""
             QCheckBox {
+                font-family: sans-serif;
                 font-size: 14px;
+                font-weight: 400;
                 color: #111827;
                 spacing: 10px;
             }
@@ -619,6 +621,7 @@ class AdvancedSection:
 
         label_style = """
             QLabel {
+                font-family: sans-serif;
                 background: transparent;
                 border: none;
                 color: #111827;

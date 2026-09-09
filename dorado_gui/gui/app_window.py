@@ -122,7 +122,7 @@ class AppWindow(
         effective_height = min(available.height(), self.height())
         factor = self._screen_scale_factor(effective_width, effective_height)
         if available.width() >= 2200 or available.height() >= 1200:
-            factor = max(1.05, factor)
+            factor = max(1.15, factor)
         self.ui_scale = factor
         if factor == 1.0:
             return
@@ -165,33 +165,12 @@ class AppWindow(
         self._update_chromosome_mapping_text()
 
     def _update_chromosome_mapping_text(self):
-        """Adapt the chromosome-mapping label size to its column."""
+        """Keep the shortened chromosome-mapping label consistent."""
         checkbox = getattr(self, "chromosome_mapping", None)
         if checkbox is None:
             return
 
         label_text = "Enable during basecalling"
-        scale = getattr(self, "ui_scale", 1.0)
-        indicator_space = round(42 * scale)
-        required_width = (
-            checkbox.fontMetrics().horizontalAdvance(label_text)
-            + indicator_space
-        )
-        narrow = checkbox.width() < required_width
-
-        # Preserve the screen-level scaling, then reduce the label gently when
-        # the restored window becomes too narrow for the normal text size.
-        normal_size = round(14 * scale)
-        desired_size = max(11, round(normal_size * 0.88)) if narrow else normal_size
-        stylesheet = re.sub(
-            r"font-size:\s*\d+px",
-            f"font-size: {desired_size}px",
-            checkbox.styleSheet(),
-            count=1,
-        )
-        if stylesheet != checkbox.styleSheet():
-            checkbox.setStyleSheet(stylesheet)
-
         if checkbox.text() != label_text:
             checkbox.setText(label_text)
             checkbox.updateGeometry()

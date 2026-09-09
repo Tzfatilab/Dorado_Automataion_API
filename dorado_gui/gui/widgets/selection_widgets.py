@@ -188,7 +188,9 @@ class SelectOption(QFrame):
 
         self.label = QLabel(text)
         self.label.setStyleSheet("""
+            font-family: sans-serif;
             font-size: 14px;
+            font-weight: 400;
             color: #111827;
         """)
 
