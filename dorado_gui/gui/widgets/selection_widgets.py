@@ -22,7 +22,7 @@ from core.workflow_constants import BASE_DIR
 class SelectCard(QFrame):
     """Selectable card widget used for choosing inputs or workflow steps."""
 
-    def __init__(self, key, title, description, theme="blue"):
+    def __init__(self, key, title, description, theme="blue", title_size=13):
         """
         Initialize the selectable card widget.
 
@@ -31,6 +31,7 @@ class SelectCard(QFrame):
             title: Display title text.
             description: Supporting description text.
             theme: Visual theme name used for selected state color.
+            title_size: Title font size in pixels.
 
         Returns:
             None
@@ -96,10 +97,12 @@ class SelectCard(QFrame):
         text_layout.setSpacing(3)
 
         title_lbl = QLabel(title)
-        title_lbl.setStyleSheet("font-weight: 600; font-size: 13px;")
+        title_lbl.setStyleSheet(
+            f"font-weight: bold; font-size: {title_size}px;"
+        )
         
         desc_lbl = QLabel(description)
-        desc_lbl.setStyleSheet("color: #6b7280; font-size: 11px;")
+        desc_lbl.setStyleSheet("color: #6b7280; font-size: 13px;")
         desc_lbl.setWordWrap(True)
 
         text_layout.addWidget(title_lbl)
@@ -188,10 +191,9 @@ class SelectOption(QFrame):
 
         self.label = QLabel(text)
         self.label.setStyleSheet("""
-            font-family: sans-serif;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 400;
-            color: #111827;
+            color: #6b7280;
         """)
 
         layout.addWidget(self.radio)

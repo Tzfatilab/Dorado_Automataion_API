@@ -156,7 +156,7 @@ class SidebarSection:
         title = QLabel("Configure Your Analysis Pipeline")
         title.setStyleSheet("""
             font-size: 18px;
-            font-weight: 600;
+            font-weight: bold;
         """)
         title.setFixedHeight(24)
 

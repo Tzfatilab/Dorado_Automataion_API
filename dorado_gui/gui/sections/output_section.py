@@ -60,7 +60,7 @@ class OutputSection:
 
         lbl = QLabel(label)
         lbl.setFixedWidth(70)
-        lbl.setStyleSheet("font-weight: bold;")
+        lbl.setStyleSheet("font-size: 14px; font-weight: bold;")
 
         edit = QLineEdit()
         edit.setPlaceholderText(placeholder)

@@ -170,7 +170,7 @@ class AppWindow(
         if checkbox is None:
             return
 
-        label_text = "Enable during basecalling"
+        label_text = "Align reads to genome"
         if checkbox.text() != label_text:
             checkbox.setText(label_text)
             checkbox.updateGeometry()

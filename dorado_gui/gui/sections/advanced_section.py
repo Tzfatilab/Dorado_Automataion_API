@@ -246,29 +246,33 @@ class AdvancedSection:
         body_widget = QWidget()
         body_widget.setStyleSheet("background: white;")
         body = QHBoxLayout(body_widget)
-        body.setContentsMargins(16, 12, 16, 12)
+        body.setContentsMargins(16, 10, 16, 10)
         body.setSpacing(16)
 
-        body.addWidget(self._build_methylation_options())
+        body.addWidget(self._build_methylation_options(), 0, Qt.AlignTop)
         body.addWidget(self._build_divider(QFrame.VLine))
-        body.addWidget(self._build_mapping_option())
+        body.addWidget(self._build_mapping_option(), 0, Qt.AlignTop)
 
         return body_widget
 
     def _build_methylation_options(self):
         """Build the mutually exclusive methylation selectors."""
         layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setAlignment(Qt.AlignTop)
         layout.setSpacing(8)
 
         meth_title = QLabel("Methylation Type")
         meth_title.setStyleSheet("""
-            font-size: 13px;
-            font-weight: 600;
+            font-family: sans-serif;
+            font-size: 14px;
+            font-weight: bold;
             color: #374151;
             border: none;
             background: transparent;
         """)
+        meth_title.setFixedHeight(30)
+        meth_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         layout.addWidget(meth_title)
 
         self.none_option = SelectOption("None")
@@ -292,21 +296,25 @@ class AdvancedSection:
     def _build_mapping_option(self):
         """Build the chromosome mapping control."""
         layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setAlignment(Qt.AlignTop)
         layout.setSpacing(8)
 
         chrom_title = QLabel("Chromosome Mapping")
         chrom_title.setStyleSheet("""
+            font-family: sans-serif;
             font-size: 14px;
-            font-weight: 600;
+            font-weight: bold;
             color: #374151;
             border: none;
             background: transparent;
         """)
+        chrom_title.setFixedHeight(30)
+        chrom_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         layout.addWidget(chrom_title)
 
         self.chromosome_mapping = MappingCheckBox(
-            "Enable during basecalling",
+            "Align reads to genome",
             # Mapping is mandatory while either methylation mode is selected.
             # The callback is evaluated on each click, not only during setup.
             can_uncheck=lambda: self.none_option.selected,
@@ -314,10 +322,9 @@ class AdvancedSection:
 
         self.chromosome_mapping.setStyleSheet("""
             QCheckBox {
-                font-family: sans-serif;
-                font-size: 14px;
+                font-size: 13px;
                 font-weight: 400;
-                color: #111827;
+                color: #6b7280;
                 spacing: 10px;
             }
 
@@ -466,7 +473,8 @@ class AdvancedSection:
         self.nanotel_mapping.setStyleSheet("""
             QCheckBox {
                 font-size: 13px;
-                color: #111827;
+                font-weight: 400;
+                color: #6b7280;
                 spacing: 8px;
                 border: none;
                 background: transparent;
@@ -499,8 +507,9 @@ class AdvancedSection:
 
         tvr_label = QLabel("TVR Mode")
         tvr_label.setStyleSheet("""
-            font-size: 13px;
-            font-weight: 600;
+            font-family: sans-serif;
+            font-size: 14px;
+            font-weight: bold;
             color: #374151;
             border: none;
             background: transparent;
@@ -510,6 +519,7 @@ class AdvancedSection:
             "Click a selected option again to clear it."
         )
         tvr_label.setFixedWidth(140)
+        tvr_label.setFixedHeight(30)
         tvr_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         tvr_row.addWidget(tvr_label)
 
@@ -621,11 +631,10 @@ class AdvancedSection:
 
         label_style = """
             QLabel {
-                font-family: sans-serif;
                 background: transparent;
                 border: none;
-                color: #111827;
-                font-size: 14px;
+                color: #6b7280;
+                font-size: 13px;
                 font-weight: 400;
             }
         """

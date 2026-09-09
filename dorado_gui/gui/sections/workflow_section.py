@@ -55,7 +55,7 @@ class WorkflowSection:
 
         for key, title, desc in workflow_items:
             # Create a selectable card and wire the click handler.
-            card = SelectCard(key, title, desc, theme="green")
+            card = SelectCard(key, title, desc, theme="green", title_size=15)
             card.mousePressEvent = lambda e, k=key: self._toggle_workflow(k)
 
             self.workflow_cards[key] = card

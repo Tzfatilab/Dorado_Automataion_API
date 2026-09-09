@@ -43,7 +43,7 @@ class InputSection:
         layout.setSpacing(16)
 
         subtitle = QLabel("Select your input data type")
-        subtitle.setStyleSheet("color: #6b7280; font-size: 13px; background-color: white;")
+        subtitle.setStyleSheet("color: #6b7280; font-size: 14px; background-color: white;")
         layout.addWidget(subtitle)
 
         row = QHBoxLayout()
