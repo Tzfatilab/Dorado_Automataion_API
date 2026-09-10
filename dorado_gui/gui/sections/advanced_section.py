@@ -22,9 +22,10 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-from PySide6.QtCore import Qt, QSize, QRectF
+from PySide6.QtCore import Qt, QSize, QRectF, QPoint
 from PySide6.QtGui import (
     QColor,
+    QCursor,
     QPainter,
     QPixmap,
     QIntValidator,
@@ -36,6 +37,36 @@ from PySide6.QtCore import QRegularExpression
 from gui.ui_styles import make_card
 from gui.widgets.selection_widgets import SelectOption
 from core.workflow_constants import BASE_DIR
+
+
+class HoverHelpLabel(QLabel):
+    """Label with a consistently styled cross-platform help popup."""
+
+    def __init__(self, text, help_text):
+        super().__init__(text)
+        self._help_popup = QLabel(help_text, None, Qt.ToolTip)
+        self._help_popup.setStyleSheet("""
+            QLabel {
+                color: #000000;
+                background-color: #ffffff;
+                border: 1px solid #cbd5e1;
+                border-radius: 3px;
+                font-size: 11px;
+                padding: 3px 5px;
+            }
+        """)
+
+    def enterEvent(self, event):
+        """Show help beside the pointer when the label is hovered."""
+        self._help_popup.adjustSize()
+        self._help_popup.move(QCursor.pos() + QPoint(10, 12))
+        self._help_popup.show()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        """Hide help when the pointer leaves the label."""
+        self._help_popup.hide()
+        super().leaveEvent(event)
 
 
 class MappingCheckBox(QCheckBox):
@@ -521,7 +552,10 @@ class AdvancedSection:
         tvr_row = QHBoxLayout()
         tvr_row.setSpacing(8)
 
-        tvr_label = QLabel("TVR Mode")
+        tvr_label = HoverHelpLabel(
+            "TVR Mode",
+            "Leave unselected to use no TVR patterns.",
+        )
         tvr_label.setStyleSheet("""
             font-family: sans-serif;
             font-size: 14px;
@@ -530,10 +564,6 @@ class AdvancedSection:
             border: none;
             background: transparent;
         """)
-        tvr_label.setToolTip(
-            "Leave all options unselected to run without TVR patterns. "
-            "Click a selected option again to clear it."
-        )
         tvr_label.setFixedWidth(140)
         tvr_label.setFixedHeight(30)
         tvr_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -567,9 +597,9 @@ class AdvancedSection:
             button.setStyleSheet(segmented_style)
 
         button_tooltips = {
-            self.preset_btn: "Use the TVR patterns configured for the selected organism.",
+            self.preset_btn: "Use organism-specific TVR patterns.",
             self.tsq1_btn: "Use the TSQ1 TVR pattern.",
-            self.manual_btn: "Enter one or more TVR patterns manually.",
+            self.manual_btn: "Enter custom TVR patterns.",
         }
         for button in self.tvr_buttons:
             button.setFixedHeight(30)

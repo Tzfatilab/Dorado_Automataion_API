@@ -1,13 +1,32 @@
 from PySide6.QtWidgets import (
-    QWidget, QLabel, QLineEdit, QPushButton,
+    QApplication, QWidget, QLabel, QLineEdit, QPushButton,
     QTextEdit, QVBoxLayout, QGroupBox
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QPalette
 
 """Shared Qt style helpers for the Telomere Analyzer GUI."""
 
 
 def apply_global_style(widget):
+    # Tooltips are top-level windows on some platforms, so style them on the
+    # application rather than relying on the main window's stylesheet.
+    app = QApplication.instance()
+    if app is not None:
+        tooltip_palette = app.palette()
+        tooltip_palette.setColor(QPalette.ToolTipBase, QColor("#ffffff"))
+        tooltip_palette.setColor(QPalette.ToolTipText, QColor("#000000"))
+        app.setPalette(tooltip_palette)
+        app.setStyleSheet("""
+            QToolTip {
+                color: #000000;
+                background-color: #ffffff;
+                border: 1px solid #cbd5e1;
+                font-size: 11px;
+                padding: 3px 5px;
+            }
+        """)
+
     widget.setStyleSheet("""
         QWidget { background-color: #f0f2f5; }
 
@@ -25,6 +44,14 @@ def apply_global_style(widget):
         }
 
         QLabel { color: #2c2c2c; }
+
+        QToolTip {
+            color: #000000;
+            background-color: #ffffff;
+            border: 1px solid #cbd5e1;
+            font-size: 11px;
+            padding: 3px 5px;
+        }
 
         #content {
             background-color: #ffffff;
