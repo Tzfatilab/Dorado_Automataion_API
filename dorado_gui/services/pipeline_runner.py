@@ -167,6 +167,7 @@ def _setup_pipeline_context(
         include_basecalling_outputs=do_basecalling,
         include_fastq_outputs=do_basecalling or bool(do_nanotel and bam_path),
         include_aligned_outputs=align_during_basecalling or nanotel_mapping,
+        include_mapping_outputs=nanotel_mapping,
     )
     log("Output directories initialized")
     return context

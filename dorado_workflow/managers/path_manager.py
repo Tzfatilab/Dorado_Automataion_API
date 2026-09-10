@@ -155,6 +155,7 @@ class PathManager:
             include_basecalling_outputs: bool = True,
             include_fastq_outputs: bool = True,
             include_aligned_outputs: bool = True,
+            include_mapping_outputs: bool = True,
     ) -> None:
         """
         Prepare generated workflow outputs for a fresh run.
@@ -191,9 +192,10 @@ class PathManager:
         if include_results:
             targets.extend([
                 self.get_nanotel_output_dir_path(),
-                self.get_r_mapping_output_dir_path(),
                 self.get_reports_dir_path(),
             ])
+            if include_mapping_outputs:
+                targets.append(self.get_r_mapping_output_dir_path())
 
         for target in targets:
             self._reset_generated_path(target, archive_root=archive_root)
