@@ -34,12 +34,16 @@
 
   "nanotel": {
     "telomere_pattern": "CCCTAA",
-    "min_density": 0.5,
+    "min_density": 0.75,
     "use_filter": true,
     "summary_only": false,
     "density_threshold": 0.75,
-    "max_telomere_start": 150,
+    "min_read_length": 2000,
+    "display_max_edge_distance": 50,
+    "untrimmed_max_edge_distance": 134,
+    "max_telomere_start": 134,
     "max_edge_distance": 134,
+    "tsq1_pattern": "AACCGC",
     "tvr_patterns": [
       "TTAGGG",
       "TCAGGG",

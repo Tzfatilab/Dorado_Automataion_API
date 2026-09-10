@@ -42,9 +42,9 @@ def run_pipeline(
         tvr_manual: str = "",
         allow_mismatch: bool = False,
         read_length: str = "",
-        max_distance_edge: str = "134",
-        max_telomere_start: str = "134",
-        min_density_threshold: str = "0.75",
+        max_distance_edge: str = "",
+        max_telomere_start: str = "",
+        min_density_threshold: str = "",
         log_cb=None,
         stop_cb=None
 ) -> tuple[int, str]:
@@ -273,12 +273,19 @@ def _apply_gui_config_overrides(
     if basecalling_overrides:
         context.config_manager.update_basecalling_params(basecalling_overrides)
 
-    # Keep the GUI value unchanged when the trimming answer changes. NanoTel
-    # must use 134 for untrimmed reads, while trimmed reads normally use 50.
+    nanotel_defaults = context.config_manager.get_nanotel_params()
+    displayed_edge_distance = nanotel_defaults["display_max_edge_distance"]
+    untrimmed_edge_distance = nanotel_defaults["untrimmed_max_edge_distance"]
+
+    # Keep the displayed value unchanged. Apply the untrimmed value only to
+    # the configuration passed to NanoTel.
     if non_pod5_trim_status == "untrimmed":
-        max_distance_edge = "134"
-    if non_pod5_trim_status == "trimmed" and str(max_distance_edge).strip() == "134":
-        max_distance_edge = "50"
+        max_distance_edge = str(untrimmed_edge_distance)
+    if (
+        non_pod5_trim_status == "trimmed"
+        and str(max_distance_edge).strip() == str(untrimmed_edge_distance)
+    ):
+        max_distance_edge = str(displayed_edge_distance)
 
     nanotel_overrides = _build_nanotel_overrides(
         context.config_manager,
@@ -516,7 +523,7 @@ def _build_nanotel_overrides(
     if "use preset" in modes:
         tvr_patterns.extend(config_manager.get_tvr_patterns(organism))
     if "tsq1" in modes:
-        tvr_patterns.append("AACCGC")
+        tvr_patterns.append(config_manager.get_tsq1_pattern())
     if "enter manual" in modes or "manual" in modes:
         tvr_patterns.extend(_parse_patterns(tvr_manual))
 

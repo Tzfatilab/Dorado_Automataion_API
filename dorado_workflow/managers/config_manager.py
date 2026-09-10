@@ -282,6 +282,10 @@ class ConfigManager:
             return organism_config.get('tvr_patterns', [])
         return self.config.get('nanotel', {}).get('tvr_patterns', [])
 
+    def get_tsq1_pattern(self) -> str:
+        """Get the TSQ1 pattern from the NanoTel configuration."""
+        return self.config.get('nanotel', {}).get('tsq1_pattern', 'AACCGC')
+
     def get_alignment_params(self) -> Dict[str, Any]:
         """Get alignment parameters."""
         return self.config.get('alignment', {})

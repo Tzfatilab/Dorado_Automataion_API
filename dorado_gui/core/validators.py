@@ -113,6 +113,16 @@ def inspect_bam_directory(bam_path, max_files=3, methylation_read_limit=1000):
 
 
 def _bam_has_mapped_reads(bam_file):
+    """Check whether a BAM file contains at least one mapped read.
+
+    Args:
+        bam_file (Path): BAM file to inspect with ``samtools view``.
+
+    Returns:
+        bool: True when at least one mapped read is found. False when no
+        mapped reads are found or samtools cannot return a valid count.
+    """
+    # ``-F 4`` excludes reads marked as unmapped; ``-c`` returns their count.
     completed = subprocess.run(
         ["samtools", "view", "-c", "-F", "4", str(bam_file)],
         capture_output=True,
@@ -124,12 +134,26 @@ def _bam_has_mapped_reads(bam_file):
         return False
 
     try:
+        # Treat empty output as zero and reject unexpected non-numeric output.
         return int((completed.stdout or "0").strip() or "0") > 0
     except ValueError:
         return False
 
 
 def _bam_has_modified_base_tags(bam_file, read_limit):
+    """Check sampled BAM records for modified-base SAM tags.
+
+    Args:
+        bam_file (Path): BAM file to inspect with ``samtools view``.
+        read_limit (int): Maximum number of alignment records to examine.
+
+    Returns:
+        bool: True when an MM/Mm or ML modified-base tag is found.
+
+    Only the requested number of reads is checked to keep validation fast.
+    Therefore, False means no tags were found in the sample, not necessarily
+    that the complete BAM contains no modified-base tags.
+    """
     process = subprocess.Popen(
         ["samtools", "view", str(bam_file)],
         stdout=subprocess.PIPE,
@@ -137,6 +161,8 @@ def _bam_has_modified_base_tags(bam_file, read_limit):
         text=True,
     )
     try:
+        # MM (or legacy Mm) stores modified-base positions; ML stores the
+        # corresponding modification probabilities.
         for index, line in enumerate(process.stdout or []):
             if index >= read_limit:
                 break
@@ -144,6 +170,7 @@ def _bam_has_modified_base_tags(bam_file, read_limit):
                 return True
         return False
     finally:
+        # Stop samtools after reaching the limit or finding a matching tag.
         process.terminate()
         try:
             process.wait(timeout=5)

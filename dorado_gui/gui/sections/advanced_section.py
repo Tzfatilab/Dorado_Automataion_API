@@ -37,6 +37,7 @@ from PySide6.QtCore import QRegularExpression
 from gui.ui_styles import make_card
 from gui.widgets.selection_widgets import SelectOption
 from core.workflow_constants import BASE_DIR
+from dorado_workflow.managers.config_manager import ConfigManager
 
 
 class HoverHelpLabel(QLabel):
@@ -641,15 +642,22 @@ class AdvancedSection:
 
     def _build_nanotel_fields(self):
         """Build validated NanoTel fields in a compact two-column grid."""
+        nanotel_defaults = ConfigManager().get_nanotel_params()
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(12)
         grid.setAlignment(Qt.AlignLeft)
 
-        self.read_length = QLineEdit("2000")
-        self.max_distance_edge = QLineEdit("50")
-        self.max_telomere_start = QLineEdit("134")
-        self.min_density_threshold = QLineEdit("0.75")
+        self.read_length = QLineEdit(str(nanotel_defaults["min_read_length"]))
+        self.max_distance_edge = QLineEdit(
+            str(nanotel_defaults["display_max_edge_distance"])
+        )
+        self.max_telomere_start = QLineEdit(
+            str(nanotel_defaults["max_telomere_start"])
+        )
+        self.min_density_threshold = QLineEdit(
+            str(nanotel_defaults["min_density"])
+        )
 
         self.read_length.setFixedWidth(68)
         self.max_distance_edge.setFixedWidth(68)
