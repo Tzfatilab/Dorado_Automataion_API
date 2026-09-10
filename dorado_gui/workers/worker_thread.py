@@ -34,6 +34,7 @@ class WorkerThread(QObject):
             summary_only: bool = False,
             tvr_mode: str = "None",
             tvr_manual: str = "",
+            allow_mismatch: bool = False,
             read_length: str = "",
             max_distance_edge: str = "134",
             max_telomere_start: str = "134",
@@ -61,6 +62,7 @@ class WorkerThread(QObject):
         self.summary_only = summary_only
         self.tvr_mode = tvr_mode
         self.tvr_manual = tvr_manual
+        self.allow_mismatch = allow_mismatch
         self.read_length = read_length
         self.max_distance_edge = max_distance_edge
         self.max_telomere_start = max_telomere_start
@@ -96,6 +98,7 @@ class WorkerThread(QObject):
                 summary_only=self.summary_only,
                 tvr_mode=self.tvr_mode,
                 tvr_manual=self.tvr_manual,
+                allow_mismatch=self.allow_mismatch,
                 read_length=self.read_length,
                 max_distance_edge=self.max_distance_edge,
                 max_telomere_start=self.max_telomere_start,

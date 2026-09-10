@@ -459,8 +459,13 @@ class AdvancedSection:
         body.setSpacing(8)
 
         body.addLayout(self._build_tvr_mode_controls())
+        footer = QHBoxLayout()
+        footer.setSpacing(18)
+        footer.addWidget(self._build_nanotel_mapping_option())
+        footer.addWidget(self._build_tvr_mismatch_option())
+        footer.addStretch()
+        body.addLayout(footer)
         body.addLayout(self._build_nanotel_fields())
-        body.addWidget(self._build_nanotel_mapping_option(), 0, Qt.AlignLeft)
 
         return body_widget
 
@@ -500,6 +505,17 @@ class AdvancedSection:
 
         return self.nanotel_mapping
 
+    def _build_tvr_mismatch_option(self):
+        """Build the shared telomere/TVR mismatch toggle."""
+        self.allow_mismatch = QCheckBox("Allow 1 mismatch")
+        self.allow_mismatch.setChecked(False)
+        self.allow_mismatch.setToolTip(
+            "Allow one mismatch for telomere and TVR patterns. Preset uses exact matching."
+        )
+        self.allow_mismatch.setStyleSheet(self.nanotel_mapping.styleSheet())
+        self._mismatch_before_preset = False
+        return self.allow_mismatch
+
     def _build_tvr_mode_controls(self):
         """Build optional TVR controls in one compact row."""
         tvr_row = QHBoxLayout()
@@ -523,7 +539,7 @@ class AdvancedSection:
         tvr_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         tvr_row.addWidget(tvr_label)
 
-        self.preset_btn = QPushButton("Use Preset")
+        self.preset_btn = QPushButton("Preset")
         self.tsq1_btn = QPushButton("TSQ1")
         self.manual_btn = QPushButton("Manual")
 
@@ -683,6 +699,7 @@ class AdvancedSection:
         # Manual may be active. No active buttons means TVR is disabled.
         selected_mode = (
             "Enter Manual" if selected_btn == self.manual_btn
+            else "Use Preset" if selected_btn == self.preset_btn
             else selected_btn.text()
         )
         if selected_mode in self.selected_tvr_modes:
@@ -691,6 +708,7 @@ class AdvancedSection:
             if selected_btn == self.manual_btn:
                 self.tvr_manual.clear()
             self.selected_tvr_mode = set(self.selected_tvr_modes)
+            self._sync_tvr_mismatch_state()
             return
 
         if selected_btn == self.manual_btn:
@@ -702,6 +720,22 @@ class AdvancedSection:
         self.selected_tvr_modes.add(selected_mode)
         selected_btn.setStyleSheet(active_style)
         self.selected_tvr_mode = set(self.selected_tvr_modes)
+        # TSQ1 starts with mismatch enabled, but the user may clear the checkbox.
+        if selected_btn == self.tsq1_btn and "Use Preset" not in self.selected_tvr_modes:
+            self.allow_mismatch.setChecked(True)
+        self._sync_tvr_mismatch_state()
+
+    def _sync_tvr_mismatch_state(self):
+        """Force exact matching while Preset is selected."""
+        checkbox = self.allow_mismatch
+        preset_selected = "Use Preset" in self.selected_tvr_modes
+        if preset_selected and checkbox.isEnabled():
+            self._mismatch_before_preset = checkbox.isChecked()
+            checkbox.setChecked(False)
+            checkbox.setEnabled(False)
+        elif not preset_selected and not checkbox.isEnabled():
+            checkbox.setEnabled(True)
+            checkbox.setChecked(getattr(self, "_mismatch_before_preset", False))
 
     def _prompt_manual_tvr_patterns(self):
         """

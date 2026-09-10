@@ -136,12 +136,11 @@ class NanoTelProcessor(ProcessorBase):
             # Process each barcode
             # Note: parallel processing could be added later if needed
             results_per_barcode = self._process_barcodes_sequential(barcode_tasks)
-            combined_results_path = self._write_combined_results_table(results_per_barcode)
 
             # Collect statistics
             stats = self._collect_statistics(results_per_barcode)
-            if combined_results_path is not None:
-                stats['combined_results_file'] = combined_results_path
+            # The post-analysis step creates the run-level combined NanoTel
+            # statistics after all barcode summaries have been filtered.
 
             # Determine overall success
             failed_barcodes = [bc for bc, success in results_per_barcode.items() if not success]
@@ -543,6 +542,7 @@ class NanoTelProcessor(ProcessorBase):
         telomere_pattern = nanotel_params.get('telomere_pattern', 'CCCTAA')
         min_density = nanotel_params.get('min_density', 0.5)
         tvr_patterns = nanotel_params.get('tvr_patterns', [])
+        max_mismatch = int(nanotel_params.get('max_mismatch', 0))
         summary_only = nanotel_params.get(
             'summary_only',
             nanotel_params.get('quick_run', False),
@@ -564,6 +564,9 @@ class NanoTelProcessor(ProcessorBase):
             "--min_density", str(min_density),
             "--max_telomere_start", str(max_telomere_start),
             "--max_edge_distance", str(max_edge_distance),
+            # Use the checkbox value for both the regular telomere pattern
+            # and any selected TVR patterns.
+            "--max_mismatch", str(max_mismatch),
         ]
 
         if summary_only:

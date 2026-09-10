@@ -40,6 +40,7 @@ def run_pipeline(
         summary_only: bool = False,
         tvr_mode: str = "None",
         tvr_manual: str = "",
+        allow_mismatch: bool = False,
         read_length: str = "",
         max_distance_edge: str = "134",
         max_telomere_start: str = "134",
@@ -82,6 +83,7 @@ def run_pipeline(
         summary_only=summary_only,
         tvr_mode=tvr_mode,
         tvr_manual=tvr_manual,
+        allow_mismatch=allow_mismatch,
         read_length=read_length,
         max_distance_edge=max_distance_edge,
         max_telomere_start=max_telomere_start,
@@ -166,7 +168,7 @@ def _setup_pipeline_context(
         include_fastq_outputs=do_basecalling or bool(do_nanotel and bam_path),
         include_aligned_outputs=align_during_basecalling or nanotel_mapping,
     )
-    log("Prepared fresh output folders for this run")
+    log("Output directories initialized")
     return context
 
 
@@ -259,6 +261,7 @@ def _apply_gui_config_overrides(
         summary_only: bool,
         tvr_mode: str,
         tvr_manual: str,
+        allow_mismatch: bool,
         read_length: str,
         max_distance_edge: str,
         max_telomere_start: str,
@@ -269,8 +272,10 @@ def _apply_gui_config_overrides(
     if basecalling_overrides:
         context.config_manager.update_basecalling_params(basecalling_overrides)
 
-    # Trimmed reads usually need a shorter allowed distance from the read edge.
-    # Keep a user-entered custom value untouched.
+    # Keep the GUI value unchanged when the trimming answer changes. NanoTel
+    # must use 134 for untrimmed reads, while trimmed reads normally use 50.
+    if non_pod5_trim_status == "untrimmed":
+        max_distance_edge = "134"
     if non_pod5_trim_status == "trimmed" and str(max_distance_edge).strip() == "134":
         max_distance_edge = "50"
 
@@ -280,6 +285,7 @@ def _apply_gui_config_overrides(
         summary_only=summary_only,
         tvr_mode=tvr_mode,
         tvr_manual=tvr_manual,
+        allow_mismatch=allow_mismatch,
         read_length=read_length,
         max_distance_edge=max_distance_edge,
         max_telomere_start=max_telomere_start,
@@ -469,6 +475,7 @@ def _build_nanotel_overrides(
         summary_only: bool,
         tvr_mode: str,
         tvr_manual: str,
+        allow_mismatch: bool,
         read_length: str,
         max_distance_edge: str,
         max_telomere_start: str,
@@ -514,6 +521,12 @@ def _build_nanotel_overrides(
 
     # Preserve selection order while removing patterns duplicated across modes.
     overrides["tvr_patterns"] = list(dict.fromkeys(tvr_patterns))
+    # The checkbox allows one mismatch for both the regular telomere pattern
+    # and any selected TVR patterns. Preset ignores it and uses exact matches.
+    max_mismatch = (
+        0 if "use preset" in modes else int(bool(allow_mismatch))
+    )
+    overrides["max_mismatch"] = max_mismatch
 
     return overrides
 

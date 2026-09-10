@@ -692,6 +692,9 @@ class AppWindow(
             "Telomere length (1 mismatch)",
             "Telomere length (1 mismatch + TVR)",
         )
+        allow_mismatch = bool(
+            getattr(self, "_nanotel_allow_mismatch", False)
+        )
         header_html = "".join(
             f'<th style="padding: 3px 7px; text-align: right; color: #555; '
             f'background: #f1f3f5; border: 1px solid #d7dce1;">{header}</th>'
@@ -699,9 +702,19 @@ class AppWindow(
         )
         rows_html = ""
         for title in table_order:
+            # When "Allow 1 mismatch" is off, do not show mismatch results.
+            # Show the TVR result with an exact-match label instead.
+            if not allow_mismatch and title == "Telomere length (1 mismatch)":
+                continue
             values = tables.get(title)
             if not values:
                 continue
+            display_title = title
+            if (
+                not allow_mismatch
+                and title == "Telomere length (1 mismatch + TVR)"
+            ):
+                display_title = "Telomere length (+ TVR)"
             value_html = "".join(
                 f'<td style="padding: 3px 7px; text-align: right; '
                 f'border: 1px solid #d7dce1;">{escape(value)}</td>'
@@ -710,7 +723,7 @@ class AppWindow(
             rows_html += (
                 '<tr>'
                 f'<td style="padding: 3px 7px; border: 1px solid #d7dce1; '
-                f'font-weight: 600;">{escape(title)}</td>{value_html}</tr>'
+                f'font-weight: 600;">{escape(display_title)}</td>{value_html}</tr>'
             )
         barcode = getattr(self, "_nanotel_current_barcode", "")
         title = "NanoTel analysis summary statistics"
@@ -789,6 +802,7 @@ class AppWindow(
 
             tvr_mode=self.selected_tvr_mode,
             tvr_manual=self.tvr_manual.text().strip(),
+            allow_mismatch=self.allow_mismatch.isChecked(),
 
             read_length=self.read_length.text().strip(),
             max_distance_edge=self.max_distance_edge.text().strip(),
@@ -838,7 +852,6 @@ class AppWindow(
             self.max_distance_edge.setText("50")
         elif clicked is untrimmed_btn:
             self.non_pod5_trim_status = "untrimmed"
-            self.max_distance_edge.setText("134")
         else:
             return False
 
@@ -901,6 +914,8 @@ class AppWindow(
             self.log = QTextEdit()
 
         self.log.clear()
+        # Preserve the mode used by this run for its final summary display.
+        self._nanotel_allow_mismatch = self.allow_mismatch.isChecked()
         self._show_busy_progress("Preparing workflow…")
         self._open_execution_log_dialog()
         self._set_workflow_running(True)
