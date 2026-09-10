@@ -2012,15 +2012,6 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
                       tvr_start = if(is.null(tvr_patterns)) -1 else start(telo_position3),
                       tvr_end = if(is.null(tvr_patterns)) -1 else end(telo_position3))
 
-     # Vector copy of the full-read plot for publication-quality output.
-     plot_single_telo(x_length = length(current_seq_unlist), seq_length = length(current_seq_unlist),
-                      subs = exact_analysis[[1]], serial_num = current_serial,
-                      seq_start = start(exact_position), seq_end = end(exact_position),
-                      save_it = TRUE, main_title = title, w = 750, h = 300,
-                      output_jpegs = output_jpegs_1, eps = TRUE,
-                      subs_tvr = if(is.null(tvr_patterns)) NULL else analyze_list3[[1]],
-                      tvr_start = if(is.null(tvr_patterns)) -1 else start(telo_position3),
-                      tvr_end = if(is.null(tvr_patterns)) -1 else end(telo_position3))
    } else if(is.null(tvr_patterns)) {
      plot_single_telo_with_gray_area(x_length = max_length, seq_length =
                                        length(current_seq_unlist), subs =  analyze_list[[1]],subs_mismatch = analyze_list2[[1]],
@@ -2036,12 +2027,6 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
                                      gray_end = end(telo_position2), save_it = TRUE, main_title = title, w = 750,
                                      h = 300, output_jpegs = output_jpegs_1)
 
-     # eps
-     plot_single_telo_with_gray_area(x_length = length(current_seq_unlist), seq_length =
-                                       length(current_seq_unlist), subs =  analyze_list[[1]],subs_mismatch = analyze_list2[[1]],  serial_num = current_serial,
-                                     seq_start = start(telo_position), seq_end = end(telo_position),gray_start = start(telo_position2),
-                                     gray_end = end(telo_position2) ,save_it = TRUE, main_title = title,  w = 750,
-                                     h = 300,output_jpegs = output_jpegs_1, eps = TRUE)
    } else {
      plot_single_telo_with_tvr(x_length = max_length, seq_length =
                                        length(current_seq_unlist), subs =  analyze_list[[1]],subs_mismatch = analyze_list2[[1]], subs_tvr = analyze_list3[[1]],
@@ -2057,12 +2042,6 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
                                      gray_end = end(telo_position2), tvr_start = start(telo_position3) , tvr_end = end(telo_position3),save_it = TRUE, main_title = title, w = 750,
                                      h = 300, output_jpegs = output_jpegs_1)
 
-     # eps
-     plot_single_telo_with_tvr(x_length = length(current_seq_unlist), seq_length =
-                                       length(current_seq_unlist), subs =  analyze_list[[1]],subs_mismatch = analyze_list2[[1]], subs_tvr = analyze_list3[[1]], serial_num = current_serial,
-                                     seq_start = start(telo_position), seq_end = end(telo_position),gray_start = start(telo_position2),
-                                     gray_end = end(telo_position2),tvr_start = start(telo_position3) , tvr_end = end(telo_position3) ,save_it = TRUE, main_title = title,  w = 750,
-                                     h = 300,output_jpegs = output_jpegs_1, eps = TRUE)
    }
   }
 
@@ -2685,11 +2664,6 @@ write_lines(x = ans_list$df_summary$sequence_ID,
             file = reads_ids_file)
 log_print(base::paste("NanoTel read IDs saved to:", reads_ids_file),
           hide_notes = TRUE, console = FALSE)
-
-barcode_name <- basename(normalizePath(opt$input_path, mustWork = FALSE))
-write_csv(x = ans_list$df_summary,
-          file = file.path(opt$save_path, paste0(barcode_name, "_summary.csv")))
-write_lines(x = ans_list$df_summary$sequence_ID  , file = file.path(opt$save_path, "reads_ids.txt"))
 
 # =====================================================================
 # POST-PROCESSING ANALYSIS (only runs when --analysis flag is set)
