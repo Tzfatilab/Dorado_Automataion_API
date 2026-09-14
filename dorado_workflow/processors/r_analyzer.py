@@ -288,7 +288,7 @@ class RAnalyzer(ProcessorBase):
 
         workbook = Workbook()
         summary_sheet = workbook.active
-        summary_sheet.title = "nanotel_summary"
+        summary_sheet.title = "NanoTel Statistics"
 
         raw_files, filtered_files = self._find_barcode_detail_files()
         if not raw_files:

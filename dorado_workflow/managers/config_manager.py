@@ -222,7 +222,7 @@ class ConfigManager:
         Returns:
             Path to reference genome
         """
-        org = organism or self._current_organism
+        org = self._normalize_organism(organism or self._current_organism)
         return self._resolve_path(self.config['paths']['references'][org])
 
     def get_dorado_model_path(self) -> str:

@@ -275,8 +275,11 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
   pipeline_end_time <- Sys.time()
   pipeline_duration <- as.numeric(difftime(pipeline_end_time, pipeline_start_time, units = "mins"))
 
-  # Generate final pipeline report
-  generate_pipeline_report(results, config, pipeline_duration)
+  # Summary mode puts NanoTel results in the Excel workbook. Keep execution
+  # details in the logs instead of writing a second, overlapping text report.
+  if (!isTRUE(config$nanotel_analysis$summary_only)) {
+    generate_pipeline_report(results, config, pipeline_duration)
+  }
 
   log_message(rep_str("=", 50))
   log_message("PIPELINE COMPLETED SUCCESSFULLY")
@@ -372,102 +375,59 @@ generate_pipeline_report <- function(results, config, duration) {
     "ANALYSIS RESULTS:"
   )
 
-  # NanoTel results
-  if (!is.null(results$nanotel)) {
-    nanotel <- results$nanotel
-    report_lines <- c(report_lines,
-                      "",
-                      "1. NANOTEL ANALYSIS:",
-                      paste("   Status: SUCCESS"),
-                      paste("   Barcodes processed:", nanotel$barcodes_processed),
-                      paste("   Files processed:", nanotel$files_processed),
-                      paste("   Output directory:", config$nanotel_analysis$output_dir)
-    )
-  } else {
-    report_lines <- c(report_lines,
-                      "",
-                      "1. NANOTEL ANALYSIS:",
-                      "   Status: SKIPPED OR FAILED"
-    )
+  # Include only analyses requested for this run. A missing result after an
+  # enabled step is not the same thing as an analysis the user did not select.
+  if (isTRUE(config$run_nanotel_analysis %||% TRUE)) {
+    if (!is.null(results$nanotel)) {
+      nanotel <- results$nanotel
+      report_lines <- c(report_lines,
+                        "", "1. NANOTEL ANALYSIS:", "   Status: SUCCESS",
+                        paste("   Barcodes processed:", nanotel$barcodes_processed),
+                        paste("   Files processed:", nanotel$files_processed),
+                        paste("   Output directory:", config$nanotel_analysis$output_dir))
+    } else {
+      report_lines <- c(report_lines, "", "1. NANOTEL ANALYSIS:",
+                        "   Status: NOT COMPLETED")
+    }
   }
 
   # Mapping results
-  if (!is.null(results$mapping)) {
-    mapping <- results$mapping
-    report_lines <- c(report_lines,
-                      "",
-                      "2. MAPPING ANALYSIS:",
-                      paste("   Status: SUCCESS"),
-                      paste("   Total processed:", mapping$total_processed),
-                      paste("   Successful barcodes:", length(mapping$successful_results)),
-                      paste("   Failed barcodes:", length(mapping$failed_barcodes)),
-                      paste("   Output directory:", config$mapping_analysis$output_dir)
-    )
-
-    if (length(mapping$failed_barcodes) > 0) {
+  if (isTRUE(config$run_mapping_analysis %||% TRUE)) {
+    if (!is.null(results$mapping)) {
+      mapping <- results$mapping
       report_lines <- c(report_lines,
-                        paste("   Failed barcode list:", paste(mapping$failed_barcodes, collapse = ", "))
-      )
+                        "", "2. MAPPING ANALYSIS:", "   Status: SUCCESS",
+                        paste("   Total processed:", mapping$total_processed),
+                        paste("   Successful barcodes:", length(mapping$successful_results)),
+                        paste("   Failed barcodes:", length(mapping$failed_barcodes)),
+                        paste("   Output directory:", config$mapping_analysis$output_dir))
+
+      if (length(mapping$failed_barcodes) > 0) {
+        report_lines <- c(report_lines,
+                          paste("   Failed barcode list:",
+                                paste(mapping$failed_barcodes, collapse = ", ")))
+      }
+    } else {
+      report_lines <- c(report_lines, "", "2. MAPPING ANALYSIS:",
+                        "   Status: NOT COMPLETED")
     }
-  } else {
-    report_lines <- c(report_lines,
-                      "",
-                      "2. MAPPING ANALYSIS:",
-                      "   Status: SKIPPED OR FAILED"
-    )
   }
 
   # Methylation results
-  if (!is.null(results$methylation)) {
-    methylation <- results$methylation
-    report_lines <- c(report_lines,
-                      "",
-                      "3. METHYLATION ANALYSIS:",
-                      paste("   Status: SUCCESS"),
-                      paste("   BED files processed:", methylation$processed_files),
-                      paste("   Total methylation sites:", methylation$total_sites),
-                      paste("   Output directory:", config$methylation_analysis$output_dir)
-    )
-  } else {
-    report_lines <- c(report_lines,
-                      "",
-                      "3. METHYLATION ANALYSIS:",
-                      "   Status: SKIPPED OR FAILED"
-    )
+  if (isTRUE(config$run_methylation_analysis %||% TRUE)) {
+    if (!is.null(results$methylation)) {
+      methylation <- results$methylation
+      report_lines <- c(report_lines,
+                        "", "3. METHYLATION ANALYSIS:", "   Status: SUCCESS",
+                        paste("   BED files processed:", methylation$processed_files),
+                        paste("   Total methylation sites:", methylation$total_sites),
+                        paste("   Output directory:", config$methylation_analysis$output_dir))
+    } else {
+      report_lines <- c(report_lines, "", "3. METHYLATION ANALYSIS:",
+                        "   Status: NOT COMPLETED (see execution log)")
+    }
   }
-  report_lines <- c(report_lines,
-                    "",
-                    "OUTPUT STRUCTURE:",
-                    paste("  ", config$base_output_dir, "/"),
-                    "    nanotel/",
-                    "      barcode*/.csv",
-                    "      filtered_summary*.csv",
-                    "      nanotel_summary_statistics.csv",
-                    "      nanotel_analysis_report.txt",
-                    "    mapping/",
-                    "      mapped*.csv",
-                    "      filtered_*.bam",
-                    "      pileup-*.bed",
-                    "      mapping_analysis_report.txt",
-                    "    methylation/",
-                    "      plots/",
-                    "      processed_data/",
-                    "      shiny_app/ (if enabled)",
-                    "      methylation_summary_statistics.csv",
-                    "      methylation_analysis_report.txt",
-                    "    logs/",
-                    "    reports/",
-                    "      r_pipeline_config.json",
-                    "      complete_pipeline_report.txt",
-                    "",
-                    "NEXT STEPS:",
-                    "  1. Review individual analysis reports for detailed results",
-                    "  2. Check any failed barcodes and investigate issues",
-                    "  3. Use interactive Shiny app for methylation visualization",
-                    "  4. Proceed with downstream analysis using processed data",
-                    "",
-                    rep_str("=", 80)
-  )
+  report_lines <- c(report_lines, "", rep_str("=", 80))
 
   # Write report
   writeLines(report_lines, report_file)

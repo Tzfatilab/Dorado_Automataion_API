@@ -196,7 +196,6 @@ class BasecallerProcessor(ProcessorBase):
         min_qscore = basecalling_params.get('min_qscore', 9)
         modified_bases = basecalling_params.get('modified_bases', '5mCG_5hmCG')
         kit_name = basecalling_params.get('kit_name')
-        reference = config.get_reference_path(organism)
         recursive = basecalling_params.get('recursive', True)
         no_trim = basecalling_params.get('no_trim', True)
 

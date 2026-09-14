@@ -580,6 +580,10 @@ class NanoTelProcessor(ProcessorBase):
             nanotel_script,
             "-i", str(task['input_dir']),
             "--save_path", str(task['output_dir']),
+            "--log_path", str(
+                self.context.path_manager.get_logs_dir_path()
+                / f"nanotel_{task['barcode']}.log"
+            ),
             "--patterns", str(telomere_pattern),
             "--min_density", str(min_density),
             "--max_telomere_start", str(max_telomere_start),

@@ -38,6 +38,10 @@ option_list = list(
               type = "character" , default = NULL,
               help = "A path to a directory for storing the output files.",
               metavar = "output dir path"),
+  make_option("--log_path", action = "store", type = "character",
+              default = NULL,
+              help = "Optional log file path. Defaults to save_path/log/run.log.",
+              metavar = "log file path"),
 
   # format( fastq/fasta)
   make_option("--format", action = "store",
@@ -2104,9 +2108,9 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
 } # End of analyze_read
 
 
-create_dirs <- function(output_dir, summary_only = FALSE) {
+create_dirs <- function(output_dir, summary_only = FALSE, log_path = NULL) {
   if (!dir.exists(output_dir)) { # update  did it
-    dir.create(output_dir)
+    dir.create(output_dir, recursive = TRUE)
   }
 
   if (!summary_only) {
@@ -2125,9 +2129,9 @@ create_dirs <- function(output_dir, summary_only = FALSE) {
     }
   }
 
-  log_dir <- paste(output_dir, "log", sep = "/")
+  log_dir <- if (is.null(log_path)) file.path(output_dir, "log") else dirname(log_path)
   if (!dir.exists(log_dir)) {
-    dir.create(log_dir)
+    dir.create(log_dir, recursive = TRUE)
   }
 }
 
@@ -2561,11 +2565,17 @@ lockBinding("global_max_mismatch", globalenv())
 # log function blueprint : summary(sample), %telomeric_reads , summary(telo_read) ...
 # I need to create a log funcion : with ifelse ( if telomeric patterns were found or not -> no one passed the filteration or df isempty ....)
 # test log file
-create_dirs(output_dir = opt$save_path, summary_only = opt$summary_only)
-tmp <- file.path(opt$save_path, "log", "run.log")
+create_dirs(output_dir = opt$save_path, summary_only = opt$summary_only,
+            log_path = opt$log_path)
+tmp <- if (is.null(opt$log_path)) {
+  file.path(opt$save_path, "log", "run.log")
+} else {
+  opt$log_path
+}
 
 # Open log
-lf <- log_open(tmp)
+# The log path already includes its directory; logr must not add another /log.
+lf <- log_open(tmp, logdir = FALSE)
 log_print('Telomere Analyzer  version v1.1.9-beta 2026-02-19', hide_notes = TRUE, console = FALSE) # Send message to log
 t1 <- Sys.time()
 log_print(base::paste("Work started at:", toString(t1)), hide_notes = TRUE, console = FALSE) # Send message to log
