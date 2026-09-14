@@ -46,7 +46,7 @@ class DemuxProcessor(ProcessorBase):
         # Define output directory
         self.output_dir = self.context.path_manager.get_demuxed_dir_path()
 
-    def validate_inputs(self, basecalled_bam: str) -> bool:
+    def validate_inputs(self, basecalled_bam: str, input_format: str = "bam") -> bool:
         """
         Validate that all prerequisites for demultiplexing are met.
 
@@ -61,11 +61,26 @@ class DemuxProcessor(ProcessorBase):
         # Check if basecalled BAM exists
         bam_path = Path(basecalled_bam)
         if not bam_path.exists():
-            self.context.logger.error(f"Basecalled BAM not found: {basecalled_bam}")
+            self.context.logger.error(f"Demultiplexing input not found: {basecalled_bam}")
             return False
 
-        if not bam_path.suffix == '.bam':
-            self.context.logger.error(f"Input is not a BAM file: {basecalled_bam}")
+        if input_format == "fastq":
+            fastq_files = (
+                [path for path in bam_path.rglob("*") if path.is_file()]
+                if bam_path.is_dir() else [bam_path]
+            )
+            if not any(self._is_fastq_file(path) for path in fastq_files):
+                self.context.logger.error(f"No FASTQ files found in: {basecalled_bam}")
+                return False
+            if not self.context.config_manager.get_demuxing_params().get('kit_name'):
+                self.context.logger.error("A barcode kit name is required to demultiplex FASTQ input")
+                return False
+        elif input_format == "bam":
+            if bam_path.suffix.lower() != '.bam':
+                self.context.logger.error(f"Input is not a BAM file: {basecalled_bam}")
+                return False
+        else:
+            self.context.logger.error(f"Unsupported demultiplexing input: {input_format}")
             return False
 
         # Check if dorado is available
@@ -78,7 +93,7 @@ class DemuxProcessor(ProcessorBase):
         self.context.logger.info("✓ All demultiplexing prerequisites validated")
         return True
 
-    def execute(self, basecalled_bam: str) -> ProcessorResult:
+    def execute(self, basecalled_bam: str, input_format: str = "bam") -> ProcessorResult:
         """
         Execute the demultiplexing process.
 
@@ -91,7 +106,7 @@ class DemuxProcessor(ProcessorBase):
         self.log_start()
 
         # Validate inputs first
-        if not self.validate_inputs(basecalled_bam):
+        if not self.validate_inputs(basecalled_bam, input_format):
             result = ProcessorResult(
                 success=False,
                 error="Input validation failed"
@@ -101,7 +116,7 @@ class DemuxProcessor(ProcessorBase):
 
         try:
             # Build the demultiplexing command
-            command = self._build_command(basecalled_bam)
+            command = self._build_command(basecalled_bam, input_format)
 
             # Execute demultiplexing
             self.context.logger.info(f"Starting demultiplexing for: {basecalled_bam}")
@@ -109,7 +124,7 @@ class DemuxProcessor(ProcessorBase):
 
             # Organize files into barcode subdirectories
             self.context.logger.info("Organizing demuxed files into barcode directories...")
-            barcode_dirs = self._organize_demuxed_files()
+            barcode_dirs = self._organize_demuxed_files(input_format)
 
             if not barcode_dirs:
                 result = ProcessorResult(
@@ -120,10 +135,10 @@ class DemuxProcessor(ProcessorBase):
                 return result
 
             # Register barcodes with BarcodeManager
-            self._register_barcodes(barcode_dirs)
+            self._register_barcodes(barcode_dirs, input_format)
 
             # Collect statistics
-            stats = self._collect_statistics(barcode_dirs)
+            stats = self._collect_statistics(barcode_dirs, input_format)
 
             # Add barcode directories to statistics (not output_paths)
             stats['barcode_dirs'] = barcode_dirs
@@ -151,7 +166,7 @@ class DemuxProcessor(ProcessorBase):
             self.log_complete(result)
             return result
 
-    def _build_command(self, basecalled_bam: str) -> str:
+    def _build_command(self, basecalled_bam: str, input_format: str = "bam") -> str:
         """
         Build the dorado demux command.
 
@@ -183,7 +198,9 @@ class DemuxProcessor(ProcessorBase):
         if no_trim:
             cmd_parts.append("--no-trim")
 
-        if sort_bam:
+        if input_format == "fastq":
+            cmd_parts.append("--emit-fastq")
+        elif sort_bam:
             cmd_parts.append("--sort-bam")
 
         if emit_summary:
@@ -204,7 +221,11 @@ class DemuxProcessor(ProcessorBase):
             return subprocess.list2cmdline(args)
         return shlex.join(args)
 
-    def _organize_demuxed_files(self) -> Dict[str, Path]:
+    @staticmethod
+    def _is_fastq_file(path: Path) -> bool:
+        return path.name.lower().endswith((".fastq", ".fastq.gz"))
+
+    def _organize_demuxed_files(self, input_format: str = "bam") -> Dict[str, Path]:
         """
         Organize demuxed BAM files into barcode subdirectories.
         Dorado outputs files with barcode names in the filename.
@@ -215,11 +236,16 @@ class DemuxProcessor(ProcessorBase):
         """
         SKIP_FOLDERS = {'unclassified', 'mix'}
 
-        bam_files = list(self.output_dir.rglob("*.bam"))
-        bai_files = list(self.output_dir.rglob("*.bam.bai"))
+        if input_format == "fastq":
+            bam_files = [path for path in self.output_dir.rglob("*")
+                         if path.is_file() and self._is_fastq_file(path)]
+            bai_files = []
+        else:
+            bam_files = list(self.output_dir.rglob("*.bam"))
+            bai_files = list(self.output_dir.rglob("*.bam.bai"))
 
         if not bam_files:
-            self.context.logger.warning("No BAM files found to organize")
+            self.context.logger.warning(f"No {input_format.upper()} files found to organize")
             return {}
 
         barcode_files = {}
@@ -264,7 +290,7 @@ class DemuxProcessor(ProcessorBase):
         )
         return barcode_dirs
 
-    def _register_barcodes(self, barcode_dirs: Dict[str, Path]) -> None:
+    def _register_barcodes(self, barcode_dirs: Dict[str, Path], input_format: str = "bam") -> None:
         """
         Register discovered barcodes with the BarcodeManager.
 
@@ -277,11 +303,10 @@ class DemuxProcessor(ProcessorBase):
             if barcode_name in SKIP_FOLDERS:
                 continue
 
-            # Register BAM files directly into BarcodeManager
-            bam_files = list(barcode_dir.rglob("*.bam"))
-            for bam_file in bam_files:
-                self.context.barcode_manager.barcode_files[barcode_name].append(bam_file)
-                self.context.barcode_manager.discovered_barcodes.add(barcode_name)
+            if input_format == "bam":
+                for bam_file in barcode_dir.rglob("*.bam"):
+                    self.context.barcode_manager.barcode_files[barcode_name].append(bam_file)
+            self.context.barcode_manager.discovered_barcodes.add(barcode_name)
 
             # Mark demux as successful
             self.context.barcode_manager.register_success(barcode_name, 'demux')
@@ -289,7 +314,7 @@ class DemuxProcessor(ProcessorBase):
         registered = len([b for b in barcode_dirs if b not in SKIP_FOLDERS])
         self.context.logger.info(f"Registered {registered} barcodes")
 
-    def _collect_statistics(self, barcode_dirs: Dict[str, Path]) -> Dict[str, any]:
+    def _collect_statistics(self, barcode_dirs: Dict[str, Path], input_format: str = "bam") -> Dict[str, any]:
         """
         Collect statistics about the demultiplexing output.
 
@@ -308,11 +333,13 @@ class DemuxProcessor(ProcessorBase):
         # Count BAM files per barcode
         bam_counts = {}
         for barcode_name, barcode_dir in barcode_dirs.items():
-            bam_files = list(barcode_dir.rglob("*.bam"))
+            bam_files = ([path for path in barcode_dir.rglob("*")
+                          if path.is_file() and self._is_fastq_file(path)]
+                         if input_format == "fastq" else list(barcode_dir.rglob("*.bam")))
             bam_counts[barcode_name] = len(bam_files)
 
-        stats['bam_files_per_barcode'] = bam_counts
-        stats['total_bam_files'] = sum(bam_counts.values())
+        stats[f'{input_format}_files_per_barcode'] = bam_counts
+        stats[f'total_{input_format}_files'] = sum(bam_counts.values())
 
         return stats
 

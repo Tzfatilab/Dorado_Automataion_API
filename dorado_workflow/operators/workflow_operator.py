@@ -147,10 +147,13 @@ class WorkflowOperator:
         return demuxed_dir, fastq_dir
 
     def _prepare_fastq_input(self, input_path: str) -> Optional[Any]:
-        """Convert BAM to FASTQ if needed. Returns the FASTQ input path or None on failure."""
+        """Prepare barcode-separated FASTQ input for NanoTel."""
         path = Path(input_path)
-        bam_files = list(path.rglob("*.bam"))
-        fastq_files = list(path.rglob("*.fastq*"))
+        input_files = [path] if path.is_file() else list(path.rglob("*"))
+        bam_files = [file for file in input_files
+                     if file.is_file() and file.suffix.lower() == ".bam"]
+        fastq_files = [file for file in input_files
+                       if file.is_file() and self.demuxer._is_fastq_file(file)]
 
         if bam_files and not fastq_files:
             self.context.logger.info("BAM input detected - converting to FASTQ...")
@@ -159,6 +162,28 @@ class WorkflowOperator:
             if result is None:
                 return None
             return result.get_output('fastq_dir')
+
+        if fastq_files:
+            barcode_dirs = ([directory for directory in path.iterdir()
+                             if directory.is_dir()
+                             and self.context.barcode_manager.extract_barcode(directory.name)
+                             and any(file.is_relative_to(directory) for file in fastq_files)]
+                            if path.is_dir() else [])
+            if barcode_dirs:
+                if any(file.parent == path for file in fastq_files):
+                    self.context.logger.error(
+                        "FASTQ input mixes barcode folders with unsplit files; "
+                        "separate the inputs before analysis"
+                    )
+                    return None
+                return input_path
+
+            self.context.logger.info("Unsplit FASTQ input detected - demultiplexing...")
+            result = self._run_step('demuxer', 'Demultiplexing', self.demuxer,
+                                    input_path, input_format="fastq")
+            if result is None:
+                return None
+            return result.get_output('output_dir')
 
         return input_path
 

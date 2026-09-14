@@ -53,6 +53,8 @@ def validate_input_directories(pod5, fastq, bam):
         p = Path(path)
         if not p.exists():
             return False
+        if p.is_file():
+            return any(p.match(pattern) for pattern in patterns)
         return any(list(p.rglob(pat)) for pat in patterns)
 
     if pod5 and not has_files(pod5, ["*.pod5"]):
