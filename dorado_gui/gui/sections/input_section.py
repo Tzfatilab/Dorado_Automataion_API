@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 
 from pathlib import Path
 from PySide6.QtGui import QIcon
-from gui.ui_styles import make_card
+from gui.ui_styles import make_card, make_help_button
 from gui.widgets.selection_widgets import SelectCard
 from core.workflow_constants import BASE_DIR
 
@@ -45,6 +45,23 @@ class InputSection:
         subtitle = QLabel("Select your input data type")
         subtitle.setStyleSheet("color: #6b7280; font-size: 14px; background-color: white;")
         layout.addWidget(subtitle)
+        make_help_button(
+            box, "Input Data",
+            "<h2 style='color:#1d4ed8'>Choose your input</h2>"
+            "<p>Select the file type you already have, then choose its folder.</p>"
+            "<h3>POD5 · raw signals</h3>"
+            "<p>Choose <b>Basecalling</b> to convert raw signals to BAM reads. "
+            "The workflow then separates barcodes and produces FASTQ files.</p>"
+            "<h3>BAM · basecalled reads</h3>"
+            "<p>Basecalling is skipped. BAM reads are converted to FASTQ "
+            "for NanoTel analysis.</p>"
+            "<h3>FASTQ · sequence reads</h3>"
+            "<p>Barcode folders are used directly. If the reads have not been "
+            "split by barcode, Dorado demultiplexes them first using the "
+            "configured kit.</p>"
+            "<hr><p>Results are saved in the <b>Output Path</b> selected below.</p>",
+            subtitle
+        )
 
         row = QHBoxLayout()
         row.setSpacing(20)

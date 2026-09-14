@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
 )
 
-from gui.ui_styles import make_card
+from gui.ui_styles import make_card, make_help_button
 from gui.widgets.selection_widgets import SelectCard
 
 
@@ -64,6 +64,37 @@ class WorkflowSection:
         layout.addLayout(row)
 
         box.setLayout(layout)
+        make_help_button(
+            box, "Analysis Steps",
+            "<h2 style='color:#1d4ed8'>Analysis steps</h2>"
+            "<h3>Basecalling</h3>"
+            "<p><b>Input:</b> raw POD5 signals.<br>"
+            "<b>Process:</b> Dorado calls bases and separates barcodes.<br>"
+            "<b>Output:</b> basecalled BAM and FASTQ reads.</p>"
+            "<h3>NanoTel Analysis</h3>"
+            "<p><b>Input:</b> FASTQ reads, including FASTQ converted from BAM.<br>"
+            "<b>Process:</b> measures telomeres, filters reads, and calculates statistics.<br>"
+            "<b>Output:</b> per-barcode results and a combined summary.</p>"
+            "<p>For raw POD5 through telomere results, select both steps.</p>"
+            "<hr><h2 style='color:#1d4ed8'>Advanced options</h2>"
+            "<h3>Basecalling options</h3>"
+            "<p><b>Methylation Type:</b> choose whether to detect modified bases.<br>"
+            "<b>Chromosome Mapping:</b> align reads to a reference genome.</p>"
+            "<h3>NanoTel options</h3>"
+            "<p><b>Summary only:</b> skip individual read plots and FASTA files; "
+            "keep summary outputs in one Excel workbook.<br>"
+            "<b>TVR Mode:</b> leave all choices unselected for no TVR patterns; "
+            "choose Preset, TSQ1, or Manual to search for TVRs.<br>"
+            "<b>Allow 1 mismatch:</b> permit one difference in telomere and TVR "
+            "patterns. Preset always uses exact matching.<br>"
+            "<b>Run mapping:</b> map NanoTel reads to the genome.</p>"
+            "<h3>Numeric thresholds</h3>"
+            "<p><b>Min Read Length:</b> shortest read accepted for analysis.<br>"
+            "<b>Max Edge Distance:</b> how far a telomere may start from a read end.<br>"
+            "<b>Max Telomere Start:</b> limit for locating the telomere start.<br>"
+            "<b>Min Density:</b> minimum telomere-repeat density required.</p>",
+            subtitle
+        )
 
         # Initialize selection state: no workflows selected by default
         self.selected_workflows = set()

@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QLineEdit, QPushButton,
     QTextEdit, QVBoxLayout, QGroupBox
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt
 from PySide6.QtGui import QColor, QPalette
 
 """Shared Qt style helpers for the Telomere Analyzer GUI."""
@@ -228,3 +228,93 @@ def make_card(title):
         }
     """)
     return box
+
+
+class _HelpButtonPositioner(QObject):
+    """Place help at the right end of a subtitle line without layout changes."""
+
+    def __init__(self, parent, button, anchor):
+        super().__init__(parent)
+        self.card = parent
+        self.button = button
+        self.anchor = anchor
+
+    def place(self):
+        anchor_pos = self.anchor.mapTo(self.card, QPoint(0, 0))
+        x = max(0, self.card.width() - self.button.width() - 12)
+        y = anchor_pos.y() + (self.anchor.height() - self.button.height()) // 2
+        self.button.move(x, y)
+        self.button.raise_()
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Resize, QEvent.Move, QEvent.Show,
+                            QEvent.FontChange, QEvent.StyleChange):
+            self.place()
+        return False
+
+
+def make_help_button(parent, title, message, anchor):
+    """Overlay section help on the subtitle line without changing geometry."""
+    from PySide6.QtWidgets import QToolButton
+
+    button = QToolButton(parent)
+    button.setText("?")
+    button.setToolTip(f"About {title}")
+    button.setAccessibleName(f"Help for {title}")
+    button.setFixedSize(30, 30)
+    button.setStyleSheet("""
+        QToolButton {
+            color: #2563eb;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 15px;
+            font-size: 16px;
+            font-weight: 700;
+        }
+        QToolButton:hover { background: #dbeafe; }
+    """)
+    button.clicked.connect(lambda: _show_help_dialog(parent, title, message))
+    positioner = _HelpButtonPositioner(parent, button, anchor)
+    parent.installEventFilter(positioner)
+    anchor.installEventFilter(positioner)
+    positioner.place()
+    return button
+
+
+def _show_help_dialog(parent, title, message):
+    """Show section guidance in a readable, scrollable window."""
+    from PySide6.QtWidgets import QDialog, QDialogButtonBox, QTextBrowser
+
+    dialog = QDialog(parent)
+    dialog.setWindowTitle(f"About {title}")
+    dialog.setMinimumWidth(480)
+    dialog.resize(580, 460)
+    dialog.setStyleSheet("""
+        QDialog { background: #ffffff; }
+        QTextBrowser {
+            background: #ffffff;
+            color: #1f2937;
+            border: none;
+            font-size: 13px;
+            padding: 16px 20px;
+        }
+        QPushButton {
+            background: #2563eb;
+            color: #ffffff;
+            border: none;
+            border-radius: 6px;
+            padding: 7px 18px;
+            font-weight: 600;
+        }
+        QPushButton:hover { background: #1d4ed8; }
+    """)
+    layout = QVBoxLayout(dialog)
+    layout.setContentsMargins(12, 12, 12, 12)
+    content = QTextBrowser(dialog)
+    content.setOpenExternalLinks(False)
+    content.setHtml(message)
+    layout.addWidget(content)
+    buttons = QDialogButtonBox(QDialogButtonBox.Close, parent=dialog)
+    buttons.rejected.connect(dialog.reject)
+    layout.addWidget(buttons)
+    dialog.exec()
