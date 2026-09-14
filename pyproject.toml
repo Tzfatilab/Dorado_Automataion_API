@@ -25,6 +25,7 @@ requires-python = ">=3.10"
 # - PySide6 installs its Essentials, Addons, and shiboken6 dependencies itself, so those
 #   transitive packages are intentionally not repeated here.
 dependencies = [
+    "openpyxl>=3.1,<4",
     "PySide6>=6.10,<7",
 ]
 

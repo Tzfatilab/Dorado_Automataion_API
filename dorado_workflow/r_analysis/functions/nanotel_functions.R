@@ -120,13 +120,17 @@ batch_process_nanotel_files <- function(input_files,
                                         density_threshold = 0.75,
                                         max_telomere_start = 150,
                                         max_edge_distance = 134,
-                                        min_read_length = NULL) {
+                                        min_read_length = NULL,
+                                        summary_only = FALSE) {
 
   log_message(paste("Starting batch processing of", length(input_files), "NanoTel files"))
 
   ensure_directory_exists(output_dir)
 
   all_processed_data <- list()
+  # Collect barcode errors so every input is attempted, then fail the batch.
+  # An error must not be reported as a barcode with zero filtered reads.
+  failed_files <- character()
 
   for (i in seq_along(input_files)) {
     file_path <- input_files[i]
@@ -146,9 +150,14 @@ batch_process_nanotel_files <- function(input_files,
         # Save individual filtered file
         barcode <- unique(processed_data$barcode)[1]
 
-        # CREATE BARCODE DIRECTORY:
-        barcode_output_dir <- file.path(output_dir, barcode)
-        ensure_directory_exists(barcode_output_dir)
+        # Summary mode keeps detailed CSVs at the run level. Full mode retains
+        # the existing per-barcode output layout.
+        if (summary_only) {
+          barcode_output_dir <- output_dir
+        } else {
+          barcode_output_dir <- file.path(output_dir, barcode)
+          ensure_directory_exists(barcode_output_dir)
+        }
 
         # UPDATED FILE PATH:
         output_file <- file.path(barcode_output_dir, paste0("filtered_summary",
@@ -159,7 +168,16 @@ batch_process_nanotel_files <- function(input_files,
 
     }, error = function(e) {
       log_message(paste("Error processing", basename(file_path), ":", e$message), "ERROR")
+      failed_files <<- c(failed_files, paste0(basename(file_path), ": ", e$message))
     })
+  }
+
+  if (length(failed_files) > 0) {
+    # The caller must not write a partial combined summary as a successful run.
+    stop(
+      "NanoTel filtering failed for ", length(failed_files), " file(s): ",
+      paste(failed_files, collapse = "; ")
+    )
   }
 
   log_message(paste("Batch processing complete. Processed",

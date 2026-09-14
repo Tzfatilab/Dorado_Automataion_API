@@ -8,10 +8,14 @@ Coordinates with R scripts to process aligned BAM files and NanoTel outputs.
 
 from pathlib import Path
 from typing import Dict, Optional, List
+import csv
 import subprocess
 import json
 import os
 import shlex
+import re
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
 
 class RAnalyzer(ProcessorBase):
@@ -117,9 +121,37 @@ class RAnalyzer(ProcessorBase):
             ProcessorResult with success status, output directories, and statistics
         """
         self.log_start()
+        # Load this before validation: mapping checks can fail after NanoTel has
+        # already produced CSVs that still need to be preserved in the workbook.
+        nanotel_params = self.context.config_manager.get_nanotel_params()
+        pipeline_config = {}
 
         # Validate inputs first
         if not self.validate_inputs(run_filtration, run_mapping, run_methylation):
+            if run_filtration and bool(nanotel_params.get("summary_only", False)):
+                if run_mapping or run_methylation:
+                    # Mapping prerequisites do not affect NanoTel filtration.
+                    # Finish that step alone so the workbook has real statistics.
+                    filtration_result = self.execute(
+                        run_filtration=True,
+                        run_mapping=False,
+                        run_methylation=False,
+                    )
+                    if filtration_result.success:
+                        self.context.logger.info(
+                            "NanoTel Excel summary saved despite mapping "
+                            f"validation failure: "
+                            f"{filtration_result.get_output('nanotel_summary_workbook')}"
+                        )
+                else:
+                    # Filtration itself could not start; keep raw files for
+                    # diagnosis and never label unknown counts as zero.
+                    recovery_workbook = self._try_create_summary_workbook_after_failure()
+                    if recovery_workbook is not None:
+                        self.context.logger.info(
+                            "NanoTel Excel summary saved despite post-analysis "
+                            f"validation failure: {recovery_workbook}"
+                        )
             result = ProcessorResult(
                 success=False,
                 error="Post-analysis prerequisite validation failed"
@@ -198,8 +230,19 @@ class RAnalyzer(ProcessorBase):
             self.context.logger.info(f"Command: {command}", gui_visible=False)
             self.context.command_executor.execute(command, cwd=r_analysis_dir)
 
-            # Collect statistics
+            # Capture counts before Summary mode removes its CSV intermediates.
             stats = self._collect_statistics()
+            workbook_path = None
+            if (
+                pipeline_config["run_nanotel_analysis"]
+                and bool(nanotel_params.get("summary_only", False))
+            ):
+                workbook_path = self._create_nanotel_summary_workbook(
+                    cleanup_sources=True
+                )
+                self.context.logger.info(
+                    f"NanoTel Excel summary saved to: {workbook_path}"
+                )
 
             # Create successful result
             result = ProcessorResult(
@@ -207,9 +250,12 @@ class RAnalyzer(ProcessorBase):
                 output_paths={
                     'r_analysis_dir': self.r_analysis_dir,
                     'reports_dir': self.reports_dir,
-                    'nanotel_filtered': self.nanotel_output_dir,  # Filtered summaries go here
+                    'nanotel_filtered': workbook_path or self.nanotel_output_dir,
                     'mapping_output': self.mapping_output_dir,
-                    'methylation_output': self.methylation_output_dir
+                    'methylation_output': self.methylation_output_dir,
+                    'nanotel_summary_workbook': (
+                        workbook_path
+                    ),
                 },
                 statistics=stats
             )
@@ -218,6 +264,13 @@ class RAnalyzer(ProcessorBase):
             return result
 
         except Exception as e:
+            if bool(nanotel_params.get("summary_only", False)):
+                recovery_workbook = self._try_create_summary_workbook_after_failure()
+                if recovery_workbook is not None:
+                    self.context.logger.info(
+                        f"NanoTel Excel summary saved before the later failure: "
+                        f"{recovery_workbook}"
+                    )
             error_msg = f"Post-analysis failed: {str(e)}"
             self.context.logger.error(error_msg)
             result = ProcessorResult(
@@ -226,6 +279,230 @@ class RAnalyzer(ProcessorBase):
             )
             self.log_complete(result)
             return result
+
+    def _create_nanotel_summary_workbook(
+        self, cleanup_sources: bool = True
+    ) -> Path:
+        """Create one formatted workbook with run summary and barcode details."""
+        summary_csv = self.nanotel_output_dir / "nanotel_summary_statistics.csv"
+
+        workbook = Workbook()
+        summary_sheet = workbook.active
+        summary_sheet.title = "nanotel_summary"
+
+        raw_files, filtered_files = self._find_barcode_detail_files()
+        if not raw_files:
+            raise FileNotFoundError(
+                f"No barcode NanoTel summaries were found in {self.nanotel_output_dir}"
+            )
+
+        if summary_csv.exists():
+            self._populate_csv_sheet(summary_sheet, summary_csv)
+        else:
+            self._populate_empty_summary_sheet(summary_sheet)
+        self._ensure_summary_barcodes(summary_sheet, list(raw_files))
+
+        for barcode, detail_file in raw_files.items():
+            sheet = workbook.create_sheet(self._safe_sheet_name(barcode, workbook.sheetnames))
+            self._populate_csv_sheet(sheet, detail_file)
+
+        for barcode in raw_files:
+            preferred_name = f"filtered_{barcode}"
+            sheet = workbook.create_sheet(
+                self._safe_sheet_name(preferred_name, workbook.sheetnames)
+            )
+            detail_file = filtered_files.get(barcode)
+            if detail_file is None:
+                self._populate_empty_filtered_sheet(sheet, raw_files[barcode])
+            else:
+                self._populate_csv_sheet(sheet, detail_file)
+
+        workbook_path = self.r_analysis_dir / "nanotel_summary.xlsx"
+        temporary_path = workbook_path.with_suffix(".tmp.xlsx")
+        workbook.save(temporary_path)
+        os.replace(temporary_path, workbook_path)
+        if cleanup_sources:
+            self._cleanup_summary_workspace()
+        return workbook_path
+
+    def _try_create_summary_workbook_after_failure(self) -> Optional[Path]:
+        """Preserve completed NanoTel results when a later analysis step fails."""
+        # Without this file, filtering may have failed. Do not turn unknown
+        # results into a workbook that claims every barcode has zero reads.
+        if not (self.nanotel_output_dir / "nanotel_summary_statistics.csv").exists():
+            return None
+        try:
+            return self._create_nanotel_summary_workbook(cleanup_sources=False)
+        except (OSError, ValueError):
+            return None
+
+    def _find_barcode_detail_files(self) -> tuple[Dict[str, Path], Dict[str, Path]]:
+        """Return raw and filtered barcode CSVs as separate worksheet sources."""
+        raw_details: Dict[str, Path] = {}
+        filtered_details: Dict[str, Path] = {}
+
+        raw_files = sorted(self.nanotel_output_dir.glob("barcode*_summary.csv"))
+        for path in raw_files:
+            barcode = self._barcode_from_filename(path.name)
+            if barcode:
+                if barcode in raw_details:
+                    raise ValueError(
+                        f"Multiple NanoTel summaries resolve to {barcode}: "
+                        f"{raw_details[barcode].name}, {path.name}"
+                    )
+                raw_details[barcode] = path
+
+        filtered_files = sorted(self.nanotel_output_dir.glob("filtered_summary*.csv"))
+        for path in filtered_files:
+            barcode = self._barcode_from_filename(path.name)
+            if barcode:
+                if barcode in filtered_details:
+                    raise ValueError(
+                        f"Multiple filtered summaries resolve to {barcode}: "
+                        f"{filtered_details[barcode].name}, {path.name}"
+                    )
+                filtered_details[barcode] = path
+
+        return dict(sorted(raw_details.items())), dict(sorted(filtered_details.items()))
+
+    def _cleanup_summary_workspace(self) -> None:
+        """Remove the temporary NanoTel tree after its workbook is safely saved."""
+        results_dir = self.context.path_manager.get_results_dir_path().resolve(strict=False)
+        source_dir = self.nanotel_output_dir.resolve(strict=False)
+        if source_dir == results_dir or results_dir not in source_dir.parents:
+            raise ValueError(f"Refusing to remove unexpected NanoTel path: {source_dir}")
+        removed = self.context.path_manager.remove_generated_path(source_dir)
+        if not removed:
+            remaining = sorted(path.name for path in source_dir.iterdir())
+            self.context.logger.warning(
+                "Excel was saved, but the temporary NanoTel folder could not "
+                f"be fully removed. Remaining items: {', '.join(remaining)}"
+            )
+
+    @staticmethod
+    def _barcode_from_filename(filename: str) -> Optional[str]:
+        match = re.search(r"barcode\s*0*(\d+)", filename, re.IGNORECASE)
+        if not match:
+            match = re.search(r"(?:^|[_-])bc\s*0*(\d+)", filename, re.IGNORECASE)
+        return f"barcode{int(match.group(1)):02d}" if match else None
+
+    @staticmethod
+    def _safe_sheet_name(barcode: str, existing_names: List[str]) -> str:
+        base = re.sub(r"[\\/*?:\[\]]", "_", barcode)[:31] or "Barcode"
+        name = base
+        suffix = 2
+        while name in existing_names:
+            tail = f"_{suffix}"
+            name = f"{base[:31 - len(tail)]}{tail}"
+            suffix += 1
+        return name
+
+    @staticmethod
+    def _parse_csv_value(value: str):
+        """Preserve identifiers as text while storing numeric results as numbers."""
+        text = value.strip()
+        if text == "":
+            return None
+        if re.fullmatch(r"[-+]?\d+", text):
+            return int(text)
+        if re.fullmatch(r"[-+]?(?:\d+\.\d*|\.\d+)(?:[eE][-+]?\d+)?", text):
+            return float(text)
+        return text
+
+    def _populate_csv_sheet(self, sheet, csv_path: Path) -> None:
+        """Copy a CSV into a readable, filterable worksheet."""
+        with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.reader(handle)
+            column_widths: List[int] = []
+            text_columns = set()
+            row_count = 0
+            for row_index, row in enumerate(reader, start=1):
+                row_count = row_index
+                while len(column_widths) < len(row):
+                    column_widths.append(0)
+                if row_index == 1:
+                    text_columns = {
+                        index
+                        for index, name in enumerate(row)
+                        if name.strip().lower() in {
+                            "barcode", "read_id", "sequence_id", "read_name"
+                        }
+                        or name.strip().lower().endswith("_id")
+                    }
+                for column_index, value in enumerate(row, start=1):
+                    parsed_value = (
+                        value
+                        if row_index == 1 or column_index - 1 in text_columns
+                        else self._parse_csv_value(value)
+                    )
+                    cell = sheet.cell(
+                        row=row_index,
+                        column=column_index,
+                        value=parsed_value,
+                    )
+                    # Read IDs and other CSV text beginning with '=' are literal
+                    # data; openpyxl otherwise interprets them as Excel formulas.
+                    if isinstance(parsed_value, str) and parsed_value.startswith("="):
+                        cell.data_type = "s"
+                        cell.number_format = "@"
+                    if row_index > 1 and isinstance(cell.value, (int, float)):
+                        cell.number_format = "#,##0.###"
+                    if row_index <= 250:
+                        column_widths[column_index - 1] = max(
+                            column_widths[column_index - 1], len(str(parsed_value or ""))
+                        )
+
+        if row_count == 0:
+            sheet["A1"] = "No results"
+            column_widths = [10]
+
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = sheet.dimensions
+
+        for column_index, content_width in enumerate(column_widths, start=1):
+            width = min(max(content_width + 2, 11), 42)
+            sheet.column_dimensions[get_column_letter(column_index)].width = width
+
+    @staticmethod
+    def _populate_empty_summary_sheet(sheet) -> None:
+        """Create a valid run summary when no reads passed filtration."""
+        sheet.append([
+            "barcode",
+            "amount_of_telomeres",
+            "median_telomere_length",
+            "below_2kb_pct",
+            "med_read_len",
+            "mean_density",
+            "mean_telo_start",
+        ])
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = sheet.dimensions
+
+    @staticmethod
+    def _ensure_summary_barcodes(sheet, barcodes: List[str]) -> None:
+        """Represent barcodes with zero filtered reads in the central summary."""
+        existing = {
+            str(sheet.cell(row=row, column=1).value).lower()
+            for row in range(2, sheet.max_row + 1)
+            if sheet.cell(row=row, column=1).value
+        }
+        for barcode in barcodes:
+            if barcode.lower() not in existing:
+                sheet.append([barcode, 0])
+        sheet.auto_filter.ref = sheet.dimensions
+
+    @staticmethod
+    def _populate_empty_filtered_sheet(sheet, raw_csv: Path) -> None:
+        """Create a header-only filtered sheet for a barcode with no passing reads."""
+        with raw_csv.open("r", encoding="utf-8-sig", newline="") as handle:
+            header = next(csv.reader(handle), [])
+        header = ["read_id" if name == "sequence_ID" else name for name in header]
+        for derived_name in ("running_median", "seqLen_runningMED", "barcode"):
+            if derived_name not in header:
+                header.append(derived_name)
+        sheet.append(header or ["No reads passed filtering"])
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = sheet.dimensions
 
     def _format_command(self, cmd_parts: List[str]) -> str:
         """Quote a command safely for the current platform."""
@@ -250,22 +527,30 @@ class RAnalyzer(ProcessorBase):
             )
             return False
 
-        # Find barcode directories with summary.csv files
-        found_summaries = []
-        for item in nanotel_dir.iterdir():
-            if item.is_dir() and item.name.startswith('barcode'):
-                summary_files = list(item.rglob("*summary*.csv"))
-                if summary_files:
-                    found_summaries.append(item.name)
+        # Full runs store summaries inside barcode directories; Summary runs
+        # store the same barcode-named files directly in the NanoTel directory.
+        summary_files = [
+            path
+            for path in nanotel_dir.rglob("*_summary.csv")
+            if path.is_file()
+            and not path.name.lower().startswith("filtered_")
+            and "statistics" not in path.name.lower()
+        ]
+        found_barcodes = {
+            barcode
+            for path in summary_files
+            if (barcode := self._barcode_from_filename(path.name)) is not None
+        }
 
-        if not found_summaries:
+        if not found_barcodes:
             self.context.logger.error(
-                f"No NanoTel summary.csv files found in {nanotel_dir}\n"
-                "Ensure NanoTel processor completed successfully."
+                f"No barcode NanoTel summary CSV files found in {nanotel_dir}"
             )
             return False
 
-        self.context.logger.info(f"Found NanoTel summaries for {len(found_summaries)} barcodes")
+        self.context.logger.info(
+            f"Found NanoTel summaries for {len(found_barcodes)} barcodes"
+        )
         return True
 
 

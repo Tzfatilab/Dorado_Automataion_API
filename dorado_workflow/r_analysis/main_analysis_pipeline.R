@@ -84,16 +84,23 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
       if (result_code == 0) {
         log_message("âœ“ NanoTel analysis completed successfully")
 
-        # Try to count actual processed barcodes from output files
+        # Keep the actual barcode names. Counts cannot be used to reconstruct
+        # non-contiguous selections such as barcode02 and barcode19.
         nanotel_output_dir <- config$nanotel_analysis$output_dir
-        # Look for barcode subdirectories
-        barcode_dirs <- list.dirs(nanotel_output_dir, recursive = FALSE, full.names = FALSE)
-        barcode_dirs <- barcode_dirs[grepl("^(bc|barcode)[0-9]+$", barcode_dirs, ignore.case = TRUE)]
-        barcodes_count <- length(barcode_dirs)
+        raw_summary_files <- list.files(
+          nanotel_output_dir,
+          pattern = "barcode[0-9]+_summary\\.csv$",
+          recursive = TRUE,
+          full.names = TRUE,
+          ignore.case = TRUE
+        )
+        nanotel_barcodes <- extract_barcode_names(raw_summary_files)
+        barcodes_count <- length(nanotel_barcodes)
 
         results$nanotel <- list(
           barcodes_processed = barcodes_count,
-          files_processed = barcodes_count
+          files_processed = barcodes_count,
+          barcodes = nanotel_barcodes
         )
       } else {
         stop("NanoTel analysis failed with exit code: ", result_code)
@@ -154,9 +161,9 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
         # tracked separately by pileup BED files.
         successful_barcodes <- unique(mapped_barcodes)
 
-        # Determine failed barcodes (assuming barcodes are numbered 01-10 based on NanoTel results)
+        # Compare against the barcodes that NanoTel actually processed.
         if (!is.null(results$nanotel)) {
-          expected_barcodes <- paste0("barcode", sprintf("%02d", 1:results$nanotel$barcodes_processed))
+          expected_barcodes <- results$nanotel$barcodes %||% character()
           failed_barcodes <- setdiff(expected_barcodes, successful_barcodes)
         } else {
           failed_barcodes <- character()
@@ -298,8 +305,9 @@ extract_barcode_names <- function(paths) {
     return(character())
   }
   matches <- regmatches(paths, gregexpr("barcode[0-9]+", paths, ignore.case = TRUE))
-  barcodes <- unique(tolower(unlist(matches)))
-  barcodes[nzchar(barcodes)]
+  barcode_numbers <- as.integer(sub("barcode", "", tolower(unlist(matches))))
+  barcode_numbers <- unique(barcode_numbers[!is.na(barcode_numbers)])
+  paste0("barcode", sprintf("%02d", barcode_numbers))
 }
 
 # Create temporary configuration file

@@ -188,6 +188,12 @@ class NanoTelProcessor(ProcessorBase):
         """
         fastq_path = Path(fastq_dir)
         tasks = []
+        seen_barcodes = {}
+        summary_only = bool(
+            self.context.config_manager.get_nanotel_params().get(
+                'summary_only', False
+            )
+        )
 
         # Find barcode directories
         barcode_dirs = sorted([
@@ -211,8 +217,22 @@ class NanoTelProcessor(ProcessorBase):
             else:
                 barcode_name = barcode_dir.name
 
-            # Create output directory for this barcode
-            barcode_output_dir = self.context.path_manager.get_barcode_nanotel_dir(barcode_name)
+            if barcode_name in seen_barcodes:
+                raise ValueError(
+                    f"Input folders {seen_barcodes[barcode_name].name} and "
+                    f"{barcode_dir.name} both resolve to {barcode_name}; "
+                    "rename or combine them before running NanoTel"
+                )
+            seen_barcodes[barcode_name] = barcode_dir
+
+            # Summary runs keep barcode files together so the final workbook is
+            # the single entry point. Full runs retain their per-barcode folders.
+            if summary_only:
+                barcode_output_dir = self.output_dir
+            else:
+                barcode_output_dir = self.context.path_manager.get_barcode_nanotel_dir(
+                    barcode_name
+                )
 
             tasks.append({
                 'barcode': barcode_name,

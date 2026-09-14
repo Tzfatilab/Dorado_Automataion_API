@@ -349,7 +349,20 @@ class WorkflowOperator:
         result = self._run_step('nanotel', 'NanoTel analysis', self.nanotel, fastq_input)
         if result is not None:
             self.context.logger.info("OK NanoTel analysis completed")
-            self.context.logger.info(f"Output: {result.get_output('nanotel_output')}")
+            if self.context.config_manager.get_nanotel_params().get('summary_only', False):
+                # The summary workbook depends on the filtration step, even
+                # when the CLI command requests NanoTel without mapping.
+                result = self._run_step(
+                    'r_analyzer', 'Post-analysis', self.r_analyzer,
+                    run_filtration=True, run_mapping=False, run_methylation=False,
+                )
+                if result is None:
+                    return False
+                self.context.logger.info(
+                    f"Output: {result.get_output('nanotel_summary_workbook')}"
+                )
+            else:
+                self.context.logger.info(f"Output: {result.get_output('nanotel_output')}")
         return result is not None
 
     def run_alignment_only(self, fastq_input: str, organism: str = "mouse") -> bool:

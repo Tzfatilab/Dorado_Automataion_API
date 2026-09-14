@@ -2655,15 +2655,17 @@ if(!is.null(cur_tvr_patterns)) {
 # generic names like reads_ids.txt and makes files self-describing outside their
 # barcode directory.
 summary_file <- file.path(opt$save_path, paste0(barcode_name, "_summary.csv"))
-reads_ids_file <- file.path(opt$save_path, paste0(barcode_name, "_reads_ids.txt"))
 write_csv(x = ans_list$df_summary,
           file = summary_file)
 log_print(base::paste("NanoTel summary CSV saved to:", summary_file),
           hide_notes = TRUE, console = FALSE)
-write_lines(x = ans_list$df_summary$sequence_ID,
-            file = reads_ids_file)
-log_print(base::paste("NanoTel read IDs saved to:", reads_ids_file),
-          hide_notes = TRUE, console = FALSE)
+if (!opt$summary_only) {
+  reads_ids_file <- file.path(opt$save_path, paste0(barcode_name, "_reads_ids.txt"))
+  write_lines(x = ans_list$df_summary$sequence_ID,
+              file = reads_ids_file)
+  log_print(base::paste("NanoTel read IDs saved to:", reads_ids_file),
+            hide_notes = TRUE, console = FALSE)
+}
 
 # =====================================================================
 # POST-PROCESSING ANALYSIS (only runs when --analysis flag is set)

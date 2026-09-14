@@ -232,6 +232,21 @@ class PathManager:
         if recreate:
             self._ensure_directory(target)
 
+    def remove_generated_path(self, target: Path) -> bool:
+        """Remove one generated path without recreating it.
+
+        Returns True only when the path itself no longer exists. This uses the
+        same retry and read-only handling as the normal Windows/OneDrive reset.
+        """
+        self._reset_generated_path(Path(target), recreate=False)
+        target = Path(target)
+        if target.exists() and target.is_dir():
+            try:
+                target.rmdir()
+            except OSError:
+                pass
+        return not target.exists()
+
     def _archive_generated_path(self, target: Path, archive_root: Path) -> None:
         """Move a generated path into previous_runs while preserving its layout."""
         trial_root = self.trial_dir.resolve(strict=False)

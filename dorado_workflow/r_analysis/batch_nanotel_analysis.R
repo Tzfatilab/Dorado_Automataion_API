@@ -44,7 +44,8 @@ main_nanotel_analysis <- function(config_file) {
   density_threshold <- config$density_threshold %||% 0.75
   max_telomere_start <- config$max_telomere_start %||% 150
   max_edge_distance <- config$max_edge_distance %||% config$min_edge_distance %||% 134
-  min_read_length <- config$read_length %||% NULL
+  min_read_length <- config$min_read_length %||% config$read_length %||% NULL
+  summary_only <- config$summary_only %||% FALSE
 
   log_message("Configuration loaded successfully")
   log_message(paste("Input directory:", config$input_dir))
@@ -72,7 +73,8 @@ main_nanotel_analysis <- function(config_file) {
     density_threshold = density_threshold,
     max_telomere_start = max_telomere_start,
     max_edge_distance = max_edge_distance,
-    min_read_length = min_read_length
+    min_read_length = min_read_length,
+    summary_only = summary_only
   )
 
   if (length(processed_data) == 0) {
