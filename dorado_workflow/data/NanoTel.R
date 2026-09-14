@@ -2268,6 +2268,26 @@ filter_density <- function(sequence, patterns, min_density = 0.18) {
 }
 
 
+list_sequence_files <- function(input_path, format = "fastq") {
+  # Barcode directories may contain README and other non-sequence files.
+  suffix <- switch(format,
+                   fastq = "\\.(fastq|fq)(\\.gz)?$",
+                   fasta = "\\.(fasta|fa|fna)(\\.gz)?$",
+                   stop("Unsupported sequence format: ", format))
+  files <- if (dir.exists(input_path)) {
+    list.files(input_path, pattern = suffix, full.names = TRUE,
+               recursive = TRUE, ignore.case = TRUE)
+  } else if (file.exists(input_path) && grepl(suffix, input_path, ignore.case = TRUE)) {
+    input_path
+  } else {
+    character()
+  }
+  if (length(files) == 0L) {
+    stop("No ", format, " files found in: ", input_path)
+  }
+  files
+}
+
 create_sample <- function(input_path, format = "fastq") {
   #' @title: Extract DA sampe from fasta/q files.
   #' @description By given input files(fastq otr fasta) creates a DNAStringSet
@@ -2275,13 +2295,8 @@ create_sample <- function(input_path, format = "fastq") {
   #' @param input_path: path to the file or directory containing files.
   #' @param format: The file/files format should be either fastq format or
   #'        fasta format gz extension is supported.
-  if (dir.exists(input_path)) {
-    sample <- Biostrings::readDNAStringSet(filepath = dir(full.names = TRUE,
-                                            path = input_path, recursive = TRUE, include.dirs = FALSE), format = format)
-  }else { # it is a single file path
-    sample <- Biostrings::readDNAStringSet(filepath = input_path,
-                                           format = format)
-  }
+  sample <- Biostrings::readDNAStringSet(
+    filepath = list_sequence_files(input_path, format), format = format)
   return(sample)
 }
 
@@ -2391,11 +2406,7 @@ run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta
                                       patterns, do_rc, use_filter = FALSE, right_edge = TRUE, tvr_patterns,
                                       summary_only = FALSE) {
 
-  if (dir.exists(input_path)) {
-    filepath <- dir(full.names = TRUE, path = input_path, recursive = TRUE, include.dirs = FALSE)
-  } else {
-    filepath <- input_path
-  }
+  filepath <- list_sequence_files(input_path, format)
 
   files <- open_input_files(filepath)
 
@@ -2602,15 +2613,8 @@ log_print("The input files:", hide_notes = TRUE, console = FALSE)
 # add the names of the files which we analyze.
 
 
-if(dir.exists(opt$i) ){
-  filepath = dir(full.names = TRUE,
-                 path = opt$i, recursive = TRUE, include.dirs = FALSE)
-
-  for(i in seq_along(filepath)) {
-    log_print(filepath[i], hide_notes = TRUE, console = FALSE)
-  }
-} else {
-  log_print(opt$i, hide_notes = TRUE, console = FALSE)
+for (filepath in list_sequence_files(opt$i, opt$format)) {
+  log_print(filepath, hide_notes = TRUE, console = FALSE)
 }
 
 # Use one barcode prefix for all files produced by this NanoTel run. It must be
