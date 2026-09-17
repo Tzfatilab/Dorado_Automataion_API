@@ -49,7 +49,7 @@ The complete clean environment occupied approximately 2.7 GB. The test phase rea
 - Application runtime payload: 59 files under the installed `dorado_workflow` and `dorado_gui`
   packages.
 - Runtime payload contained no FASTQ, BAM, BAI, FASTA, RDS, ZIP, executable, or test fixture files.
-- References, the survival model, Dorado, and the Dorado model were absent as intended.
+- References, Dorado, and the Dorado model were absent as intended.
 - The sanitized BAM/BAI/FASTQ fixtures are stored inside the Conda artifact under `info/test` because
   conda-build preserves `test.source_files`. They are not installed into `site-packages`, but they do
   contribute approximately 18.7 MB to the downloadable Conda artifact.

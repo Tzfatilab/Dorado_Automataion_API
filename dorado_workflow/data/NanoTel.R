@@ -108,14 +108,7 @@ option_list = list(
   make_option("--max_edge_distance", action = "store", default = 134,
               type = "integer",
               help = "Maximum edge distance; retained reads must have sequence length minus running median greater than this value.",
-              metavar = "maximum edge distance"),
-
-  make_option("--bias_prediction_model", action = "store", type = "character",
-              default = NULL,
-              help = paste("Path to the calibration .rds used for expected KM bias prediction.",
-                           "Defaults to models/calibration_obj.rds relative to the script directory.",
-                           "Override via this flag or a lab config file."),
-              metavar = "calibration model path")
+              metavar = "maximum edge distance")
 )
 opt = parse_args(OptionParser(option_list=option_list))
 
@@ -168,14 +161,6 @@ suppressPackageStartupMessages(require(survival))
 # considered a complete (non-censored) event in the KM survival fit.
 BUFFER <- 50L
 
-# Resolve the directory containing this script so that bundled model files
-# (e.g. models/calibration_obj.rds) can be referenced relative to the repo
-# root rather than via absolute machine-specific paths.
-.script_dir <- tryCatch({
-  args <- commandArgs(trailingOnly = FALSE)
-  file_flag <- grep("--file=", args, value = TRUE)
-  if (length(file_flag) > 0) dirname(normalizePath(sub("--file=", "", file_flag[1]))) else getwd()
-}, error = function(e) getwd())
 
 #' my changes: 5.11.2023
 #' 1. Change thr for re-indexing  telomere_density < 0.85
@@ -2748,28 +2733,6 @@ if (isTRUE(opt$analysis)) {
   med_telo  <- median(df_filtered$Telomere_length_mismatch)
   pct_short <- round(100 * sum(df_filtered$Telomere_length_mismatch < 2000) / n_reads, 1)
 
-  if (include_km_metrics) {
-    # WORK IN PROGRESS: the model-based expected KM bias calculation below is a
-    # provisional working feature, not the final calibrated implementation.
-    # Keep it functional for now, but treat this block as subject to revision.
-    # Expected KM bias from polynomial calibration model
-    model_path <- if (!is.null(opt$bias_prediction_model)) {
-      opt$bias_prediction_model
-    } else {
-      file.path(.script_dir, "models", "poly_regression_model.rds")
-    }
-    calibration_obj  <- readRDS(model_path)
-    expected_bias    <- predict(
-      calibration_obj$calibration_models$fit_km_bias,
-      newdata = data.frame(
-        censoring_for_model = censoring_rate,
-        log10_n_reads       = log10(n_reads)
-      )
-    )
-    bias_label <- ifelse(expected_bias >= 0,
-                         paste0("+", round(expected_bias), " bp"),
-                         paste0(round(expected_bias), " bp"))
-  }
 
   fmt <- function(x) format(round(x), big.mark = ",", scientific = FALSE)
 
@@ -2789,8 +2752,7 @@ if (isTRUE(opt$analysis)) {
     results_lines <- c(
       results_lines,
       "",
-      paste0("KM Median                                  : ", fmt(km_median), " bp"),
-      paste0("Expected KM Median Bias                    : ", bias_label)
+      paste0("KM Median                                  : ", fmt(km_median), " bp")
     )
   }
 

@@ -30,7 +30,7 @@ tests that have not yet been supplied.
 
 `r-survival` is installed now even though `include_km_metrics` is currently `FALSE`. This avoids a
 future feature activation that forgets its runtime dependency. Its presence does not approve the KM
-statistics, calibration model, or excluded `.rds` resource.
+statistics.
 
 ### Supplied Or Transitive
 
@@ -110,8 +110,8 @@ assertions passed in 73 seconds in a fresh Linux environment containing the reci
 dependencies. The next package build will repeat these assertions against the installed package.
 
 The analysis assertion is a structural smoke test based on five detected reads and one final row. It
-does not validate a scientific estimate. KM metrics and the excluded calibration `.rds` remain in
-progress and are explicitly outside the test.
+does not validate a scientific estimate. KM metrics remain in progress and are explicitly outside
+the test.
 
 Additional test coverage is still needed for:
 

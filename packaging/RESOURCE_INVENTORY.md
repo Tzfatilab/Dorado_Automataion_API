@@ -24,7 +24,6 @@ Status values:
 | Human chromosome-end FASTA | `SHIP` after completing provenance | Upstream T2T data is CC0; record the exact source file and transformation procedure. |
 | Mouse chromosome-end FASTA and index | `AWAITING DECISION` | Exact upstream assembly, URL, terms, and transformation procedure are unknown. |
 | Zebrafish GRCz12tu reference FASTA | `AWAITING DECISION` | Preferred outcome is to ship it like the human and mouse references. It is temporarily excluded because the local file is absent and its exact source/redistribution record still needs confirmation. External download is a fallback only. |
-| `dorado_workflow/data/models/poly_regression_model.rds` | `EXCLUDE` | Survival-analysis calibration is not deployable pending a statistical-analysis decision. |
 | Dorado executable | `EXTERNAL` | Users install the lab-tested Dorado version separately; its exact executable version still needs to be recorded in `DORADO_COMPATIBILITY.md`. |
 | Dorado neural-network model | `EXTERNAL` | The initial package is pinned to `dna_r10.4.1_e8.2_400bps_sup@v5.2.0`; approximately 315 MB and subject to ONT redistribution terms. |
 | minimap2, samtools, Modkit, Python, R, and language libraries | `CONDA DEPENDENCY` | Declare these in the Bioconda recipe rather than copying their files into this repository. Modkit is supplied by the approved `ont-modkit` dependency while public methylation modes await a decision. |
@@ -125,16 +124,6 @@ This inventory records the decision and provenance, but it does not install file
   Conda package on 2026-08-06.
 - Remaining work: add the optional scenarios listed in `R_DEPENDENCIES.md` when approved fixtures
   become available.
-
-## Deferred Survival Model
-
-- Local path: `dorado_workflow/data/models/poly_regression_model.rds`
-- Size: 2,946,717 bytes
-- SHA256: `03464AD70C880CB9E66E053204E167EC8CE601DDFE86C18B4F6FCA678A66D1EB`
-- Current use: NanoTel loads it for expected Kaplan-Meier bias calibration.
-- Distribution decision: exclude until the team approves deployment of the statistical analysis.
-- Required follow-up: NanoTel must handle the model being absent without breaking supported
-  non-survival workflows.
 
 ## Human T2T Chromosome-End Reference
 
