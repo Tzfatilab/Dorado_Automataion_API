@@ -93,5 +93,5 @@ dorado_gui = [
 # PACKAGING TODO [PACKAGE-DATA] - RELEASE BLOCKER FOR REFERENCES
 # Approved runtime config, NanoTel, R-analysis scripts, and GUI icons are included above.
 # Human reference is conditional on provenance completion.
-# Excluded: survival-analysis .rds, Dorado executable/model, and full zebrafish genome.
+# Excluded: Dorado executable/model and full zebrafish genome.
 # Awaiting provenance: mouse chromosome-end reference. See packaging/RESOURCE_INVENTORY.md.

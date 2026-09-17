@@ -161,6 +161,102 @@ suppressPackageStartupMessages(require(survival))
 # considered a complete (non-censored) event in the KM survival fit.
 BUFFER <- 50L
 
+# Provisional reporting policy pending scientific approval, not an accuracy guarantee.
+KM_MAX_RELATIVE_CI_WIDTH_PCT <- 20
+KM_REPORT_MESSAGES <- list(
+  non_estimable = "A complete KM median confidence interval could not be estimated. Consider additional sequencing.",
+  invalid = "The KM estimate is not reported because the median or confidence limits are invalid.",
+  failed = "KM estimation failed: %s",
+  too_wide = "The KM estimate is not reported because its confidence interval is too wide (%s%%; reporting limit %s%%). Consider additional sequencing.",
+  rounding = "The unrounded width exceeds the reporting limit."
+)
+
+assess_km_result <- function(median, lower, upper,
+                             limit = KM_MAX_RELATIVE_CI_WIDTH_PCT,
+                             warnings = character(), error = NULL) {
+  if (!is.numeric(limit) || length(limit) != 1L || !is.finite(limit) || limit <= 0) {
+    stop("KM_MAX_RELATIVE_CI_WIDTH_PCT must be finite and positive.")
+  }
+  result <- list(median = median, lower = lower, upper = upper,
+                 relative_ci_width_pct = NA_real_, limit = limit,
+                 warnings = warnings, error = error, status = "non_estimable",
+                 reason = KM_REPORT_MESSAGES$non_estimable)
+  if (!is.null(error)) {
+    result$status <- "failed"
+    detail <- substr(gsub("[[:space:]]+", " ", error), 1L, 240L)
+    result$reason <- sprintf(KM_REPORT_MESSAGES$failed, detail)
+    return(result)
+  }
+  valid_number <- function(x) is.numeric(x) && length(x) == 1L && is.finite(x)
+  if (!all(vapply(list(median, lower, upper), valid_number, logical(1)))) return(result)
+  if (median <= 0 || lower > median || median > upper) {
+    result$status <- "invalid"
+    result$reason <- KM_REPORT_MESSAGES$invalid
+    return(result)
+  }
+  result$relative_ci_width_pct <- 100 * ((upper - lower) / median)
+  if (result$relative_ci_width_pct <= limit) {
+    result$status <- "reportable"
+    result$reason <- NULL
+  } else {
+    result$status <- "too_wide"
+    width_text <- sprintf("%.1f", result$relative_ci_width_pct)
+    limit_text <- sprintf("%.1f", limit)
+    result$reason <- sprintf(KM_REPORT_MESSAGES$too_wide, width_text, limit_text)
+    if (width_text == limit_text) {
+      result$reason <- paste(result$reason, KM_REPORT_MESSAGES$rounding)
+    }
+  }
+  result
+}
+
+fit_km_result <- function(data, limit = KM_MAX_RELATIVE_CI_WIDTH_PCT,
+                          fit_function = survival::survfit,
+                          summary_function = summary) {
+  # Validate policy independently of fit errors.
+  invisible(assess_km_result(NA_real_, NA_real_, NA_real_, limit))
+  fit_warnings <- character()
+  fit_error <- NULL
+  estimates <- c(median = NA_real_, lower = NA_real_, upper = NA_real_)
+  tryCatch(withCallingHandlers({
+    data$margin <- data$sequence_length - data$Telomere_end_mismatch
+    data$event <- as.integer(data$margin >= BUFFER)
+    fit <- fit_function(
+      survival::Surv(Telomere_length_mismatch, event) ~ 1,
+      data = data, conf.type = "log-log", conf.int = 0.95
+    )
+    fit_table <- summary_function(fit)$table
+    estimates <- c(median = unname(fit_table["median"]),
+                   lower = unname(fit_table["0.95LCL"]),
+                   upper = unname(fit_table["0.95UCL"]))
+  }, warning = function(w) {
+    fit_warnings <<- c(fit_warnings, conditionMessage(w))
+    invokeRestart("muffleWarning")
+  }), error = function(e) {
+    fit_error <<- conditionMessage(e)
+  })
+  assess_km_result(estimates[["median"]], estimates[["lower"]],
+                   estimates[["upper"]], limit, fit_warnings, fit_error)
+}
+
+format_km_report <- function(result) {
+  fmt_bp <- function(x) paste0(format(round(x), big.mark = ",", scientific = FALSE,
+                                     trim = TRUE), " bp")
+  reportable <- identical(result$status, "reportable")
+  lines <- c(
+    paste0("KM Median Telomeric Length                 : ",
+           if (reportable) fmt_bp(result$median) else "Not reported"),
+    paste0("KM Median 95% Confidence Interval          : ",
+           if (reportable) paste0(format(round(result$lower), big.mark = ",", scientific = FALSE, trim = TRUE),
+                                   "\u2013", fmt_bp(result$upper)) else "Not reported"),
+    paste0("KM Whole Relative CI Width                 : ",
+           if (is.na(result$relative_ci_width_pct)) "Not available" else
+             sprintf("%.1f%%", result$relative_ci_width_pct))
+  )
+  if (!reportable) lines <- c(lines, paste0("KM Reporting Reason                       : ", result$reason))
+  lines
+}
+
 
 #' my changes: 5.11.2023
 #' 1. Change thr for re-indexing  telomere_density < 0.85
@@ -2670,25 +2766,15 @@ if (!opt$summary_only) {
 # POST-PROCESSING ANALYSIS (only runs when --analysis flag is set)
 # =====================================================================
 if (isTRUE(opt$analysis)) {
-  include_km_metrics <- FALSE
 
   # --- Step 1: Filter ---
   df_step1_filtered <- ans_list$df_summary %>%
     dplyr::filter(telo_density_mismatch >= opt$min_density,
                   Telomere_start_mismatch <= opt$max_telomere_start)
 
-  if (include_km_metrics) {
-    # KM median is computed after the density/start filter and before the
-    # running-median filtration steps. This developer-level feature is hidden
-    # until the KM metrics are ready for user-facing output.
-    df_km <- df_step1_filtered %>%
-      dplyr::mutate(
-        margin = sequence_length - Telomere_end_mismatch,
-        event  = as.integer(margin >= BUFFER)
-      )
-    km_fit    <- survfit(Surv(Telomere_length_mismatch, event) ~ 1, data = df_km)
-    km_median <- summary(km_fit)$table[["median"]]
-  }
+  # KM uses density/start-filtered reads BEFORE running-median edge filtering.
+  # Keep raw estimates and diagnostics internally, including withheld results.
+  km_result <- fit_km_result(df_step1_filtered)
 
   df_filtered <- df_step1_filtered %>%
 
@@ -2748,13 +2834,7 @@ if (isTRUE(opt$analysis)) {
     paste0("% of telomeres shorter than 2kb             : ", pct_short, "%")
   )
 
-  if (include_km_metrics) {
-    results_lines <- c(
-      results_lines,
-      "",
-      paste0("KM Median                                  : ", fmt(km_median), " bp")
-    )
-  }
+  results_lines <- c(results_lines, "", format_km_report(km_result))
 
   write_lines(results_lines,
               file.path(opt$save_path, paste0(barcode_name, "_results.txt")))

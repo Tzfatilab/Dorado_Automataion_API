@@ -381,17 +381,34 @@ class NanoTelProcessor(ProcessorBase):
             "Median Telomeric Length (post-filtration)",
             "% of telomeres shorter than 2kb",
         )
+        km_fields = (
+            "KM Median Telomeric Length",
+            "KM Median 95% Confidence Interval",
+            "KM Whole Relative CI Width",
+            "KM Reporting Reason",
+        )
 
         for line in result_file.read_text(encoding="utf-8").splitlines():
             if ":" not in line:
                 continue
             key, value = line.split(":", 1)
             key = key.strip()
-            if key in required_fields:
+            if key in required_fields or key in km_fields or key == "KM Median":
                 values[key] = value.strip()
 
         if any(field not in values for field in required_fields):
             return None
+
+        if "KM Median" in values or any(field in values for field in km_fields):
+            complete = all(field in values for field in km_fields[:3])
+            withheld = (not complete or "KM Reporting Reason" in values or
+                        any(values.get(field) == "Not reported" for field in km_fields[:2]))
+            if withheld:
+                values[km_fields[0]] = "Not reported"
+                values[km_fields[1]] = "Not reported"
+                values.setdefault(km_fields[2], "Not available")
+                values.setdefault(km_fields[3], "KM reporting assessment is unavailable in this results file.")
+            values.pop("KM Median", None)
 
         return values
 
@@ -428,10 +445,18 @@ class NanoTelProcessor(ProcessorBase):
             },
         ]
 
+        km_columns = (
+            ("KM Median Telomeric Length", ("KM Median", "Telomeric Length")),
+            ("KM Median 95% Confidence Interval", ("KM Median", "95% Confidence Interval")),
+            ("KM Whole Relative CI Width", ("KM Whole Relative", "CI Width")),
+        )
+        if any("KM Median Telomeric Length" in row for row in rows):
+            columns.extend({"key": key, "header": header} for key, header in km_columns)
+
         widths = []
         for column in columns:
             header_top, header_bottom = column["header"]
-            values = [row[column["key"]] for row in rows]
+            values = [row.get(column["key"], "Not available") for row in rows]
             widths.append(max(len(header_top), len(header_bottom), *(len(value) for value in values)))
 
         def separator() -> str:
@@ -456,9 +481,13 @@ class NanoTelProcessor(ProcessorBase):
         ]
 
         for row in rows:
-            lines.append(format_row([row[column["key"]] for column in columns]))
+            lines.append(format_row([row.get(column["key"], "Not available") for column in columns]))
 
         lines.append(separator())
+        reasons = [f"{row['Barcode']}: {row['KM Reporting Reason']}"
+                   for row in rows if "KM Reporting Reason" in row]
+        if reasons:
+            lines.extend(["", "KM reporting reasons:", *reasons])
         return lines
 
     def _last_command_duration(self) -> Optional[float]:
