@@ -3,35 +3,6 @@ import shutil
 import subprocess
 
 """Validation helpers for workflow selection and input directories."""
-def validate_advanced_selection(
-        *,
-        do_basecalling,
-        do_nanotel,
-        pod5_path,
-        fastq_path,
-        bam_path
-):
-    """Validate workflow flag combinations against the provided input paths.
-    Returns:
-        List of user-facing validation error strings.
-    """
-    errors = []
-
-    has_pod5 = bool(pod5_path)
-    has_fastq = bool(fastq_path)
-    has_bam = bool(bam_path)
-
-    if do_basecalling and not has_pod5:
-        errors.append("Basecalling workflow selected, but no POD5 directory was provided.")
-    elif do_basecalling:
-        has_fastq = True
-
-    if do_nanotel and not has_fastq and not has_bam:
-        errors.append("Nanotel workflow selected, but no FASTQ or BAM directory was provided.")
-    elif do_nanotel:
-        has_fastq = True
-
-    return errors
 
 
 def validate_input_directories(pod5, fastq, bam):

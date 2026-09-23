@@ -6,14 +6,11 @@ Handles demultiplexing of basecalled BAM files using Dorado.
 Separates reads by barcode and organizes output into barcode directories.
 """
 
-import re
 from pathlib import Path
-from typing import Dict, List, Optional
-import os
-import shlex
-import subprocess
+from typing import Dict
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
 from ..utils.cancellation import WorkflowCancelled
+from ..utils.shell_commands import format_command
 
 
 class DemuxProcessor(ProcessorBase):
@@ -188,41 +185,36 @@ class DemuxProcessor(ProcessorBase):
         emit_summary = demuxing_params.get('emit_summary', True)
 
         # Build command parts
-        cmd_parts = [
+        command_arguments = [
             "dorado", "demux",
             "--output-dir", self.output_dir,
         ]
 
         # Add kit name if specified
         if kit_name:
-            cmd_parts.extend(["--kit-name", kit_name])
+            command_arguments.extend(["--kit-name", kit_name])
 
         # Add optional flags
         if no_trim:
-            cmd_parts.append("--no-trim")
+            command_arguments.append("--no-trim")
 
         if input_format == "fastq":
-            cmd_parts.append("--emit-fastq")
+            command_arguments.append("--emit-fastq")
         elif sort_bam:
-            cmd_parts.append("--sort-bam")
+            command_arguments.append("--sort-bam")
 
         if emit_summary:
-            cmd_parts.append("--emit-summary")
+            command_arguments.append("--emit-summary")
 
         # Add input BAM
-        cmd_parts.append(basecalled_bam)
+        command_arguments.append(basecalled_bam)
 
         # Join command parts
-        command = self._format_command(cmd_parts)
+        command = format_command(command_arguments)
 
         self.context.logger.info(f"Demux command: {command}")
         return command
 
-    def _format_command(self, cmd_parts: list) -> str:
-        args = [str(part) for part in cmd_parts]
-        if os.name == "nt":
-            return subprocess.list2cmdline(args)
-        return shlex.join(args)
 
     @staticmethod
     def _is_fastq_file(path: Path) -> bool:
@@ -230,9 +222,12 @@ class DemuxProcessor(ProcessorBase):
 
     def _organize_demuxed_files(self, input_format: str = "bam") -> Dict[str, Path]:
         """
-        Organize demuxed BAM files into barcode subdirectories.
+        Organize demuxed BAM or FASTQ files into barcode subdirectories.
         Dorado outputs files with barcode names in the filename.
         This method organizes them into separate barcode directories.
+
+        Args:
+            input_format: Select BAM (with indexes) or FASTQ files.
 
         Returns:
             Dictionary mapping barcode names to their directory paths
@@ -240,20 +235,20 @@ class DemuxProcessor(ProcessorBase):
         SKIP_FOLDERS = {'unclassified', 'mix'}
 
         if input_format == "fastq":
-            bam_files = [path for path in self.output_dir.rglob("*")
+            sequence_files = [path for path in self.output_dir.rglob("*")
                          if path.is_file() and self._is_fastq_file(path)]
-            bai_files = []
+            index_files = []
         else:
-            bam_files = list(self.output_dir.rglob("*.bam"))
-            bai_files = list(self.output_dir.rglob("*.bam.bai"))
+            sequence_files = list(self.output_dir.rglob("*.bam"))
+            index_files = list(self.output_dir.rglob("*.bam.bai"))
 
-        if not bam_files:
+        if not sequence_files:
             self.context.logger.warning(f"No {input_format.upper()} files found to organize")
             return {}
 
         barcode_files = {}
 
-        for file_path in bam_files + bai_files:
+        for file_path in sequence_files + index_files:
             if 'unclassified' in file_path.name.lower():
                 folder_name = 'unclassified'
             elif 'mix' in file_path.name.lower():

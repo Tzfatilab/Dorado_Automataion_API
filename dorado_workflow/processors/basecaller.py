@@ -9,11 +9,9 @@ Converts POD5 files to BAM format with base modifications.
 from pathlib import Path
 from typing import Dict, Optional
 from datetime import datetime
-import os
-import shlex
-import subprocess
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
 from ..utils.cancellation import WorkflowCancelled
+from ..utils.shell_commands import format_command, quote_path
 
 
 class BasecallerProcessor(ProcessorBase):
@@ -207,49 +205,39 @@ class BasecallerProcessor(ProcessorBase):
         output_file = self.output_dir / f"calls_{timestamp}.bam"
 
         # Build command parts
-        cmd_parts = [
+        command_arguments = [
             "dorado", "basecaller",
             "--min-qscore", int(min_qscore),
         ]
 
         # Add optional flags
         if recursive:
-            cmd_parts.append("-r")
+            command_arguments.append("-r")
 
         if modified_bases:
-            cmd_parts.extend(["--modified-bases", modified_bases])
+            command_arguments.extend(["--modified-bases", modified_bases])
 
         if no_trim:
-            cmd_parts.append("--no-trim")
+            command_arguments.append("--no-trim")
 
         if kit_name:
-            cmd_parts.extend(["--kit-name", kit_name])
+            command_arguments.extend(["--kit-name", kit_name])
 
         if align:
             reference = config.get_reference_path(organism)
-            cmd_parts.extend(["--reference", reference])
+            command_arguments.extend(["--reference", reference])
 
         # Dorado basecaller writes BAM to stdout; redirect it to the known output file.
-        cmd_parts.extend([
+        command_arguments.extend([
             model,
             pod5_input,
         ])
 
-        command = f"{self._format_command(cmd_parts)} > {self._quote_shell_path(output_file)}"
+        command = f"{format_command(command_arguments)} > {quote_path(output_file)}"
 
         self.context.logger.info(f"Basecall command: {command}")
         return command, output_file
 
-    def _format_command(self, cmd_parts: list) -> str:
-        args = [str(part) for part in cmd_parts]
-        if os.name == "nt":
-            return subprocess.list2cmdline(args)
-        return shlex.join(args)
-
-    def _quote_shell_path(self, path: Path) -> str:
-        if os.name == "nt":
-            return subprocess.list2cmdline([str(path)])
-        return shlex.quote(str(path))
 
     @staticmethod
     def _show_dorado_gui_line(line: str) -> bool:

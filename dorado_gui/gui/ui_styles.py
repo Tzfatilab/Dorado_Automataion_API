@@ -1,7 +1,4 @@
-from PySide6.QtWidgets import (
-    QApplication, QWidget, QLabel, QLineEdit, QPushButton,
-    QTextEdit, QVBoxLayout, QGroupBox
-)
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QGroupBox
 from PySide6.QtCore import QEvent, QObject, QPoint, Qt
 from PySide6.QtGui import QColor, QPalette
 

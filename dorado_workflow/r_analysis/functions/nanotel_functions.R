@@ -40,6 +40,7 @@ process_nanotel_barcode <- function(nanotel_csv_path,
 
   # Read the NanoTel summary file
   nanotel_data <- safe_read_csv(nanotel_csv_path)
+  validate_nanotel_data(nanotel_data, nanotel_csv_path)
 
   # Standardize column names
   if ("sequence_ID" %in% colnames(nanotel_data)) {
@@ -186,17 +187,10 @@ batch_process_nanotel_files <- function(input_files,
   return(all_processed_data)
 }
 
-# Generate summary statistics for all barcodes
-generate_nanotel_summary_stats <- function(all_barcodes_data, output_file,
-                                           short_telomere_threshold_bp = 2000) {
-
-  log_message("Generating summary statistics across all barcodes")
-
-  if (length(all_barcodes_data) == 0) {
-    warning("No data available for summary statistics")
-    return(data.frame())
-  }
-
+# Pure calculation: return statistics without writing files or printing output.
+# Lengths and the short-telomere threshold are in base pairs; densities are fractions.
+calculate_nanotel_summary_stats <- function(all_barcodes_data,
+                                            short_telomere_threshold_bp = 2000) {
   # Combine all barcode data
   combined_data <- bind_rows(all_barcodes_data)
 
@@ -219,6 +213,24 @@ generate_nanotel_summary_stats <- function(all_barcodes_data, output_file,
 
   names(summary_stats)[names(summary_stats) == "below_threshold_pct"] <-
     paste0("below_", short_telomere_threshold_bp, "bp_pct")
+
+  return(summary_stats)
+}
+
+# Generate summary statistics for all barcodes
+generate_nanotel_summary_stats <- function(all_barcodes_data, output_file,
+                                           short_telomere_threshold_bp = 2000) {
+
+  log_message("Generating summary statistics across all barcodes")
+
+  if (length(all_barcodes_data) == 0) {
+    warning("No data available for summary statistics")
+    return(data.frame())
+  }
+
+  summary_stats <- calculate_nanotel_summary_stats(
+    all_barcodes_data, short_telomere_threshold_bp
+  )
 
   # Save summary statistics
   safe_write_csv(summary_stats, output_file)
@@ -273,6 +285,29 @@ validate_nanotel_data <- function(data, file_path) {
   if (length(missing_columns) > 0) {
     stop("Missing required columns in ", basename(file_path), ": ",
          paste(missing_columns, collapse = ", "))
+  }
+
+  if (!any(c("sequence_ID", "read_id") %in% colnames(data))) {
+    stop("Missing read identifier column (sequence_ID or read_id) in ", basename(file_path))
+  }
+  if (nrow(data) == 0) {
+    log_message(paste("Empty NanoTel dataset:", basename(file_path)), "WARNING")
+    return(TRUE)
+  }
+  for (column in required_columns) {
+    if (!is.numeric(data[[column]]) && !all(is.na(data[[column]]))) {
+      stop("Non-numeric values in ", column, " in ", basename(file_path))
+    }
+    if (any(!is.finite(data[[column]]) & !is.na(data[[column]]))) {
+      stop("Non-finite values in ", column, " in ", basename(file_path))
+    }
+  }
+  missing_rows <- sum(!complete.cases(data[, required_columns, drop = FALSE]))
+  if (missing_rows > 0) {
+    # Keep established NA filtering/summary behavior, but make exclusions visible.
+    log_message(paste("Missing analysis values in", missing_rows, "row(s) of",
+                      basename(file_path), "- existing NA filtering applies; source CSV is retained"),
+                "WARNING")
   }
 
   # Check for reasonable data ranges

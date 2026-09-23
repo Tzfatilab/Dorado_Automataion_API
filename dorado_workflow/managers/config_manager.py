@@ -9,7 +9,7 @@ Automatically locates config file in the package's configs directory.
 import json
 from pathlib import Path
 from typing import Dict, Any, Optional
-import os
+from ..utils.analysis_validation import validate_nanotel_settings
 
 class ConfigManager:
     """
@@ -19,7 +19,7 @@ class ConfigManager:
     - Auto-locates config in package's configs/ directory
     - Dynamic organism switching with parameter merging
     - Helper methods for easy config access
-    - No validation (trust the config is correct)
+    - Validate supplied NanoTel numerical settings without changing defaults
     """
 
     # Default config filename
@@ -45,6 +45,11 @@ class ConfigManager:
 
         # Load configuration
         self.config = self._load_config()
+        if not isinstance(self.config, dict):
+            raise ValueError(f"Configuration must be a JSON object: {self.config_path}")
+        if not isinstance(self.config.get('nanotel', {}), dict):
+            raise ValueError("Configuration section 'nanotel' must be a JSON object")
+        validate_nanotel_settings(self.config.get('nanotel', {}))
 
         # Current organism (can be changed dynamically)
         self._current_organism = self.config.get('lab_info', {}).get('default_organism', 'mouse')
@@ -76,8 +81,7 @@ class ConfigManager:
                 f"Expected location: {config_path}\n\n"
                 f"The configuration file must be created before running the workflow.\n"
                 f"This file contains lab-specific paths and settings.\n\n"
-                f"To create a default configuration file, run:\n"
-                f"  python main.py --create-config\n\n"
+                f"Restore configs/default_config.json from the repository or reinstall the package.\n\n"
                 f"Then edit the file with your lab's paths:\n"
                 f"  - Dorado model path\n"
                 f"  - Reference genome paths (mouse/human)\n"
@@ -267,6 +271,8 @@ class ConfigManager:
         """Apply run-specific NanoTel parameter overrides."""
         if not params:
             return
+
+        validate_nanotel_settings(params)
 
         if 'nanotel' not in self.config:
             self.config['nanotel'] = {}

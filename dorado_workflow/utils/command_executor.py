@@ -14,6 +14,8 @@ import threading
 from typing import Optional, List, Callable
 from pathlib import Path
 from .cancellation import WorkflowCancelled
+from .shell_commands import format_command
+from .analysis_constants import PROCESS_POLL_INTERVAL_SECONDS
 
 
 class CommandExecutor:
@@ -208,6 +210,90 @@ class CommandExecutor:
 
         except RuntimeError as e:
             self.logger.mark_command_failed(cmd_index, str(e))
+            raise
+
+    def execute_pipeline(self, commands, gui_output_filter=None):
+        """Pipe binary stdout between argument lists and require every tool to succeed.
+
+        The final tool writes its own output file. Drain stderr concurrently so
+        a verbose tool cannot block the pipeline while another tool is waiting.
+        """
+        if not commands:
+            raise ValueError("Pipeline must contain at least one command")
+        self.check_cancelled()
+        command_text = " | ".join(format_command(command) for command in commands)
+        command_index = self.logger.register_command(command_text)
+        processes = []
+        readers = []
+        diagnostics = [[] for _ in commands]
+
+        def read_diagnostics(process, index):
+            for raw_line in iter(process.stderr.readline, b''):
+                line = raw_line.decode('utf-8', errors='replace').rstrip()
+                if line:
+                    diagnostics[index].append(line)
+                    self.logger.info(
+                        f"    {line}",
+                        gui_visible=gui_output_filter(line) if gui_output_filter else True,
+                    )
+
+        try:
+            try:
+                for index, command in enumerate(commands):
+                    previous = processes[-1] if processes else None
+                    process = self.popen(
+                        [str(argument) for argument in command],
+                        stdin=previous.stdout if previous else None,
+                        stdout=subprocess.PIPE if index < len(commands) - 1 else subprocess.DEVNULL,
+                        stderr=subprocess.PIPE,
+                    )
+                    processes.append(process)
+                    # Only the downstream tool owns this read end. Retaining it
+                    # here would prevent a producer from detecting a closed pipe.
+                    if previous:
+                        previous.stdout.close()
+                    reader = threading.Thread(target=read_diagnostics, args=(process, index))
+                    reader.start()
+                    readers.append(reader)
+
+                pause = threading.Event()
+                while True:
+                    self.check_cancelled()
+                    returncodes = [process.poll() for process in processes]
+                    failed = next((i for i, code in enumerate(returncodes)
+                                   if code is not None and code != 0), None)
+                    if failed is not None:
+                        raise subprocess.CalledProcessError(
+                            returncodes[failed], format_command(commands[failed])
+                        )
+                    if all(code is not None for code in returncodes):
+                        break
+                    pause.wait(PROCESS_POLL_INTERVAL_SECONDS)
+            finally:
+                for process in processes:
+                    if process.poll() is None:
+                        self._terminate_tree(process)
+                for process in processes:
+                    process.wait()
+                    if process.stdout:
+                        process.stdout.close()
+                for reader in readers:
+                    reader.join()
+                for process in processes:
+                    process.stderr.close()
+
+            self.check_cancelled()
+            self.logger.mark_command_success(command_index, returncode=0)
+            return subprocess.CompletedProcess(command_text, 0)
+        except WorkflowCancelled:
+            self.logger.mark_command_cancelled(command_index)
+            raise
+        except Exception as error:
+            self.logger.mark_command_failed(
+                command_index, str(error),
+                returncode=getattr(error, 'returncode', None),
+                stderr='\n'.join(line for output in diagnostics for line in output),
+            )
             raise
 
     def execute_safe(self, command: str, capture_output: bool = False,

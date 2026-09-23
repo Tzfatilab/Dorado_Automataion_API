@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
 )
 
-from pathlib import Path
 from PySide6.QtGui import QIcon
 from gui.ui_styles import make_card, make_help_button
 from gui.widgets.selection_widgets import SelectCard

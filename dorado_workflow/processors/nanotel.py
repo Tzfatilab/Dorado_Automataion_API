@@ -1,4 +1,4 @@
-﻿"""
+"""
 NanoTel Processor Module
 ========================
 
@@ -10,12 +10,11 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import gzip
 import math
-import os
 import re
-import subprocess
-import shlex
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
 from ..utils.cancellation import WorkflowCancelled
+from ..utils.analysis_constants import NANOTEL_RECORDS_PER_CHUNK, FASTQ_LINES_PER_RECORD
+from ..utils.shell_commands import format_command
 
 
 class NanoTelProcessor(ProcessorBase):
@@ -85,9 +84,14 @@ class NanoTelProcessor(ProcessorBase):
             return False
 
         # Check if there are any FASTQ files or barcode directories
-        fastq_files = list(fastq_path.rglob("*.fastq*"))
+        fastq_files = [path for path in fastq_path.rglob("*.fastq*") if path.is_file()]
         if not fastq_files:
             self.context.logger.error(f"No FASTQ files found in: {fastq_dir}")
+            return False
+
+        empty_files = [str(path) for path in fastq_files if path.stat().st_size == 0]
+        if empty_files:
+            self.context.logger.error("Empty FASTQ input files: " + ", ".join(empty_files))
             return False
 
         self.context.logger.info(f"Found {len(fastq_files)} FASTQ files")
@@ -249,7 +253,7 @@ class NanoTelProcessor(ProcessorBase):
 
     @staticmethod
     def _count_fastq_chunks(
-        fastq_files: List[Path], records_per_chunk: int = 10000
+        fastq_files: List[Path], records_per_chunk: int = NANOTEL_RECORDS_PER_CHUNK
     ) -> Optional[int]:
         """Count NanoTel chunks without loading the FASTQ reads into memory."""
         try:
@@ -258,7 +262,7 @@ class NanoTelProcessor(ProcessorBase):
                 opener = gzip.open if fastq_file.name.lower().endswith(".gz") else open
                 with opener(fastq_file, "rb") as handle:
                     line_count += sum(1 for _ in handle)
-            record_count = line_count // 4
+            record_count = line_count // FASTQ_LINES_PER_RECORD
             return max(1, math.ceil(record_count / records_per_chunk)) if record_count else None
         except OSError:
             return None
@@ -322,158 +326,6 @@ class NanoTelProcessor(ProcessorBase):
 
         return results
 
-    def _write_combined_results_table(self, results_per_barcode: Dict[str, bool]) -> Optional[Path]:
-        """
-        Write a run-level text table comparing NanoTel results for successful barcodes.
-
-        Args:
-            results_per_barcode: Dictionary mapping barcode names to success status
-
-        Returns:
-            Path to the combined results file, or None if no table was written
-        """
-        rows = []
-        for barcode, success in results_per_barcode.items():
-            if not success:
-                continue
-
-            result_file = self._find_barcode_results_file(barcode)
-            if result_file is None:
-                self.context.logger.warning(
-                    f"NanoTel results file not found for {barcode}; skipping combined table row"
-                )
-                continue
-
-            parsed_row = self._parse_barcode_results_file(barcode, result_file)
-            if parsed_row is None:
-                self.context.logger.warning(
-                    f"Could not parse NanoTel results file for {barcode}; skipping combined table row"
-                )
-                continue
-
-            rows.append(parsed_row)
-
-        if not rows:
-            self.context.logger.warning("No barcode result files available for combined NanoTel table")
-            return None
-
-        output_path = self.output_dir / "combined_barcodes_results.txt"
-        table_lines = self._format_combined_results_table(rows)
-        output_path.write_text("\n".join(table_lines) + "\n", encoding="utf-8")
-        self.context.logger.info(f"Combined NanoTel barcode results saved to: {output_path}")
-        return output_path
-
-    def _find_barcode_results_file(self, barcode: str) -> Optional[Path]:
-        """Find the per-barcode NanoTel results text file."""
-        barcode_dir = self.output_dir / barcode
-        expected_path = barcode_dir / f"{barcode}_results.txt"
-        if expected_path.exists():
-            return expected_path
-
-        if not barcode_dir.exists():
-            return None
-
-        result_files = sorted(barcode_dir.glob("*_results.txt"))
-        return result_files[0] if result_files else None
-
-    def _parse_barcode_results_file(self, barcode: str, result_file: Path) -> Optional[Dict[str, str]]:
-        """Parse the user-facing values from a per-barcode NanoTel results file."""
-        values = {"Barcode": barcode}
-        threshold = self.context.config_manager.get_nanotel_params().get(
-            "short_telomere_threshold_bp", 2000
-        )
-        short_label = f"% of telomeres shorter than {threshold} bp"
-        required_fields = (
-            "Number of telomeric reads (post-filtration)",
-            "Complete Telomeric Reads",
-            "Incomplete Telomeric Reads",
-            "Censoring Rate",
-            "Median Telomeric Length (post-filtration)",
-            short_label,
-        )
-
-        for line in result_file.read_text(encoding="utf-8").splitlines():
-            if ":" not in line:
-                continue
-            key, value = line.split(":", 1)
-            key = key.strip()
-            if key in required_fields:
-                values[key] = value.strip()
-
-        if any(field not in values for field in required_fields):
-            return None
-
-        return values
-
-    def _format_combined_results_table(self, rows: List[Dict[str, str]]) -> List[str]:
-        """Format combined barcode results as a compact fixed-width text table."""
-        threshold = self.context.config_manager.get_nanotel_params().get(
-            "short_telomere_threshold_bp", 2000
-        )
-        short_label = f"% of telomeres shorter than {threshold} bp"
-        columns = [
-            {
-                "key": "Barcode",
-                "header": ("Barcode", ""),
-            },
-            {
-                "key": "Number of telomeric reads (post-filtration)",
-                "header": ("Number of telomeric reads", "(post-filtration)"),
-            },
-            {
-                "key": "Complete Telomeric Reads",
-                "header": ("Complete Telomeric Reads", ""),
-            },
-            {
-                "key": "Incomplete Telomeric Reads",
-                "header": ("Incomplete Telomeric Reads", ""),
-            },
-            {
-                "key": "Censoring Rate",
-                "header": ("Censoring Rate", ""),
-            },
-            {
-                "key": "Median Telomeric Length (post-filtration)",
-                "header": ("Median Telomeric Length", "(post-filtration)"),
-            },
-            {
-                "key": short_label,
-                "header": ("% of telomeres", f"shorter than {threshold} bp"),
-            },
-        ]
-
-        widths = []
-        for column in columns:
-            header_top, header_bottom = column["header"]
-            values = [row[column["key"]] for row in rows]
-            widths.append(max(len(header_top), len(header_bottom), *(len(value) for value in values)))
-
-        def separator() -> str:
-            return "+" + "+".join("-" * (width + 2) for width in widths) + "+"
-
-        def format_row(values: List[str]) -> str:
-            cells = [
-                f" {value.ljust(width)} "
-                for value, width in zip(values, widths)
-            ]
-            return "|" + "|".join(cells) + "|"
-
-        title = "Combined Barcode Results"
-        lines = [
-            title,
-            "=" * len(title),
-            "",
-            separator(),
-            format_row([column["header"][0] for column in columns]),
-            format_row([column["header"][1] for column in columns]),
-            separator(),
-        ]
-
-        for row in rows:
-            lines.append(format_row([row[column["key"]] for column in columns]))
-
-        lines.append(separator())
-        return lines
 
     def _last_command_duration(self) -> Optional[float]:
         """Return the most recent command duration, if the logger recorded one."""
@@ -594,7 +446,7 @@ class NanoTelProcessor(ProcessorBase):
 
         # Build command parts as individual arguments so paths with spaces
         # (for example "Telomere Analyzer") are quoted correctly.
-        cmd_parts = [
+        command_arguments = [
             "Rscript", "--vanilla",
             nanotel_script,
             "-i", str(task['input_dir']),
@@ -614,16 +466,16 @@ class NanoTelProcessor(ProcessorBase):
         ]
 
         if summary_only:
-            cmd_parts.append(self._summary_only_flag(nanotel_script))
+            command_arguments.append(self._summary_only_flag(nanotel_script))
 
         if tvr_patterns:
             if isinstance(tvr_patterns, str):
                 tvr_patterns_arg = tvr_patterns
             else:
                 tvr_patterns_arg = " ".join(str(pattern) for pattern in tvr_patterns)
-            cmd_parts.extend(["--tvr_patterns", str(tvr_patterns_arg)])
+            command_arguments.extend(["--tvr_patterns", str(tvr_patterns_arg)])
 
-        return self._format_command(cmd_parts)
+        return format_command(command_arguments)
 
     @staticmethod
     def _summary_only_flag(nanotel_script: str) -> str:
@@ -639,12 +491,6 @@ class NanoTelProcessor(ProcessorBase):
             return "--quick_run"
         return "--skip_single_read_outputs"
 
-    def _format_command(self, cmd_parts: List[str]) -> str:
-        """Quote a command safely for the current platform."""
-        args = [str(part) for part in cmd_parts]
-        if os.name == "nt":
-            return subprocess.list2cmdline(args)
-        return shlex.join(args)
 
     def _collect_statistics(self, results_per_barcode: Dict[str, bool]) -> Dict[str, any]:
         """

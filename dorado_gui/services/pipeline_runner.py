@@ -411,7 +411,7 @@ def _run_basecalling_only(
 
     if not pod5_path:
         log("POD5 Workflow selected but no POD5 path provided.")
-        return 1
+        return False
 
     return operator.run_basecalling(
         pod5_path,
@@ -436,7 +436,7 @@ def _run_nanotel_only(
     input_file = fastq_path if fastq_path else bam_path
     if not input_file:
         log("FASTQ/BAM input required for NanoTel.")
-        return 1
+        return False
 
     return operator.run_nanotel_workflow(
         input_file,

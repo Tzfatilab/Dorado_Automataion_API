@@ -20,8 +20,6 @@ from typing import Optional, List, Dict, Callable
 import threading
 
 
-
-
 class CallbackHandler(logging.Handler):
     """Logging handler that forwards formatted messages to a callback."""
 
@@ -69,8 +67,6 @@ class CallbackHandler(logging.Handler):
             or bool(cls._WORKFLOW_NOISE.match(message))
             or message.startswith("[conflicted] Will prefer ")
         )
-
-
 
 
 class WorkflowLogger:
@@ -291,16 +287,12 @@ class WorkflowLogger:
                     'returncode': returncode,
                     'duration_seconds': duration,
                 })
-                exit_code = f" (exit code {returncode})" if returncode is not None else ""
                 self.error(f"Command failed after {duration:.1f}s")
                 if returncode is not None:
                     self.error(f"  Exit code: {returncode}")
                 self.error(f"  Error: {error}")
                 self._log_command_output(stdout, stderr, level="error")
                 return
-                self.executed_commands[cmd_index]['status'] = 'failed'
-                self.executed_commands[cmd_index]['error'] = error
-                self.error(f"✗ Command failed: {error}")
 
 
     def _log_command_output(self, stdout: Optional[str], stderr: Optional[str],
