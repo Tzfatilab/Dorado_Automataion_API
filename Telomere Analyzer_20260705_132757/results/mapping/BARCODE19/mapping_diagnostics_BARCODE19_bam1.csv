@@ -1,8 +1,0 @@
-step,count
-alignment_summary_rows,1273
-nanotel_filtered_rows,1
-after_nanotel_read_id_match,0
-after_removing_unmapped,0
-after_mapq_filtering,0
-after_position_filtering,0
-after_strand_position_filtering,0
