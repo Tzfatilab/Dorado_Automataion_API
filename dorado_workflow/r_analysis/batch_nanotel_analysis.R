@@ -46,6 +46,10 @@ main_nanotel_analysis <- function(config_file) {
   max_edge_distance <- config$max_edge_distance %||% config$min_edge_distance %||% 134
   min_read_length <- config$min_read_length %||% config$read_length %||% NULL
   summary_only <- config$summary_only %||% FALSE
+  short_telomere_threshold_bp <- config$short_telomere_threshold_bp %||% 2000
+  if (is.na(short_telomere_threshold_bp) || short_telomere_threshold_bp <= 0) {
+    stop("Short telomere threshold must be greater than zero")
+  }
 
   log_message("Configuration loaded successfully")
   log_message(paste("Input directory:", config$input_dir))
@@ -84,7 +88,11 @@ main_nanotel_analysis <- function(config_file) {
 
   # Generate summary statistics
   summary_output_file <- file.path(config$output_dir, "nanotel_summary_statistics.csv")
-  summary_stats <- generate_nanotel_summary_stats(processed_data, summary_output_file)
+  summary_stats <- generate_nanotel_summary_stats(
+    processed_data,
+    summary_output_file,
+    short_telomere_threshold_bp
+  )
 
   # Create analysis report
   report_file <- file.path(config$output_dir, "nanotel_analysis_report.txt")
@@ -155,7 +163,11 @@ generate_nanotel_report <- function(processed_data, summary_stats, output_file, 
                         paste("  ", toupper(row$barcode), ":"),
                         paste("    Telomeres:", row$amount_of_telomeres),
                         paste("    Median length:", row$median_telomere_length, "bp"),
-                        paste("    Below 2kb:", row$below_2kb_pct, "%"),
+                        paste(
+                          "    Below", short_telomere_threshold_bp, "bp:",
+                          row[[paste0("below_", short_telomere_threshold_bp, "bp_pct")]],
+                          "%"
+                        ),
                         paste("    Median read length:", row$med_read_len, "bp"),
                         paste("    Mean density:", row$mean_density),
                         ""

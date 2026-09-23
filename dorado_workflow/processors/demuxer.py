@@ -13,6 +13,7 @@ import os
 import shlex
 import subprocess
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
+from ..utils.cancellation import WorkflowCancelled
 
 
 class DemuxProcessor(ProcessorBase):
@@ -156,6 +157,8 @@ class DemuxProcessor(ProcessorBase):
             self.log_complete(result)
             return result
 
+        except WorkflowCancelled:
+            raise
         except Exception as e:
             error_msg = f"Demultiplexing failed: {str(e)}"
             self.context.logger.error(error_msg)

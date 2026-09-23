@@ -8,8 +8,12 @@ Integrates with WorkflowLogger for command tracking.
 
 import shutil
 import subprocess
+import os
+import signal
+import threading
 from typing import Optional, List, Callable
 from pathlib import Path
+from .cancellation import WorkflowCancelled
 
 
 class CommandExecutor:
@@ -31,6 +35,64 @@ class CommandExecutor:
             logger: WorkflowLogger instance for logging commands
         """
         self.logger = logger
+        self.stop_callback = None
+
+    def check_cancelled(self):
+        if self.stop_callback and self.stop_callback():
+            raise WorkflowCancelled()
+
+    @staticmethod
+    def _terminate_tree(process):
+        """Stop the command and its children, including shell pipelines."""
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    def popen(self, command, **kwargs):
+        """Start a process with a cancellation watcher independent of its output."""
+        self.check_cancelled()
+        if os.name != "nt":
+            kwargs["start_new_session"] = True
+        process = subprocess.Popen(command, **kwargs)
+        if self.stop_callback:
+            def watch():
+                while process.poll() is None:
+                    if self.stop_callback():
+                        self._terminate_tree(process)
+                        return
+                    try:
+                        process.wait(timeout=0.1)
+                    except subprocess.TimeoutExpired:
+                        pass
+            threading.Thread(target=watch, daemon=True).start()
+        return process
+
+    def run_process(self, command, *, check=False, capture_output=False,
+                    timeout=None, **kwargs):
+        """Cancellation-aware subprocess.run for commands with redirected files."""
+        if capture_output:
+            kwargs.update(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        with self.popen(command, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(timeout=timeout)
+            except BaseException:
+                self._terminate_tree(process)
+                process.communicate()
+                raise
+            self.check_cancelled()
+            if check and process.returncode:
+                raise subprocess.CalledProcessError(
+                    process.returncode, command, output=stdout, stderr=stderr
+                )
+            return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
     def execute(self, command: str, capture_output: bool = False,
                 check: bool = True, cwd: Optional[Path] = None,
@@ -61,12 +123,13 @@ class CommandExecutor:
             raise ValueError("capture_output and stream_output cannot both be enabled")
 
         # Register command with logger
+        self.check_cancelled()
         cmd_index = self.logger.register_command(command, cwd=cwd)
 
         try:
             # Execute command
             if stream_output:
-                process = subprocess.Popen(
+                process = self.popen(
                     command,
                     shell=True,
                     stdout=subprocess.PIPE,
@@ -91,6 +154,8 @@ class CommandExecutor:
                         )
 
                 returncode = process.wait()
+                process.stdout.close()
+                self.check_cancelled()
                 if check and returncode:
                     output = "\n".join(output_lines)
                     raise subprocess.CalledProcessError(
@@ -98,7 +163,7 @@ class CommandExecutor:
                     )
                 result = subprocess.CompletedProcess(command, returncode)
             elif capture_output:
-                result = subprocess.run(
+                result = self.run_process(
                     command,
                     shell=True,
                     capture_output=True,
@@ -107,7 +172,7 @@ class CommandExecutor:
                     cwd=cwd
                 )
             else:
-                result = subprocess.run(
+                result = self.run_process(
                     command,
                     shell=True,
                     check=check,
@@ -124,6 +189,10 @@ class CommandExecutor:
             )
             return result
 
+        except WorkflowCancelled:
+            self.logger.mark_command_cancelled(cmd_index)
+            raise
+
         except subprocess.CalledProcessError as e:
             stdout = getattr(e, "stdout", None) or getattr(e, "output", None)
             # Mark as failed
@@ -135,6 +204,10 @@ class CommandExecutor:
                 stdout=stdout if (capture_output or stream_output) else None,
                 stderr=e.stderr if capture_output else None,
             )
+            raise
+
+        except RuntimeError as e:
+            self.logger.mark_command_failed(cmd_index, str(e))
             raise
 
     def execute_safe(self, command: str, capture_output: bool = False,

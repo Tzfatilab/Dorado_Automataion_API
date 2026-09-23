@@ -8,6 +8,7 @@ Handles alignment of BAM or FASTQ files to reference genome using minimap2.
 from pathlib import Path
 from typing import Dict, Optional
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
+from ..utils.cancellation import WorkflowCancelled
 from datetime import datetime
 import os
 import re
@@ -159,6 +160,8 @@ class AlignmentProcessor(ProcessorBase):
             self.log_complete(result)
             return result
 
+        except WorkflowCancelled:
+            raise
         except Exception as e:
             error_msg = f"Alignment failed: {str(e)}"
             self.context.logger.error(error_msg)
@@ -231,9 +234,11 @@ class AlignmentProcessor(ProcessorBase):
     def _align_one_file(self, input_file: Path, output_bam: Path,
                         reference: Path, preset: str, input_type: str) -> None:
         if input_type == "bam":
+            # Carry modified-base tags through FASTQ comments into SAM. Soft
+            # clipping keeps supplementary sequences consistent with MM/MN.
             command_text = (
-                f"samtools fastq {self._quote_shell_path(input_file)} | "
-                f"minimap2 -ax {preset} {self._quote_shell_path(reference)} - | "
+                f"samtools fastq -T MM,ML,Mm,Ml,MN {self._quote_shell_path(input_file)} | "
+                f"minimap2 -y -Y -ax {preset} {self._quote_shell_path(reference)} - | "
                 f"samtools sort -o {self._quote_shell_path(output_bam)} -"
             )
         else:
@@ -272,7 +277,7 @@ class AlignmentProcessor(ProcessorBase):
             handle.write("\t".join(header) + "\n")
             for bam_path in bam_paths:
                 command = self._format_command(["samtools", "view", str(bam_path)])
-                process = subprocess.Popen(
+                process = self.context.command_executor.popen(
                     command,
                     shell=True,
                     stdout=subprocess.PIPE,
@@ -312,6 +317,7 @@ class AlignmentProcessor(ProcessorBase):
                     process.stdout.close()
                 if process.stderr:
                     process.stderr.close()
+                self.context.command_executor.check_cancelled()
                 if returncode:
                     raise subprocess.CalledProcessError(
                         returncode,

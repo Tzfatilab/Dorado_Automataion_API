@@ -92,7 +92,9 @@ class WorkflowSection:
             "<p><b>Min Read Length:</b> shortest read accepted for analysis.<br>"
             "<b>Max Edge Distance:</b> how far a telomere may start from a read end.<br>"
             "<b>Max Telomere Start:</b> limit for locating the telomere start.<br>"
-            "<b>Min Density:</b> minimum telomere-repeat density required.</p>",
+            "<b>Min Density:</b> minimum telomere-repeat density required.<br>"
+            "<b>Short Telomere Cutoff:</b> enter a length cutoff (X) in bp. "
+            "The output reports the percentage of telomeres shorter than X.</p>",
             subtitle
         )
 

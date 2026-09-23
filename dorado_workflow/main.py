@@ -110,9 +110,10 @@ def cmd_fastq_workflow(args) -> int:
     context = setup_context(args.trial_name, args.output_dir, args.config, organism=args.organism)
     operator = WorkflowOperator(context)
 
-    success = operator.run_fastq_workflow(
-        fastq_input=args.input,
-        organism=args.organism
+    success = operator.run_nanotel_workflow(
+        path_input=args.input,
+        organism=args.organism,
+        run_mapping=True,
     )
 
     return 0 if success else 1

@@ -15,6 +15,7 @@ import re
 import subprocess
 import shlex
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
+from ..utils.cancellation import WorkflowCancelled
 
 
 class NanoTelProcessor(ProcessorBase):
@@ -166,6 +167,8 @@ class NanoTelProcessor(ProcessorBase):
             self.log_complete(result)
             return result
 
+        except WorkflowCancelled:
+            raise
         except Exception as e:
             error_msg = f"NanoTel analysis failed: {str(e)}"
             self.context.logger.error(error_msg)
@@ -273,6 +276,7 @@ class NanoTelProcessor(ProcessorBase):
         results = {}
 
         for task in tasks:
+            self.context.command_executor.check_cancelled()
             barcode = task['barcode']
             self.context.logger.info(
                 f"Processing {barcode} ({task['fastq_count']} FASTQ files)..."
@@ -305,6 +309,8 @@ class NanoTelProcessor(ProcessorBase):
                         f"    NanoTel completed for {barcode} in {duration:.1f}s"
                     )
 
+            except WorkflowCancelled:
+                raise
             except Exception as e:
                 # Mark as failed in barcode manager
                 self.context.barcode_manager.register_failure(
@@ -373,13 +379,17 @@ class NanoTelProcessor(ProcessorBase):
     def _parse_barcode_results_file(self, barcode: str, result_file: Path) -> Optional[Dict[str, str]]:
         """Parse the user-facing values from a per-barcode NanoTel results file."""
         values = {"Barcode": barcode}
+        threshold = self.context.config_manager.get_nanotel_params().get(
+            "short_telomere_threshold_bp", 2000
+        )
+        short_label = f"% of telomeres shorter than {threshold} bp"
         required_fields = (
             "Number of telomeric reads (post-filtration)",
             "Complete Telomeric Reads",
             "Incomplete Telomeric Reads",
             "Censoring Rate",
             "Median Telomeric Length (post-filtration)",
-            "% of telomeres shorter than 2kb",
+            short_label,
         )
 
         for line in result_file.read_text(encoding="utf-8").splitlines():
@@ -397,6 +407,10 @@ class NanoTelProcessor(ProcessorBase):
 
     def _format_combined_results_table(self, rows: List[Dict[str, str]]) -> List[str]:
         """Format combined barcode results as a compact fixed-width text table."""
+        threshold = self.context.config_manager.get_nanotel_params().get(
+            "short_telomere_threshold_bp", 2000
+        )
+        short_label = f"% of telomeres shorter than {threshold} bp"
         columns = [
             {
                 "key": "Barcode",
@@ -423,8 +437,8 @@ class NanoTelProcessor(ProcessorBase):
                 "header": ("Median Telomeric Length", "(post-filtration)"),
             },
             {
-                "key": "% of telomeres shorter than 2kb",
-                "header": ("% of telomeres", "shorter than 2kb"),
+                "key": short_label,
+                "header": ("% of telomeres", f"shorter than {threshold} bp"),
             },
         ]
 
@@ -572,6 +586,11 @@ class NanoTelProcessor(ProcessorBase):
             'max_edge_distance',
             nanotel_params.get('min_edge_distance', 134),
         )
+        short_threshold = int(
+            nanotel_params.get('short_telomere_threshold_bp', 2000)
+        )
+        if short_threshold <= 0:
+            raise ValueError('Short telomere threshold must be greater than zero')
 
         # Build command parts as individual arguments so paths with spaces
         # (for example "Telomere Analyzer") are quoted correctly.
@@ -591,6 +610,7 @@ class NanoTelProcessor(ProcessorBase):
             # Use the checkbox value for both the regular telomere pattern
             # and any selected TVR patterns.
             "--max_mismatch", str(max_mismatch),
+            "--short_telomere_threshold_bp", str(short_threshold),
         ]
 
         if summary_only:

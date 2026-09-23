@@ -808,6 +808,7 @@ class AppWindow(
             max_distance_edge=self.max_distance_edge.text().strip(),
             max_telomere_start=self.max_telomere_start.text().strip(),
             min_density_threshold=self.min_density_threshold.text().strip(),
+            short_telomere_threshold=self.short_telomere_threshold.text().strip(),
         )
 
     def _prompt_non_pod5_trim_status(self, inputs, flags):

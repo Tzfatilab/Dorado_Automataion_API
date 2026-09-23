@@ -14,6 +14,7 @@ import shlex
 import subprocess
 
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
+from ..utils.cancellation import WorkflowCancelled
 
 
 class BamToFastqProcessor(ProcessorBase):
@@ -151,6 +152,8 @@ class BamToFastqProcessor(ProcessorBase):
             self.log_complete(result)
             return result
 
+        except WorkflowCancelled:
+            raise
         except Exception as e:
             error_msg = f"BAM to FASTQ conversion failed: {str(e)}"
             self.context.logger.error(error_msg)
@@ -181,6 +184,8 @@ class BamToFastqProcessor(ProcessorBase):
                     f"{task['barcode']}: {task['bam_file'].name} -> {task['output_fastq'].name}"
                 )
                 return task["barcode"], "success"
+            except WorkflowCancelled:
+                raise
             except Exception as e:
                 if task["output_fastq"].exists() and task["output_fastq"].stat().st_size == 0:
                     task["output_fastq"].unlink()
@@ -211,7 +216,7 @@ class BamToFastqProcessor(ProcessorBase):
 
         try:
             with temp_fastq.open("w", encoding="utf-8", newline="") as stdout_file:
-                result = subprocess.run(
+                result = self.context.command_executor.run_process(
                     command,
                     stdout=stdout_file,
                     stderr=subprocess.PIPE,
@@ -241,6 +246,9 @@ class BamToFastqProcessor(ProcessorBase):
                 returncode=e.returncode,
                 stderr=e.stderr,
             )
+            raise
+        except WorkflowCancelled:
+            self.context.logger.mark_command_cancelled(cmd_index)
             raise
         except Exception as e:
             self.context.logger.mark_command_failed(cmd_index, str(e))

@@ -1,6 +1,7 @@
 import traceback
 from PySide6.QtCore import QObject, Signal
 from services.pipeline_runner import run_pipeline
+from dorado_workflow.utils.cancellation import WorkflowCancelled
 
 
 """Qt worker object that executes the pipeline outside the main UI thread."""
@@ -39,6 +40,7 @@ class WorkerThread(QObject):
             max_distance_edge: str = "",
             max_telomere_start: str = "",
             min_density_threshold: str = "",
+            short_telomere_threshold: str = "",
     ):
         """Store workflow settings that will be passed to run_pipeline."""
         super().__init__()
@@ -67,6 +69,7 @@ class WorkerThread(QObject):
         self.max_distance_edge = max_distance_edge
         self.max_telomere_start = max_telomere_start
         self.min_density_threshold = min_density_threshold
+        self.short_telomere_threshold = short_telomere_threshold
         self._stop_requested = False
 
     def stop(self):
@@ -103,6 +106,7 @@ class WorkerThread(QObject):
                 max_distance_edge=self.max_distance_edge,
                 max_telomere_start=self.max_telomere_start,
                 min_density_threshold=self.min_density_threshold,
+                short_telomere_threshold=self.short_telomere_threshold,
                 log_cb=self.log.emit,
                 stop_cb=lambda: self._stop_requested,
             )
@@ -116,11 +120,10 @@ class WorkerThread(QObject):
             else:
                 self.done.emit(False, message)
 
-        except Exception as e:
-            if "Cancelled by user" in str(e):
-                self.done.emit(False, "Cancelled by user")
-                return
+        except WorkflowCancelled:
+            self.done.emit(False, "Cancelled by user")
 
+        except Exception:
             err = traceback.format_exc()
             self.log.emit(err)
             self.done.emit(False, err)

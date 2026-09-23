@@ -16,6 +16,7 @@ sys.path.insert(0, str(dorado_workflow_path))
 sys.path.insert(0, str(project_root))
 
 from dorado_workflow.main import setup_context
+from dorado_workflow.utils.cancellation import WorkflowCancelled
 from dorado_workflow.operators.workflow_operator import WorkflowOperator
 
 APP_OUTPUT_FOLDER = "Telomere Analyzer"
@@ -45,6 +46,7 @@ def run_pipeline(
         max_distance_edge: str = "",
         max_telomere_start: str = "",
         min_density_threshold: str = "",
+        short_telomere_threshold: str = "",
         log_cb=None,
         stop_cb=None
 ) -> tuple[int, str]:
@@ -75,6 +77,9 @@ def run_pipeline(
         align_during_basecalling=analysis_flags["align_during_basecalling"],
     )
 
+    context.command_executor.stop_callback = stop_cb
+    check_cancelled()
+
     _apply_gui_config_overrides(
         context,
         organism=organism,
@@ -88,6 +93,7 @@ def run_pipeline(
         max_distance_edge=max_distance_edge,
         max_telomere_start=max_telomere_start,
         min_density_threshold=min_density_threshold,
+        short_telomere_threshold=short_telomere_threshold,
     )
 
     operator = WorkflowOperator(context=context)
@@ -128,7 +134,7 @@ def _make_cancel_checker(stop_cb):
     """Return the cancellation hook used before expensive workflow steps."""
     def check_cancelled():
         if stop_cb and stop_cb():
-            raise RuntimeError("Cancelled by user")
+            raise WorkflowCancelled()
     return check_cancelled
 
 
@@ -267,6 +273,7 @@ def _apply_gui_config_overrides(
         max_distance_edge: str,
         max_telomere_start: str,
         min_density_threshold: str,
+        short_telomere_threshold: str,
 ) -> None:
     """Apply advanced GUI settings to workflow configuration."""
     basecalling_overrides = _build_basecalling_overrides(methylation_type)
@@ -298,6 +305,7 @@ def _apply_gui_config_overrides(
         max_distance_edge=max_distance_edge,
         max_telomere_start=max_telomere_start,
         min_density_threshold=min_density_threshold,
+        short_telomere_threshold=short_telomere_threshold,
     )
     if nanotel_overrides:
         context.config_manager.update_nanotel_params(nanotel_overrides)
@@ -488,9 +496,16 @@ def _build_nanotel_overrides(
         max_distance_edge: str,
         max_telomere_start: str,
         min_density_threshold: str,
+        short_telomere_threshold: str,
 ) -> dict:
     """Convert GUI NanoTel advanced options into NanoTel overrides."""
     overrides = {"summary_only": bool(summary_only)}
+
+    short_threshold = _parse_int(short_telomere_threshold)
+    if short_threshold is not None:
+        if short_threshold <= 0:
+            raise ValueError("Short telomere threshold must be greater than zero")
+        overrides["short_telomere_threshold_bp"] = short_threshold
 
     density = _parse_float(min_density_threshold)
     if density is not None:

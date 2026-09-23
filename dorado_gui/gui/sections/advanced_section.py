@@ -354,6 +354,7 @@ class AdvancedSection:
 
         self.chromosome_mapping.setStyleSheet("""
             QCheckBox {
+                font-family: Arial;
                 font-size: 13px;
                 font-weight: 400;
                 color: #6b7280;
@@ -492,7 +493,8 @@ class AdvancedSection:
 
         body.addLayout(self._build_tvr_mode_controls())
         footer = QHBoxLayout()
-        footer.setSpacing(18)
+        footer.setSpacing(8)
+        footer.addLayout(self._build_short_telomere_threshold())
         footer.addWidget(self._build_nanotel_mapping_option())
         footer.addWidget(self._build_tvr_mismatch_option())
         footer.addStretch()
@@ -509,6 +511,7 @@ class AdvancedSection:
 
         self.nanotel_mapping.setStyleSheet("""
             QCheckBox {
+                font-family: Arial;
                 font-size: 13px;
                 font-weight: 400;
                 color: #6b7280;
@@ -547,6 +550,34 @@ class AdvancedSection:
         self.allow_mismatch.setStyleSheet(self.nanotel_mapping.styleSheet())
         self._mismatch_before_preset = False
         return self.allow_mismatch
+
+    def _build_short_telomere_threshold(self):
+        """Build the configurable short-telomere cutoff beside mismatch."""
+        defaults = ConfigManager().get_nanotel_params()
+        row = QHBoxLayout()
+        row.setSpacing(5)
+
+        label = QLabel("Short Telomere Cutoff   ")
+        label.setStyleSheet(
+            "color: #6b7280; font-family: Arial; font-size: 13px; "
+            "font-weight: 400; "
+            "background: transparent; border: none; padding: 0; margin: 0;"
+        )
+        label.setWordWrap(False)
+
+        self.short_telomere_threshold = QLineEdit(
+            str(defaults.get("short_telomere_threshold_bp", 2000))
+        )
+        self.short_telomere_threshold.setValidator(QIntValidator(1, 1000000))
+        self.short_telomere_threshold.setFixedSize(54, 28)
+        self.short_telomere_threshold.setAlignment(Qt.AlignCenter)
+        self.short_telomere_threshold.setStyleSheet(
+            "font-family: Arial; font-size: 13px; font-weight: 400; "
+            "color: #6b7280; padding: 1px 4px;"
+        )
+        row.addWidget(label)
+        row.addWidget(self.short_telomere_threshold)
+        return row
 
     def _build_tvr_mode_controls(self):
         """Build optional TVR controls in one compact row."""
@@ -659,10 +690,10 @@ class AdvancedSection:
             str(nanotel_defaults["min_density"])
         )
 
-        self.read_length.setFixedWidth(68)
-        self.max_distance_edge.setFixedWidth(68)
-        self.max_telomere_start.setFixedWidth(68)
-        self.min_density_threshold.setFixedWidth(68)
+        self.read_length.setFixedWidth(54)
+        self.max_distance_edge.setFixedWidth(54)
+        self.max_telomere_start.setFixedWidth(54)
+        self.min_density_threshold.setFixedWidth(54)
 
         # Validators prevent invalid values before the options reach the
         # pipeline configuration layer.
@@ -679,12 +710,16 @@ class AdvancedSection:
             self.max_telomere_start,
             self.min_density_threshold,
         ]:
-            widget.setFixedHeight(32)
+            widget.setFixedHeight(28)
             widget.setAlignment(Qt.AlignCenter)
-            widget.setStyleSheet("font-size: 13px; padding: 2px 6px;")
+            widget.setStyleSheet(
+                "font-family: Arial; font-size: 13px; font-weight: 400; "
+                "color: #6b7280; padding: 2px 6px;"
+            )
 
         label_style = """
             QLabel {
+                font-family: Arial;
                 background: transparent;
                 border: none;
                 color: #6b7280;

@@ -260,6 +260,15 @@ class WorkflowLogger:
                 self.info(f"✓ Command completed successfully")
 
 
+    def mark_command_cancelled(self, cmd_index: int) -> None:
+        """Record cancellation without reporting an analysis error."""
+        with self.command_lock:
+            if 0 <= cmd_index < len(self.executed_commands):
+                command = self.executed_commands[cmd_index]
+                duration = datetime.now().timestamp() - command.pop('_started_timestamp')
+                command.update(status='cancelled', duration_seconds=duration)
+                self.info(f"Command cancelled after {duration:.1f}s", gui_visible=False)
+
     def mark_command_failed(self, cmd_index: int, error: str = "",
                             returncode: Optional[int] = None,
                             stdout: Optional[str] = None,

@@ -187,7 +187,8 @@ batch_process_nanotel_files <- function(input_files,
 }
 
 # Generate summary statistics for all barcodes
-generate_nanotel_summary_stats <- function(all_barcodes_data, output_file) {
+generate_nanotel_summary_stats <- function(all_barcodes_data, output_file,
+                                           short_telomere_threshold_bp = 2000) {
 
   log_message("Generating summary statistics across all barcodes")
 
@@ -205,13 +206,19 @@ generate_nanotel_summary_stats <- function(all_barcodes_data, output_file) {
     summarise(
       amount_of_telomeres = n(),
       median_telomere_length = round(median(Telomere_length_mismatch, na.rm = TRUE), 1),
-      below_2kb_pct = round(100 * mean(Telomere_length_mismatch < 2000, na.rm = TRUE), 1),
+      below_threshold_pct = round(100 * mean(
+        Telomere_length_mismatch < short_telomere_threshold_bp,
+        na.rm = TRUE
+      ), 1),
       # additional statistics, check if needed to drop!
       med_read_len = round(median(sequence_length, na.rm = TRUE), 1),
       mean_density = round(mean(telo_density_mismatch, na.rm = TRUE), 3),
       mean_telo_start = round(mean(Telomere_start_mismatch, na.rm = TRUE), 1),
       .groups = "drop"
     )
+
+  names(summary_stats)[names(summary_stats) == "below_threshold_pct"] <-
+    paste0("below_", short_telomere_threshold_bp, "bp_pct")
 
   # Save summary statistics
   safe_write_csv(summary_stats, output_file)

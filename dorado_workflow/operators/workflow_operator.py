@@ -93,6 +93,7 @@ class WorkflowOperator:
         Returns:
             The ProcessorResult on success, or None on failure (after logging).
         """
+        self.context.command_executor.check_cancelled()
         title = f"{step}: {label}" if step else label
         self.context.logger.section_header(title)
         description, output = self.STEP_DETAILS.get(label, (None, None))
@@ -100,6 +101,7 @@ class WorkflowOperator:
             self.context.logger.info(f"{description}; creates {output}.")
 
         result = processor.execute(*args, **kwargs)
+        self.context.command_executor.check_cancelled()
         self.results[key] = result
         if not result.success:
             self.context.logger.error(f"Workflow stopped: {label} failed")

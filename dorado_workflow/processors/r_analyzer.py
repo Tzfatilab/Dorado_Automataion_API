@@ -17,6 +17,7 @@ import re
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
+from ..utils.cancellation import WorkflowCancelled
 
 class RAnalyzer(ProcessorBase):
     """
@@ -263,6 +264,8 @@ class RAnalyzer(ProcessorBase):
             self.log_complete(result)
             return result
 
+        except WorkflowCancelled:
+            raise
         except Exception as e:
             if bool(nanotel_params.get("summary_only", False)):
                 recovery_workbook = self._try_create_summary_workbook_after_failure()
@@ -299,7 +302,12 @@ class RAnalyzer(ProcessorBase):
         if summary_csv.exists():
             self._populate_csv_sheet(summary_sheet, summary_csv)
         else:
-            self._populate_empty_summary_sheet(summary_sheet)
+            self._populate_empty_summary_sheet(
+                summary_sheet,
+                self.context.config_manager.get_nanotel_params().get(
+                    "short_telomere_threshold_bp", 2000
+                ),
+            )
         self._ensure_summary_barcodes(summary_sheet, list(raw_files))
 
         for barcode, detail_file in raw_files.items():
@@ -464,13 +472,15 @@ class RAnalyzer(ProcessorBase):
             sheet.column_dimensions[get_column_letter(column_index)].width = width
 
     @staticmethod
-    def _populate_empty_summary_sheet(sheet) -> None:
+    def _populate_empty_summary_sheet(
+        sheet, short_telomere_threshold_bp=2000
+    ) -> None:
         """Create a valid run summary when no reads passed filtration."""
         sheet.append([
             "barcode",
             "amount_of_telomeres",
             "median_telomere_length",
-            "below_2kb_pct",
+            f"below_{short_telomere_threshold_bp}bp_pct",
             "med_read_len",
             "mean_density",
             "mean_telo_start",
@@ -644,6 +654,8 @@ class RAnalyzer(ProcessorBase):
                     has_methylation = True
                     break
 
+            except WorkflowCancelled:
+                raise
             except Exception as e:
                 self.context.logger.warning(f"Could not check methylation in {bam}: {e}")
                 continue
@@ -660,11 +672,10 @@ class RAnalyzer(ProcessorBase):
         self.context.logger.info("OK Methylation data detected in BAM files")
         return True
 
-    @staticmethod
-    def _count_methylation_tags(bam: Path, limit: int = 100) -> int:
+    def _count_methylation_tags(self, bam: Path, limit: int = 100) -> int:
         """Count reads with modified-base tags using samtools."""
         command = ["samtools", "view", str(bam)]
-        process = subprocess.Popen(
+        process = self.context.command_executor.popen(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -688,6 +699,7 @@ class RAnalyzer(ProcessorBase):
             process.terminate()
             process.wait(timeout=5)
 
+        self.context.command_executor.check_cancelled()
         return count
 
     def _collect_statistics(self) -> Dict:
