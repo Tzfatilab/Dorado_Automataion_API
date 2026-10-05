@@ -41,6 +41,42 @@ Select input, output directory, organism and workflow stages. The GUI creates a
 new timestamped run directory. Cancel stops active commands and prevents later
 stages from starting; user cancellation is recorded separately from failure.
 
+Open **Settings & Configuration** in the sidebar. **Profile settings** contains
+the sequencing kit, organism-specific TVR patterns and analysis defaults. **App settings** contains the shared Dorado model folder,
+reference genomes for each organism, and default output folder.
+Add sequences individually or paste a list; removal and
+restoring defaults support Undo. TVR presets are separate for Mouse, Human and
+Zebrafish. Telomere and TSQ1 motifs stay in the configuration and are not editable
+in Settings; TSQ1 mode remains available on Pipeline Setup. An empty TVR
+preset is allowed. Each TVR must contain at least five A/C/G/T bases, including
+bulk-pasted, imported and run-time patterns. Kit choices come from the official
+[Dorado CLI reference](https://software-docs.nanoporetech.com/dorado/latest/barcoding/barcoding/#cli-reference).
+The dropdown also preserves existing profile kit IDs; choose a kit supported by
+your installed Dorado version.
+
+**Save profile** activates the selected profile for subsequent GUI runs.
+**Save app settings** saves shared paths independently, without committing profile
+edits. Existing/imported profiles with different paths retain clearly marked custom
+paths; choose **Use app paths**, then **Save profile**, to adopt shared paths.
+Old settings files migrate on the next save without losing custom resource paths.
+The compact **Analysis defaults** card saves minimum read length, short telomere
+cutoff, maximum edge distance, maximum telomere start, and minimum density with
+each organism within each profile. Switching the organism in Settings loads its
+own values; older profiles use their profile-wide values until edited.
+Selecting a profile or organism fills Pipeline Setup; run-specific edits can
+still override these defaults. The existing adjustment for untrimmed reads applies.
+Choose a saved **Profile** at the bottom of the dark blue sidebar.
+The selected profile supplies the configuration for the next run.
+**Create new profile** creates a named profile, and **Import / Export** uses workflow
+configuration JSON (exports also work with the backend `--config` option).
+**Delete profile** removes a saved profile after confirmation. Lab default is
+protected; deleting the active profile switches back to Lab default.
+Changes are staged until saved, with Save/Discard/Cancel when leaving the page.
+Profiles are stored in the operating system's user configuration directory under
+`TelomereAnalyzer/profiles.json`, independently of `default_config.json`.
+Every run receives a copy of the saved configuration; editing settings during a
+run does not alter it. Pipeline Setup retains run-specific analysis overrides.
+
 ## Run backend commands
 
 Run these commands from the repository root. Global options `--config` and

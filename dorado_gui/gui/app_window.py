@@ -3,11 +3,13 @@ import sys
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QWidget, QTextEdit, QMessageBox, QLabel, QVBoxLayout, QHBoxLayout, QProgressBar, QLayout
+from PySide6.QtWidgets import QApplication, QWidget, QTextEdit, QMessageBox, QLabel, QVBoxLayout, QHBoxLayout, QProgressBar, QLayout, QStackedWidget, QScrollArea
 
 from PySide6.QtCore import (
     Qt,
     QThread,
+    QStandardPaths,
+    QTimer,
 )
 
 from PySide6.QtGui import QFont
@@ -24,6 +26,9 @@ from gui.sections.action_section import ActionSection
 from gui.sections.execution_log_section import ExecutionLogSection
 
 from core.validators import inspect_bam_directory, validate_mode_inputs
+from core.settings_store import SettingsStore
+from gui.settings_page import SettingsPage
+from dorado_workflow.managers.config_manager import organism_nanotel_settings
 
 
 class AppWindow(
@@ -39,11 +44,14 @@ class AppWindow(
 ):
     """Main application window for pipeline configuration and execution."""
 
-    def __init__(self):
+    def __init__(self, settings_path=None):
         """Initialize the main window and construct the UI."""
         super().__init__()
+        if settings_path is None:
+            settings_path = Path(QStandardPaths.writableLocation(QStandardPaths.GenericConfigLocation)) / "TelomereAnalyzer" / "profiles.json"
+        self.settings_store = SettingsStore(settings_path)
         self.setWindowTitle("Telomere Analyzer")
-        self.resize(700, 800)
+        self.resize(1440, 900)
         self.log_dialog = None
         self.worker = None
         self.worker_thread = None
@@ -69,6 +77,10 @@ class AppWindow(
         self.setAutoFillBackground(True)
 
         self._build_ui()
+        self.organism.currentTextChanged.connect(self._run_organism_changed)
+        self._apply_saved_profile(initial=True)
+        if self.settings_store.load_error:
+            QTimer.singleShot(0, lambda: QMessageBox.warning(self, "Saved profiles unavailable", self.settings_store.load_error))
 
     @staticmethod
     def _screen_scale_factor(width, height):
@@ -175,7 +187,7 @@ class AppWindow(
 
         content_layout = QVBoxLayout(content)
 
-        content_layout.setSpacing(10)
+        content_layout.setSpacing(8)
         content_layout.setContentsMargins(12, 6, 12, 10)
         content_layout.setAlignment(Qt.AlignTop)
 
@@ -200,7 +212,16 @@ class AppWindow(
         content_layout.addLayout(self._build_buttons())
 
         main_layout.addWidget(sidebar, 0)
-        main_layout.addWidget(content, 1)
+        self.pages = QStackedWidget()
+        pipeline_scroll = QScrollArea()
+        pipeline_scroll.setWidgetResizable(True)
+        pipeline_scroll.setFrameShape(QScrollArea.NoFrame)
+        pipeline_scroll.setWidget(content)
+        self.pages.addWidget(pipeline_scroll)
+        self.settings_page = SettingsPage(self.settings_store, self)
+        self.settings_page.saved.connect(self._apply_saved_profile)
+        self.pages.addWidget(self.settings_page)
+        main_layout.addWidget(self.pages, 1)
 
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
@@ -208,6 +229,79 @@ class AppWindow(
         self.setLayout(main_layout)
 
         apply_global_style(self)  
+
+    def _apply_saved_profile(self, initial=False):
+        """Use profile defaults for future runs without changing a running snapshot."""
+        self._sync_profile_selector()
+        config = self.settings_store.snapshot()
+        profile_changed = initial or getattr(self, "_applied_profile", None) != self.settings_store.active
+        organism_labels = {"mouse": "Mouse", "human": "Human", "zebrafish": "Zebra Fish"}
+        organism = organism_labels[config["lab_info"]["default_organism"]]
+        if profile_changed or self.organism.currentText() == getattr(self, "_profile_organism", ""):
+            self.organism.blockSignals(True)
+            self.organism.setCurrentText(organism)
+            self.organism.blockSignals(False)
+        self._profile_organism = organism
+        output = self.output_input["edit"]
+        previous = getattr(self, "_profile_output", "")
+        new_output = config["paths"]["default_output_base"]
+        if profile_changed or not output.text() or output.text() == previous:
+            output.setText(new_output)
+        self._profile_output = new_output
+        self._apply_analysis_defaults(force=profile_changed)
+        self._applied_profile = self.settings_store.active
+
+    def _run_organism_changed(self, *_):
+        """Switch numeric fields to the selected organism's saved defaults."""
+        self._apply_analysis_defaults(force=True)
+
+    def _apply_analysis_defaults(self, force=False):
+        """Keep run edits on ordinary saves; reset them on profile/organism changes."""
+        defaults = organism_nanotel_settings(self.settings_store.snapshot(), self.organism.currentText())
+        organism_changed = getattr(self, "_analysis_organism", None) != self.organism.currentText()
+        for name, key in (("read_length", "min_read_length"), ("max_distance_edge", "display_max_edge_distance"),
+                          ("max_telomere_start", "max_telomere_start"), ("min_density_threshold", "min_density"),
+                          ("short_telomere_threshold", "short_telomere_threshold_bp")):
+            value = defaults.get(key)
+            edit = getattr(self, name)
+            old_value = getattr(self, "_profile_nanotel", {}).get(key)
+            old_text = "" if old_value is None else format(old_value * 100, ".6g") if key == "min_density" else str(old_value)
+            if force or organism_changed or edit.text() == old_text:
+                edit.setText("" if value is None else format(value * 100, ".6g") if key == "min_density" else str(value))
+        self._profile_nanotel = defaults
+        self._analysis_organism = self.organism.currentText()
+
+    def _sync_profile_selector(self):
+        self.run_profile.blockSignals(True)
+        self.run_profile.clear()
+        self.run_profile.addItems(self.settings_store.profiles)
+        self.run_profile.setCurrentText(self.settings_store.active)
+        self.run_profile.blockSignals(False)
+
+    def _select_run_profile(self, name):
+        if not name or name == self.settings_store.active:
+            return
+        if not self.settings_page.confirm_pending():
+            self._sync_profile_selector()
+            return
+        try:
+            self.settings_store.commit(name, self.settings_store.profiles[name])
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Could not select profile", str(exc))
+            self._sync_profile_selector()
+            return
+        self.settings_page.discard()
+        self._apply_saved_profile()
+
+    def closeEvent(self, event):
+        if not self.settings_page.confirm_pending():
+            event.ignore()
+            return
+        if self._is_workflow_running():
+            QMessageBox.information(self, "Workflow is running", "Cancel the workflow and wait for it to stop before closing.")
+            event.ignore()
+            return
+        event.accept()
 
     def _show_error_dialog(self, title, errors):
         """
@@ -258,6 +352,7 @@ class AppWindow(
         output_dir = self.output_input["edit"].text().strip()
 
         return WorkerThread(
+            config_data=self.settings_store.snapshot(),
             trial_name=Path(output_dir).name,
             pod5_path=inputs["pod5"],
             fastq_path=inputs["fastq"],
@@ -285,7 +380,7 @@ class AppWindow(
             read_length=self.read_length.text().strip(),
             max_distance_edge=self.max_distance_edge.text().strip(),
             max_telomere_start=self.max_telomere_start.text().strip(),
-            min_density_threshold=self.min_density_threshold.text().strip(),
+            min_density_threshold=str(float(self.min_density_threshold.text()) / 100) if self.min_density_threshold.text().strip() else "",
             short_telomere_threshold=self.short_telomere_threshold.text().strip(),
         )
 
@@ -468,6 +563,13 @@ class AppWindow(
         """
         if self._is_workflow_running():
             self._open_execution_log_dialog()
+            return
+
+        if not self.settings_page.confirm_pending():
+            return
+
+        if self.min_density_threshold.text().strip() and not self.min_density_threshold.hasAcceptableInput():
+            self._show_error_dialog("Invalid density", ["Minimum telomeric repeat density must be between 0 and 100 percent."])
             return
 
         inputs = self._get_selected_inputs()

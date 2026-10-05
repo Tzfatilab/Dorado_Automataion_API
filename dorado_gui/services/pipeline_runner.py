@@ -47,6 +47,7 @@ def run_pipeline(
         max_telomere_start: str = "",
         min_density_threshold: str = "",
         short_telomere_threshold: str = "",
+        config_data=None,
         log_cb=None,
         stop_cb=None
 ) -> tuple[int, str]:
@@ -75,6 +76,7 @@ def run_pipeline(
         bam_path=bam_path,
         nanotel_mapping=analysis_flags["nanotel_mapping"],
         align_during_basecalling=analysis_flags["align_during_basecalling"],
+        config_data=config_data,
     )
 
     context.command_executor.stop_callback = stop_cb
@@ -155,6 +157,7 @@ def _setup_pipeline_context(
         bam_path: str,
         nanotel_mapping: bool,
         align_during_basecalling: bool,
+        config_data=None,
 ):
     """Create workflow context in a new timestamped run folder."""
     base_dir = _resolve_base_output_dir(output_dir)
@@ -165,6 +168,7 @@ def _setup_pipeline_context(
         config_path=None,
         organism=organism,
         log_callback=log,
+        config_data=config_data,
     )
 
     log(f"Results will be saved under: {context.path_manager.get_results_dir_path()}")
@@ -196,7 +200,7 @@ def _build_run_folder_name(base_dir: str) -> str:
 
 def _resolve_base_output_dir(output_dir: str) -> str:
     """Normalize selected output paths to the parent of the trial directory."""
-    output_path = Path(output_dir)
+    output_path = Path(output_dir).expanduser()
 
     # The GUI can pass the selected root, the stable trial folder, or a generated
     # child such as results/mapping. Normalize all of them to the base directory.

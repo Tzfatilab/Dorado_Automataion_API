@@ -1,4 +1,5 @@
 import traceback
+from copy import deepcopy
 from PySide6.QtCore import QObject, Signal
 from services.pipeline_runner import run_pipeline
 from dorado_workflow.utils.cancellation import WorkflowCancelled
@@ -41,11 +42,13 @@ class WorkerThread(QObject):
             max_telomere_start: str = "",
             min_density_threshold: str = "",
             short_telomere_threshold: str = "",
+            config_data=None,
     ):
         """Store workflow settings that will be passed to run_pipeline."""
         super().__init__()
 
         self.trial_name = trial_name
+        self.config_data = deepcopy(config_data)
         self.pod5_path = pod5_path
         self.fastq_path = fastq_path
         self.bam_path = bam_path
@@ -85,6 +88,7 @@ class WorkerThread(QObject):
             # Pass all current settings and callbacks into the pipeline entrypoint.
             status_code, message = run_pipeline(
                 trial_name=self.trial_name,
+                config_data=self.config_data,
                 pod5_path=self.pod5_path,
                 fastq_path=self.fastq_path,
                 bam_path=self.bam_path,

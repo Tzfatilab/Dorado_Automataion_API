@@ -447,7 +447,7 @@ class AdvancedSection:
         row = QHBoxLayout()
         row.setSpacing(5)
 
-        label = QLabel("Short Telomere Cutoff   ")
+        label = QLabel("Short telo. threshold (bp)")
         label.setStyleSheet(
             "color: #6b7280; font-family: Arial; font-size: 13px; "
             "font-weight: 400; "
@@ -577,7 +577,7 @@ class AdvancedSection:
             str(nanotel_defaults["max_telomere_start"])
         )
         self.min_density_threshold = QLineEdit(
-            str(nanotel_defaults["min_density"])
+            format(nanotel_defaults["min_density"] * 100, ".6g")
         )
 
         self.read_length.setFixedWidth(54)
@@ -590,7 +590,7 @@ class AdvancedSection:
         self.read_length.setValidator(QIntValidator(0, 10000))
         self.max_distance_edge.setValidator(QIntValidator(0, 1000))
         self.max_telomere_start.setValidator(QIntValidator(0, 1000))
-        validator = QDoubleValidator(0.0, 1.0, 3)
+        validator = QDoubleValidator(0.0, 100.0, 4)
         validator.setNotation(QDoubleValidator.StandardNotation)
         self.min_density_threshold.setValidator(validator)
 
@@ -617,10 +617,17 @@ class AdvancedSection:
                 font-weight: 400;
             }
         """
-        read_label = self._build_field_label("Min Read Length (bp)", 140, label_style)
-        edge_label = self._build_field_label("Max Edge Distance", 140, label_style)
-        start_label = self._build_field_label("Max Telomere Start", 140, label_style)
-        density_label = self._build_field_label("Min Density", 128, label_style)
+        read_label = self._build_field_label("Min total read (bp)", 140, label_style)
+        edge_label = self._build_field_label("Min read margin (bp)", 140, label_style)
+        start_label = self._build_field_label("Latest telo. start (bp)", 140, label_style)
+        density_label = self._build_field_label("Min density (%)", 128, label_style)
+
+        # Compact captions preserve the existing fixed-width layout; tooltips expand them.
+        read_label.setToolTip("Minimum total read length (bp)")
+        edge_label.setToolTip("Minimum read-length margin (bp): read length must exceed the running median telomere length by more than this value.")
+        self.max_distance_edge.setToolTip(edge_label.toolTip())
+        start_label.setToolTip("Latest allowed telomere start (bp)")
+        density_label.setToolTip("Minimum telomeric repeat density (%)")
 
         grid.addWidget(read_label, 0, 0)
         grid.addWidget(self.read_length, 0, 1)

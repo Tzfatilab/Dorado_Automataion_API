@@ -26,7 +26,7 @@
   },
 
   "demuxing": {
-    "kit_name": "SQK-NBD114-24",
+    "kit_name": "SQK-NBD114-96",
     "no_trim": true,
     "sort_bam": true,
     "emit_summary": true

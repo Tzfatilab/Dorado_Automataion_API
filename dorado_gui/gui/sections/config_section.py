@@ -17,6 +17,32 @@ from gui.ui_styles import make_card
 class ConfigSection:
     """Mixin that builds the Configuration card used in the main window."""
 
+    def _build_profile_selector(self):
+        """Profile choice anchored at the bottom of the sidebar."""
+        profile_row = QVBoxLayout()
+        profile_row.setContentsMargins(0, 0, 0, 0)
+        profile_row.setSpacing(8)
+        profile_label = QLabel("Profile")
+        profile_label.setStyleSheet("font-weight: 700; color: #cbd5e1; background: transparent;")
+        self.run_profile = QComboBox()
+        self.run_profile.setMinimumWidth(0)
+        self.run_profile.setFixedHeight(30)
+        self.run_profile.setStyleSheet("""
+            QComboBox { padding: 3px 10px; background: white; color: #2563eb; }
+            QComboBox QAbstractItemView {
+                background: white; color: #2563eb;
+                selection-background-color: white; selection-color: #2563eb;
+            }
+            QComboBox QAbstractItemView::item:selected { background: white; color: #2563eb; }
+        """)
+        self.run_profile.setAccessibleName("Run configuration profile")
+        self.run_profile.setToolTip("Choose the saved configuration for the next run.")
+        self.run_profile.currentTextChanged.connect(self._select_run_profile)
+        profile_row.addWidget(profile_label)
+        profile_row.addWidget(self.run_profile)
+        return profile_row
+
+
     def _build_config(self):
         """
         Construct the configuration UI card.
@@ -32,7 +58,7 @@ class ConfigSection:
         """)
         layout = QVBoxLayout()
 
-        # Single row: label + organism combobox
+        # Organism can still be overridden for this run.
         row = QHBoxLayout()
         row.setAlignment(Qt.AlignLeft)
         row.setSpacing(10)
@@ -49,10 +75,10 @@ class ConfigSection:
             "Human",
             "Zebra Fish"
         ])
-        self.organism.setFixedWidth(260)
+        self.organism.setMinimumWidth(260)
 
         row.addWidget(label)
-        row.addWidget(self.organism)
+        row.addWidget(self.organism, 1)
 
         layout.addLayout(row)
 
