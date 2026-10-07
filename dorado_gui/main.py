@@ -50,10 +50,20 @@ def _show_initial_window(window, screen):
         window._apply_screen_scaling()
         return
 
-    # This is the same window state produced by clicking the Restore square
-    # beside the close button on a maximized window.
+    # Open at 70% of the available screen area, centered.
+    width = int(available.width() * 0.8)
+    height = int(available.height() * 0.8)
+    window.resize(width, height)
+    frame = window.frameGeometry()
+    frame.moveCenter(available.center())
+    window.move(frame.topLeft())
+
+
     window.showNormal()
     window._apply_screen_scaling()
+
+
+
 
 
 def main(argv=None):
