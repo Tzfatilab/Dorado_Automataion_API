@@ -1,5 +1,6 @@
 """Shared resource paths, edited and saved independently of analysis profiles."""
 import copy
+from gui.ui_styles import ask_unsaved_settings
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
@@ -154,8 +155,7 @@ class AppSettingsPage(QWidget):
         """Protect app edits when navigating away from Settings or closing."""
         if not self.is_dirty():
             return True
-        answer = QMessageBox.question(self, "Unsaved app settings", "Save changes to shared app paths?",
-                                      QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, QMessageBox.Save)
+        answer = ask_unsaved_settings(self, "Unsaved app settings", "Save changes to shared app paths?")
         if answer == QMessageBox.Save:
             return self.save()
         if answer == QMessageBox.Discard:

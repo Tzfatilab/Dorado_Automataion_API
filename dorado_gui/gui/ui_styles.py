@@ -1,8 +1,35 @@
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QGroupBox
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QGroupBox, QMessageBox
 from PySide6.QtCore import QEvent, QObject, QPoint, Qt
 from PySide6.QtGui import QColor, QPalette
 
 """Shared Qt style helpers for the Telomere Analyzer GUI."""
+
+
+def ask_unsaved_settings(parent, title, message):
+    """Size unsaved-change prompts from their styled content, including long labels.
+
+    Use a Qt dialog so native Windows button sizing cannot clip translated text
+    such as 'Close without Saving' after the application's font is scaled.
+    """
+    dialog = QMessageBox(QMessageBox.Question, title, message,
+                         QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, parent)
+    dialog.setOption(QMessageBox.Option.DontUseNativeDialog, True)
+    dialog.setDefaultButton(QMessageBox.Save)
+    dialog.setEscapeButton(QMessageBox.Cancel)
+    dialog.setFont(parent.font())
+    dialog.setStyleSheet("""
+        QMessageBox QLabel { background: transparent; color: #162238; }
+        QMessageBox QPushButton {
+            background: white; color: #162238; border: 1px solid #cbd5e1;
+            border-radius: 6px; padding: 8px 14px;
+        }
+    """)
+    dialog.ensurePolished()
+    for button in dialog.buttons():
+        button.ensurePolished()
+        button.setMinimumSize(button.sizeHint())
+    dialog.adjustSize()
+    return dialog.exec()
 
 
 def apply_global_style(widget):

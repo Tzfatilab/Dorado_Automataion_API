@@ -82,6 +82,19 @@ class AppWindow(
         if self.settings_store.load_error:
             QTimer.singleShot(0, lambda: QMessageBox.warning(self, "Saved profiles unavailable", self.settings_store.load_error))
 
+    def show_initial_window(self, screen=None):
+        """Use the same centered 70% startup size for both entry points."""
+        screen = screen or self.screen() or QApplication.primaryScreen()
+        if screen is not None:
+            available = screen.availableGeometry()
+            self.resize(round(available.width() * 0.70), round(available.height() * 0.70))
+        self.showNormal()
+        self._apply_screen_scaling()
+        if screen is not None:
+            frame = self.frameGeometry()
+            frame.moveCenter(available.center())
+            self.move(frame.topLeft())
+
     @staticmethod
     def _screen_scale_factor(width, height):
         """Return a restrained UI scale for screens larger than 1600x900."""
@@ -612,5 +625,5 @@ class AppWindow(
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = AppWindow()
-    window.show()
+    window.show_initial_window()
     sys.exit(app.exec())

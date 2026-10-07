@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from gui.app_settings_page import AppSettingsPage
+from gui.ui_styles import ask_unsaved_settings
 from core.sequencing_kits import DORADO_KITS
 from core.settings_store import merge_config, parse_patterns, validate_config, write_json
 from dorado_workflow.managers.config_manager import organism_nanotel_settings
@@ -272,8 +273,30 @@ class SettingsPage(QWidget):
                     control.setSpecialValueText("Disabled")
             control.setAccessibleName(title)
             control.setFixedWidth(140)
-            control.setFixedHeight(30)
-            control.setStyleSheet("QSpinBox, QDoubleSpinBox { padding: 3px 8px; min-height: 0; }")
+            # Reserve a separate button column; native Windows spin buttons can
+            # otherwise overlap the text or clip when the interface is scaled.
+            control.setMinimumHeight(34)
+            control.setStyleSheet("""
+                QSpinBox, QDoubleSpinBox { padding: 3px 26px 3px 8px; min-height: 24px; }
+                QSpinBox::up-button, QDoubleSpinBox::up-button {
+                    subcontrol-origin: border; subcontrol-position: top right;
+                    width: 22px; height: 16px; background: #eff6ff;
+                    border-left: 1px solid #cbd5e1;
+                }
+                QSpinBox::down-button, QDoubleSpinBox::down-button {
+                    subcontrol-origin: border; subcontrol-position: bottom right;
+                    width: 22px; height: 16px; background: #eff6ff;
+                    border-left: 1px solid #cbd5e1;
+                }
+                QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+                    width: 0; height: 0; border-left: 4px solid transparent;
+                    border-right: 4px solid transparent; border-bottom: 5px solid #162238;
+                }
+                QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+                    width: 0; height: 0; border-left: 4px solid transparent;
+                    border-right: 4px solid transparent; border-top: 5px solid #162238;
+                }
+            """)
             control.valueChanged.connect(self.mark_dirty)
             fields.addWidget(self.label(title), row, 0)
             fields.addWidget(control, row, 1)
@@ -600,8 +623,7 @@ class SettingsPage(QWidget):
         profile switching and application close by this page or its owner."""
         if not self.is_dirty():
             return True
-        answer = QMessageBox.question(self, "Unsaved settings", "Save profile changes before continuing?",
-                                      QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, QMessageBox.Save)
+        answer = ask_unsaved_settings(self, "Unsaved settings", "Save profile changes before continuing?")
         if answer == QMessageBox.Save:
             return self.save()
         if answer == QMessageBox.Discard:

@@ -66,7 +66,7 @@ class OutputSection:
         edit.setPlaceholderText(placeholder)
 
         def browse():
-            path = QFileDialog.getExistingDirectory(self, f"Select {label}")
+            path = QFileDialog.getExistingDirectory(self, f"Select {label}", edit.text())
             if path:
                 edit.setText(path)
 

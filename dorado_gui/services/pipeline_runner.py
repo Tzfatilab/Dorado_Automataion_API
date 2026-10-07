@@ -199,43 +199,13 @@ def _build_run_folder_name(base_dir: str) -> str:
 
 
 def _resolve_base_output_dir(output_dir: str) -> str:
-    """Normalize selected output paths to the parent of the trial directory."""
-    output_path = Path(output_dir).expanduser()
+    """Use the selected directory as the parent of the new timestamped run.
 
-    # The GUI can pass the selected root, the stable trial folder, or a generated
-    # child such as results/mapping. Normalize all of them to the base directory.
-    group_dirs = {'processing', 'results'}
-    leaf_subdirs = {
-        'basecalled', 'demultiplexed', 'fastq', 'nanotel', 'mapping',
-        'methylation', 'aligned', 'logs',
-    }
+    Folder names do not imply navigation: even an existing run or a directory
+    named results/processing is an explicit user-selected destination.
+    """
+    return str(Path(output_dir).expanduser())
 
-    is_trial_group = output_path.name in group_dirs
-    is_nested_subdir = (
-        output_path.name in leaf_subdirs
-        and output_path.parent.name in group_dirs
-    )
-
-    if _is_app_run_folder(output_path.name):
-        return str(output_path.parent)
-
-    if is_nested_subdir:
-        trial_root = output_path.parent.parent
-        return str(trial_root.parent if _is_app_run_folder(trial_root.name) else trial_root)
-
-    if is_trial_group:
-        trial_root = output_path.parent
-        return str(trial_root.parent if _is_app_run_folder(trial_root.name) else trial_root)
-
-    return str(output_path)
-
-
-def _is_app_run_folder(folder_name: str) -> bool:
-    """Detect stable and timestamped Telomere Analyzer GUI run folders."""
-    return (
-        folder_name == APP_OUTPUT_FOLDER
-        or folder_name.startswith(f"{APP_OUTPUT_FOLDER}_")
-    )
 
 
 def _derive_analysis_flags(

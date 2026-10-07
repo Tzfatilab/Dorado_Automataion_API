@@ -37,32 +37,8 @@ def _build_parser():
 
 
 def _show_initial_window(window, screen):
-    """Open large displays restored and smaller displays maximized."""
-    if screen is None:
-        window.showMaximized()
-        window._apply_screen_scaling()
-        return
-
-    available = screen.availableGeometry()
-    is_large_screen = available.width() >= 2200 or available.height() >= 1200
-    if not is_large_screen:
-        window.showMaximized()
-        window._apply_screen_scaling()
-        return
-
-    # Open at 70% of the available screen area, centered.
-    width = int(available.width() * 0.8)
-    height = int(available.height() * 0.8)
-    window.resize(width, height)
-    frame = window.frameGeometry()
-    frame.moveCenter(available.center())
-    window.move(frame.topLeft())
-
-
-    window.showNormal()
-    window._apply_screen_scaling()
-
-
+    """Open a centered window at 70% of the available screen dimensions."""
+    window.show_initial_window(screen)
 
 
 
