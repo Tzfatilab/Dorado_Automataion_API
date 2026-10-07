@@ -90,6 +90,10 @@ option_list = list(
   make_option("--max_mismatch", action = "store", default = 0, type = "integer",
               help = "Maximum mismatches allowed for telomere and TVR patterns (0 or 1).",
               metavar = "maximum mismatches"),
+  make_option("--short_telomere_threshold_bp", action = "store", default = 2000,
+              type = "integer",
+              help = "Length threshold used to calculate the percentage of short telomeres.",
+              metavar = "short telomere threshold"),
 
   make_option("--version",
               action = "store_true",
@@ -111,6 +115,9 @@ option_list = list(
               metavar = "maximum edge distance")
 )
 opt = parse_args(OptionParser(option_list=option_list))
+if (is.na(opt$short_telomere_threshold_bp) || opt$short_telomere_threshold_bp <= 0) {
+  stop("Short telomere threshold must be greater than zero")
+}
 
 # Handle --version flag
 if (opt$version) {
@@ -2817,7 +2824,10 @@ if (isTRUE(opt$analysis)) {
   censoring_rate <- n_censored / n_reads
 
   med_telo  <- median(df_filtered$Telomere_length_mismatch)
-  pct_short <- round(100 * sum(df_filtered$Telomere_length_mismatch < 2000) / n_reads, 1)
+  pct_short <- round(100 * mean(
+    df_filtered$Telomere_length_mismatch < opt$short_telomere_threshold_bp,
+    na.rm = TRUE
+  ), 1)
 
 
   fmt <- function(x) format(round(x), big.mark = ",", scientific = FALSE)
@@ -2831,7 +2841,8 @@ if (isTRUE(opt$analysis)) {
     paste0("Censoring Rate                              : ", round(100 * censoring_rate, 1), "%"),
     "",
     paste0("Median Telomeric Length (post-filtration)  : ", fmt(med_telo), " bp"),
-    paste0("% of telomeres shorter than 2kb             : ", pct_short, "%")
+    paste0("% of telomeres shorter than ", opt$short_telomere_threshold_bp,
+           " bp : ", pct_short, "%")
   )
 
   results_lines <- c(results_lines, "", format_km_report(km_result))

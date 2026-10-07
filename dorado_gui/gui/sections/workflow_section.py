@@ -89,10 +89,16 @@ class WorkflowSection:
             "patterns. Preset always uses exact matching.<br>"
             "<b>Run mapping:</b> map NanoTel reads to the genome.</p>"
             "<h3>Numeric thresholds</h3>"
-            "<p><b>Min Read Length:</b> shortest read accepted for analysis.<br>"
-            "<b>Max Edge Distance:</b> how far a telomere may start from a read end.<br>"
-            "<b>Max Telomere Start:</b> limit for locating the telomere start.<br>"
-            "<b>Min Density:</b> minimum telomere-repeat density required.</p>",
+            "<p><b>Minimum total read length (bp):</b> minimum length of the whole read, "
+            "not just its telomere. Shorter reads fail the read-length filter.<br>"
+            "<b>Minimum read-length margin (bp):</b> read length must exceed the running "
+            "median telomere length by more than this value.<br>"
+            "<b>Latest allowed telomere start (bp):</b> latest permitted start position "
+            "of the telomere in the analyzed sequence.<br>"
+            "<b>Minimum telomeric repeat density (%):</b> minimum percentage of the "
+            "telomeric region matching telomeric repeats; for example, 75 means 75%.<br>"
+            "<b>Short telomere threshold (bp):</b> telomeres shorter than this value "
+            "count as short in the report. This threshold does not itself exclude reads.</p>",
             subtitle
         )
 

@@ -9,11 +9,11 @@ Required step between demuxing and NanoTel analysis.
 from pathlib import Path
 from typing import Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import os
-import shlex
 import subprocess
 
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
+from ..utils.cancellation import WorkflowCancelled
+from ..utils.shell_commands import format_command, quote_path
 
 
 class BamToFastqProcessor(ProcessorBase):
@@ -151,6 +151,8 @@ class BamToFastqProcessor(ProcessorBase):
             self.log_complete(result)
             return result
 
+        except WorkflowCancelled:
+            raise
         except Exception as e:
             error_msg = f"BAM to FASTQ conversion failed: {str(e)}"
             self.context.logger.error(error_msg)
@@ -181,6 +183,8 @@ class BamToFastqProcessor(ProcessorBase):
                     f"{task['barcode']}: {task['bam_file'].name} -> {task['output_fastq'].name}"
                 )
                 return task["barcode"], "success"
+            except WorkflowCancelled:
+                raise
             except Exception as e:
                 if task["output_fastq"].exists() and task["output_fastq"].stat().st_size == 0:
                     task["output_fastq"].unlink()
@@ -204,14 +208,14 @@ class BamToFastqProcessor(ProcessorBase):
     def _run_samtools_fastq(self, bam_file: Path, output_fastq: Path) -> bool:
         command = self._build_samtools_command(bam_file)
         temp_fastq = output_fastq.with_name(f"{output_fastq.name}.tmp")
-        command_text = f"{self._format_command(command)} > {self._quote_path(output_fastq)}"
+        command_text = f"{format_command(command)} > {quote_path(output_fastq)}"
 
         self.context.logger.info(f"Running samtools command: {command_text}")
         cmd_index = self.context.logger.register_command(command_text)
 
         try:
             with temp_fastq.open("w", encoding="utf-8", newline="") as stdout_file:
-                result = subprocess.run(
+                result = self.context.command_executor.run_process(
                     command,
                     stdout=stdout_file,
                     stderr=subprocess.PIPE,
@@ -242,6 +246,9 @@ class BamToFastqProcessor(ProcessorBase):
                 stderr=e.stderr,
             )
             raise
+        except WorkflowCancelled:
+            self.context.logger.mark_command_cancelled(cmd_index)
+            raise
         except Exception as e:
             self.context.logger.mark_command_failed(cmd_index, str(e))
             raise
@@ -252,31 +259,11 @@ class BamToFastqProcessor(ProcessorBase):
     def _build_samtools_command(self, bam_file: Path) -> list:
         return ["samtools", "fastq", str(bam_file)]
 
-    def _format_command(self, cmd_parts: list) -> str:
-        args = [str(part) for part in cmd_parts]
-        if os.name == "nt":
-            return subprocess.list2cmdline(args)
-        return shlex.join(args)
-
-    def _quote_path(self, path: Path) -> str:
-        if os.name == "nt":
-            return subprocess.list2cmdline([str(path)])
-        return shlex.quote(str(path))
 
     @staticmethod
     def _has_fastq_output(output_fastq: Path) -> bool:
         return output_fastq.exists() and output_fastq.stat().st_size > 0
 
-    @staticmethod
-    def _format_command_output(result: subprocess.CompletedProcess) -> str:
-        details = []
-        stdout = (result.stdout or "").strip()
-        stderr = (result.stderr or "").strip()
-        if stdout:
-            details.append(f"stdout: {stdout}")
-        if stderr:
-            details.append(f"stderr: {stderr}")
-        return f" ({'; '.join(details)})" if details else ""
 
     def get_output_paths(self) -> Dict[str, Path]:
         return {"fastq_dir": self.output_dir}

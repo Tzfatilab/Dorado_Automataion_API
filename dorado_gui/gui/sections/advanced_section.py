@@ -6,127 +6,17 @@ Contains basecalling and NanoTel option cards and related helpers.
 The controls in this mixin are read by AppWindow when it creates a worker.
 Their enabled state follows the workflow selections managed by WorkflowSection.
 """
-from PySide6.QtWidgets import (
-    QLabel,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QFrame,
-    QWidget,
-    QGridLayout,
-    QCheckBox,
-    QLineEdit,
-    QDialog,
-    QDialogButtonBox,
-    QGraphicsOpacityEffect,
-    QMessageBox,
-)
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QFrame, QWidget, QGridLayout, QCheckBox, QLineEdit, QDialog, QDialogButtonBox, QGraphicsOpacityEffect
 
-from PySide6.QtCore import Qt, QSize, QRectF, QPoint
-from PySide6.QtGui import (
-    QColor,
-    QCursor,
-    QPainter,
-    QPixmap,
-    QIntValidator,
-    QDoubleValidator,
-    QRegularExpressionValidator,
-)
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap, QIntValidator, QDoubleValidator, QRegularExpressionValidator
 from PySide6.QtCore import QRegularExpression
 
 from gui.ui_styles import make_card
 from gui.widgets.selection_widgets import SelectOption
+from gui.widgets.advanced_controls import HoverHelpLabel, MappingCheckBox, ToggleSwitch
 from core.workflow_constants import BASE_DIR
 from dorado_workflow.managers.config_manager import ConfigManager
-
-
-class HoverHelpLabel(QLabel):
-    """Label with a consistently styled cross-platform help popup."""
-
-    def __init__(self, text, help_text):
-        super().__init__(text)
-        self._help_popup = QLabel(help_text, None, Qt.ToolTip)
-        self._help_popup.setStyleSheet("""
-            QLabel {
-                color: #000000;
-                background-color: #ffffff;
-                border: 1px solid #cbd5e1;
-                border-radius: 3px;
-                font-size: 11px;
-                padding: 3px 5px;
-            }
-        """)
-
-    def enterEvent(self, event):
-        """Show help beside the pointer when the label is hovered."""
-        self._help_popup.adjustSize()
-        self._help_popup.move(QCursor.pos() + QPoint(10, 12))
-        self._help_popup.show()
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        """Hide help when the pointer leaves the label."""
-        self._help_popup.hide()
-        super().leaveEvent(event)
-
-
-class MappingCheckBox(QCheckBox):
-    """Checkbox that can block unchecking when mapping is required."""
-
-    def __init__(self, text, can_uncheck):
-        super().__init__(text)
-        self.can_uncheck = can_uncheck
-
-    def nextCheckState(self):
-        # Intercept the click before Qt visually unchecks the box. Restoring the
-        # state from a clicked handler would cause a short unchecked flicker.
-        if self.isChecked() and not self.can_uncheck():
-            QMessageBox.warning(
-                self.window(),
-                "Mapping Required",
-                "Chromosome mapping cannot be disabled while methylation is selected.",
-            )
-            return
-
-        super().nextCheckState()
-
-
-class ToggleSwitch(QCheckBox):
-    """Small switch control with a sliding knob."""
-
-    def __init__(self):
-        super().__init__()
-        self.setCursor(Qt.PointingHandCursor)
-        self.setFixedSize(42, 22)
-        self.toggled.connect(lambda _: self.update())
-
-    def sizeHint(self):
-        return QSize(42, 22)
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton and self.isEnabled():
-            self.setChecked(not self.isChecked())
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        track = QRectF(1, 2, 40, 18)
-        checked = self.isChecked()
-        track_color = QColor("#2563EB") if checked else QColor("#E5E7EB")
-        border_color = QColor("#2563EB") if checked else QColor("#D1D5DB")
-        knob_x = 22 if checked else 3
-
-        painter.setPen(border_color)
-        painter.setBrush(track_color)
-        painter.drawRoundedRect(track, 9, 9)
-
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#FFFFFF"))
-        painter.drawEllipse(QRectF(knob_x, 4, 14, 14))
 
 
 class AdvancedSection:
@@ -354,6 +244,7 @@ class AdvancedSection:
 
         self.chromosome_mapping.setStyleSheet("""
             QCheckBox {
+                font-family: Arial;
                 font-size: 13px;
                 font-weight: 400;
                 color: #6b7280;
@@ -492,7 +383,8 @@ class AdvancedSection:
 
         body.addLayout(self._build_tvr_mode_controls())
         footer = QHBoxLayout()
-        footer.setSpacing(18)
+        footer.setSpacing(8)
+        footer.addLayout(self._build_short_telomere_threshold())
         footer.addWidget(self._build_nanotel_mapping_option())
         footer.addWidget(self._build_tvr_mismatch_option())
         footer.addStretch()
@@ -509,6 +401,7 @@ class AdvancedSection:
 
         self.nanotel_mapping.setStyleSheet("""
             QCheckBox {
+                font-family: Arial;
                 font-size: 13px;
                 font-weight: 400;
                 color: #6b7280;
@@ -547,6 +440,34 @@ class AdvancedSection:
         self.allow_mismatch.setStyleSheet(self.nanotel_mapping.styleSheet())
         self._mismatch_before_preset = False
         return self.allow_mismatch
+
+    def _build_short_telomere_threshold(self):
+        """Build the configurable short-telomere cutoff beside mismatch."""
+        defaults = ConfigManager().get_nanotel_params()
+        row = QHBoxLayout()
+        row.setSpacing(5)
+
+        label = QLabel("Short telo. threshold (bp)")
+        label.setStyleSheet(
+            "color: #6b7280; font-family: Arial; font-size: 13px; "
+            "font-weight: 400; "
+            "background: transparent; border: none; padding: 0; margin: 0;"
+        )
+        label.setWordWrap(False)
+
+        self.short_telomere_threshold = QLineEdit(
+            str(defaults.get("short_telomere_threshold_bp", 2000))
+        )
+        self.short_telomere_threshold.setValidator(QIntValidator(1, 1000000))
+        self.short_telomere_threshold.setFixedSize(54, 28)
+        self.short_telomere_threshold.setAlignment(Qt.AlignCenter)
+        self.short_telomere_threshold.setStyleSheet(
+            "font-family: Arial; font-size: 13px; font-weight: 400; "
+            "color: #6b7280; padding: 1px 4px;"
+        )
+        row.addWidget(label)
+        row.addWidget(self.short_telomere_threshold)
+        return row
 
     def _build_tvr_mode_controls(self):
         """Build optional TVR controls in one compact row."""
@@ -656,20 +577,20 @@ class AdvancedSection:
             str(nanotel_defaults["max_telomere_start"])
         )
         self.min_density_threshold = QLineEdit(
-            str(nanotel_defaults["min_density"])
+            format(nanotel_defaults["min_density"] * 100, ".6g")
         )
 
-        self.read_length.setFixedWidth(68)
-        self.max_distance_edge.setFixedWidth(68)
-        self.max_telomere_start.setFixedWidth(68)
-        self.min_density_threshold.setFixedWidth(68)
+        self.read_length.setFixedWidth(54)
+        self.max_distance_edge.setFixedWidth(54)
+        self.max_telomere_start.setFixedWidth(54)
+        self.min_density_threshold.setFixedWidth(54)
 
         # Validators prevent invalid values before the options reach the
         # pipeline configuration layer.
         self.read_length.setValidator(QIntValidator(0, 10000))
         self.max_distance_edge.setValidator(QIntValidator(0, 1000))
         self.max_telomere_start.setValidator(QIntValidator(0, 1000))
-        validator = QDoubleValidator(0.0, 1.0, 3)
+        validator = QDoubleValidator(0.0, 100.0, 4)
         validator.setNotation(QDoubleValidator.StandardNotation)
         self.min_density_threshold.setValidator(validator)
 
@@ -679,12 +600,16 @@ class AdvancedSection:
             self.max_telomere_start,
             self.min_density_threshold,
         ]:
-            widget.setFixedHeight(32)
+            widget.setFixedHeight(28)
             widget.setAlignment(Qt.AlignCenter)
-            widget.setStyleSheet("font-size: 13px; padding: 2px 6px;")
+            widget.setStyleSheet(
+                "font-family: Arial; font-size: 13px; font-weight: 400; "
+                "color: #6b7280; padding: 2px 6px;"
+            )
 
         label_style = """
             QLabel {
+                font-family: Arial;
                 background: transparent;
                 border: none;
                 color: #6b7280;
@@ -692,10 +617,17 @@ class AdvancedSection:
                 font-weight: 400;
             }
         """
-        read_label = self._build_field_label("Min Read Length (bp)", 140, label_style)
-        edge_label = self._build_field_label("Max Edge Distance", 140, label_style)
-        start_label = self._build_field_label("Max Telomere Start", 140, label_style)
-        density_label = self._build_field_label("Min Density", 128, label_style)
+        read_label = self._build_field_label("Min total read (bp)", 140, label_style)
+        edge_label = self._build_field_label("Min read margin (bp)", 140, label_style)
+        start_label = self._build_field_label("Latest telo. start (bp)", 140, label_style)
+        density_label = self._build_field_label("Min density (%)", 128, label_style)
+
+        # Compact captions preserve the existing fixed-width layout; tooltips expand them.
+        read_label.setToolTip("Minimum total read length (bp)")
+        edge_label.setToolTip("Minimum read-length margin (bp): read length must exceed the running median telomere length by more than this value.")
+        self.max_distance_edge.setToolTip(edge_label.toolTip())
+        start_label.setToolTip("Latest allowed telomere start (bp)")
+        density_label.setToolTip("Minimum telomeric repeat density (%)")
 
         grid.addWidget(read_label, 0, 0)
         grid.addWidget(self.read_length, 0, 1)
@@ -893,25 +825,3 @@ class AdvancedSection:
             return "5mCG_5hmCG"
 
         return "none"
-
-    def _form_row(self, text, widget):
-        """
-        Helper to create a labeled row with a widget for forms.
-
-        Args:
-            text (str): label text for the row.
-            widget (QWidget): input widget placed to the right of the label.
-
-        Returns:
-            QHBoxLayout: layout containing the label and the widget.
-        """
-        row = QHBoxLayout()
-        label = QLabel(text)
-        label.setFixedWidth(140)
-
-        widget.setFixedHeight(32)
-
-        row.addWidget(label)
-        row.addWidget(widget)
-        row.addStretch()
-        return row

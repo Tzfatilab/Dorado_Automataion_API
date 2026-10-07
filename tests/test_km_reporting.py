@@ -51,6 +51,7 @@ class KMReportingTests(unittest.TestCase):
 
     def test_legacy_and_mixed_reports(self):
         source = (self.output / "reportable_results.txt").read_text(encoding="utf-8")
+        source = source.replace("% of telomeres shorter than 2000 bp", "% of telomeres shorter than 2kb")
         old = "\n".join(line for line in source.splitlines() if not line.startswith("KM "))
         for name, text in (("old", old), ("legacy", old + "\nKM Median : 9,999 bp")):
             (self.output / f"{name}_results.txt").write_text(text, encoding="utf-8")
@@ -63,6 +64,16 @@ class KMReportingTests(unittest.TestCase):
         self.assertNotIn("9,999", table)
         self.assertIn("Not available", table)
         self.assertIn("4,500–5,500 bp", table)
+
+    def test_configurable_short_telomere_label(self):
+        source = (self.output / "reportable_results.txt").read_text(encoding="utf-8")
+        source = source.replace("shorter than 2000 bp", "shorter than 3500 bp")
+        (self.output / "configured_results.txt").write_text(source, encoding="utf-8")
+        row = self.parse("configured")
+        self.assertEqual(row["Short telomere threshold"], "3500 bp")
+        self.assertEqual(row["KM Median Telomeric Length"], "5,000 bp")
+        table = "\n".join(self.processor._format_combined_results_table([row]))
+        self.assertIn("3500 bp", table)
 
 
 if __name__ == "__main__":

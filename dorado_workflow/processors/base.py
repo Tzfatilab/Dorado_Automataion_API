@@ -114,7 +114,7 @@ class WorkflowContext:
         Returns:
             True if all tools available, False otherwise
         """
-        all_available, missing = self.command_executor.validate_tools(required_tools)
+        all_available, _ = self.command_executor.validate_tools(required_tools)
         return all_available
 
     def __repr__(self) -> str:

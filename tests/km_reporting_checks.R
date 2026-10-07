@@ -79,6 +79,7 @@ check(km_index < edge_index)
 report_assignments <- Filter(function(x) as.character(x[[2]]) %in% c("fmt", "results_lines"), assignments)
 n_reads <- 2; n_complete <- 1; n_censored <- 1; censoring_rate <- 0.5
 med_telo <- 5990; pct_short <- 0; barcode_name <- "barcode01"
+opt <- list(short_telomere_threshold_bp = 2000)
 cases <- list(reportable = assess_km_result(5000, 4500, 5500),
               too_wide = assess_km_result(5000, 4400, 5600),
               non_estimable = assess_km_result(5000, NA_real_, 5500),

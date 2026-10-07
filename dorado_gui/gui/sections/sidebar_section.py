@@ -31,7 +31,7 @@ class SidebarSection:
             QWidget: configured sidebar widget ready to be inserted into the main layout.
         """
         sidebar = QWidget()
-        sidebar.setFixedWidth(220)
+        sidebar.setFixedWidth(250)
         sidebar.setObjectName("sidebar")
         sidebar.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
 
@@ -94,15 +94,17 @@ class SidebarSection:
 
         # Define menu items as (label, icon_text)
         menu_items = [
+            ("Settings & Configuration", "⚙"),
             ("Pipeline Setup", "⚙️"),
             # Additional items can be added here if needed
             # ("Run Summary", "📄"),
             # ("Log Viewer", "🧾"),
         ]
 
+        menu_items.sort(key=lambda item: item[0] != "Pipeline Setup")
         for name, icon_text in menu_items:
             # Create a styled push button for each menu item
-            btn = QPushButton(f"{icon_text}  {name}")
+            btn = QPushButton(f"{icon_text}  {name.replace('&', '&&')}")
             btn.setCheckable(True)
             btn.setCursor(Qt.PointingHandCursor)
 
@@ -137,6 +139,10 @@ class SidebarSection:
             list(self.menu_buttons.values())[0].setChecked(True)
 
         layout.addStretch()
+        self.sidebar_profile = QWidget()
+        self.sidebar_profile.setStyleSheet("background: transparent;")
+        self.sidebar_profile.setLayout(self._build_profile_selector())
+        layout.addWidget(self.sidebar_profile)
 
         return sidebar
 
@@ -148,7 +154,11 @@ class SidebarSection:
             QWidget: header container with title and subtitle describing the current panel.
         """
         container = QWidget()
-        layout = QVBoxLayout(container)
+        header_row = QHBoxLayout(container)
+        container.setFixedHeight(42)
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(20)
+        layout = QVBoxLayout()
 
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -169,6 +179,7 @@ class SidebarSection:
 
         layout.addWidget(title)
         layout.addWidget(subtitle)
+        header_row.addLayout(layout, 1)
 
         return container
 
@@ -182,5 +193,13 @@ class SidebarSection:
         Returns:
             None
         """
+        if hasattr(self, "pages"):
+            destination = 1 if selected_button is self.menu_buttons["Settings & Configuration"] else 0
+            if self.pages.currentIndex() == 1 and destination == 0 and not self.settings_page.confirm_pending():
+                selected_button.setChecked(False)
+                self.menu_buttons["Settings & Configuration"].setChecked(True)
+                return
+            self.pages.setCurrentIndex(destination)
+            self.sidebar_profile.setVisible(destination == 0)
         for button in self.menu_buttons.values():
             button.setChecked(button == selected_button)

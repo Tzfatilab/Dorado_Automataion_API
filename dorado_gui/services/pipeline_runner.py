@@ -16,6 +16,7 @@ sys.path.insert(0, str(dorado_workflow_path))
 sys.path.insert(0, str(project_root))
 
 from dorado_workflow.main import setup_context
+from dorado_workflow.utils.cancellation import WorkflowCancelled
 from dorado_workflow.operators.workflow_operator import WorkflowOperator
 
 APP_OUTPUT_FOLDER = "Telomere Analyzer"
@@ -45,6 +46,8 @@ def run_pipeline(
         max_distance_edge: str = "",
         max_telomere_start: str = "",
         min_density_threshold: str = "",
+        short_telomere_threshold: str = "",
+        config_data=None,
         log_cb=None,
         stop_cb=None
 ) -> tuple[int, str]:
@@ -73,7 +76,11 @@ def run_pipeline(
         bam_path=bam_path,
         nanotel_mapping=analysis_flags["nanotel_mapping"],
         align_during_basecalling=analysis_flags["align_during_basecalling"],
+        config_data=config_data,
     )
+
+    context.command_executor.stop_callback = stop_cb
+    check_cancelled()
 
     _apply_gui_config_overrides(
         context,
@@ -88,6 +95,7 @@ def run_pipeline(
         max_distance_edge=max_distance_edge,
         max_telomere_start=max_telomere_start,
         min_density_threshold=min_density_threshold,
+        short_telomere_threshold=short_telomere_threshold,
     )
 
     operator = WorkflowOperator(context=context)
@@ -128,7 +136,7 @@ def _make_cancel_checker(stop_cb):
     """Return the cancellation hook used before expensive workflow steps."""
     def check_cancelled():
         if stop_cb and stop_cb():
-            raise RuntimeError("Cancelled by user")
+            raise WorkflowCancelled()
     return check_cancelled
 
 
@@ -149,6 +157,7 @@ def _setup_pipeline_context(
         bam_path: str,
         nanotel_mapping: bool,
         align_during_basecalling: bool,
+        config_data=None,
 ):
     """Create workflow context in a new timestamped run folder."""
     base_dir = _resolve_base_output_dir(output_dir)
@@ -159,6 +168,7 @@ def _setup_pipeline_context(
         config_path=None,
         organism=organism,
         log_callback=log,
+        config_data=config_data,
     )
 
     log(f"Results will be saved under: {context.path_manager.get_results_dir_path()}")
@@ -189,43 +199,13 @@ def _build_run_folder_name(base_dir: str) -> str:
 
 
 def _resolve_base_output_dir(output_dir: str) -> str:
-    """Normalize selected output paths to the parent of the trial directory."""
-    output_path = Path(output_dir)
+    """Use the selected directory as the parent of the new timestamped run.
 
-    # The GUI can pass the selected root, the stable trial folder, or a generated
-    # child such as results/mapping. Normalize all of them to the base directory.
-    group_dirs = {'processing', 'results'}
-    leaf_subdirs = {
-        'basecalled', 'demultiplexed', 'fastq', 'nanotel', 'mapping',
-        'methylation', 'aligned', 'logs',
-    }
+    Folder names do not imply navigation: even an existing run or a directory
+    named results/processing is an explicit user-selected destination.
+    """
+    return str(Path(output_dir).expanduser())
 
-    is_trial_group = output_path.name in group_dirs
-    is_nested_subdir = (
-        output_path.name in leaf_subdirs
-        and output_path.parent.name in group_dirs
-    )
-
-    if _is_app_run_folder(output_path.name):
-        return str(output_path.parent)
-
-    if is_nested_subdir:
-        trial_root = output_path.parent.parent
-        return str(trial_root.parent if _is_app_run_folder(trial_root.name) else trial_root)
-
-    if is_trial_group:
-        trial_root = output_path.parent
-        return str(trial_root.parent if _is_app_run_folder(trial_root.name) else trial_root)
-
-    return str(output_path)
-
-
-def _is_app_run_folder(folder_name: str) -> bool:
-    """Detect stable and timestamped Telomere Analyzer GUI run folders."""
-    return (
-        folder_name == APP_OUTPUT_FOLDER
-        or folder_name.startswith(f"{APP_OUTPUT_FOLDER}_")
-    )
 
 
 def _derive_analysis_flags(
@@ -267,6 +247,7 @@ def _apply_gui_config_overrides(
         max_distance_edge: str,
         max_telomere_start: str,
         min_density_threshold: str,
+        short_telomere_threshold: str,
 ) -> None:
     """Apply advanced GUI settings to workflow configuration."""
     basecalling_overrides = _build_basecalling_overrides(methylation_type)
@@ -298,6 +279,7 @@ def _apply_gui_config_overrides(
         max_distance_edge=max_distance_edge,
         max_telomere_start=max_telomere_start,
         min_density_threshold=min_density_threshold,
+        short_telomere_threshold=short_telomere_threshold,
     )
     if nanotel_overrides:
         context.config_manager.update_nanotel_params(nanotel_overrides)
@@ -403,7 +385,7 @@ def _run_basecalling_only(
 
     if not pod5_path:
         log("POD5 Workflow selected but no POD5 path provided.")
-        return 1
+        return False
 
     return operator.run_basecalling(
         pod5_path,
@@ -428,7 +410,7 @@ def _run_nanotel_only(
     input_file = fastq_path if fastq_path else bam_path
     if not input_file:
         log("FASTQ/BAM input required for NanoTel.")
-        return 1
+        return False
 
     return operator.run_nanotel_workflow(
         input_file,
@@ -488,9 +470,16 @@ def _build_nanotel_overrides(
         max_distance_edge: str,
         max_telomere_start: str,
         min_density_threshold: str,
+        short_telomere_threshold: str,
 ) -> dict:
     """Convert GUI NanoTel advanced options into NanoTel overrides."""
     overrides = {"summary_only": bool(summary_only)}
+
+    short_threshold = _parse_int(short_telomere_threshold)
+    if short_threshold is not None:
+        if short_threshold <= 0:
+            raise ValueError("Short telomere threshold must be greater than zero")
+        overrides["short_telomere_threshold_bp"] = short_threshold
 
     density = _parse_float(min_density_threshold)
     if density is not None:

@@ -247,8 +247,7 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
           total_sites = total_sites
         )
       } else {
-        log_message(paste("âœ— Methylation analysis failed with exit code: ", result_code), "ERROR")
-        # Continue anyway since most processing succeeded
+        stop("Methylation analysis failed with exit code: ", result_code)
       }
 
       # Clean up temp file

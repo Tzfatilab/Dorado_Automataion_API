@@ -1,4 +1,4 @@
-﻿"""
+"""
 NanoTel Processor Module
 ========================
 
@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import gzip
 import math
-import os
 import re
-import subprocess
-import shlex
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
+from ..utils.cancellation import WorkflowCancelled
+from ..utils.analysis_constants import NANOTEL_RECORDS_PER_CHUNK, FASTQ_LINES_PER_RECORD
+from ..utils.shell_commands import format_command
 
 
 class NanoTelProcessor(ProcessorBase):
@@ -84,9 +84,14 @@ class NanoTelProcessor(ProcessorBase):
             return False
 
         # Check if there are any FASTQ files or barcode directories
-        fastq_files = list(fastq_path.rglob("*.fastq*"))
+        fastq_files = [path for path in fastq_path.rglob("*.fastq*") if path.is_file()]
         if not fastq_files:
             self.context.logger.error(f"No FASTQ files found in: {fastq_dir}")
+            return False
+
+        empty_files = [str(path) for path in fastq_files if path.stat().st_size == 0]
+        if empty_files:
+            self.context.logger.error("Empty FASTQ input files: " + ", ".join(empty_files))
             return False
 
         self.context.logger.info(f"Found {len(fastq_files)} FASTQ files")
@@ -166,6 +171,8 @@ class NanoTelProcessor(ProcessorBase):
             self.log_complete(result)
             return result
 
+        except WorkflowCancelled:
+            raise
         except Exception as e:
             error_msg = f"NanoTel analysis failed: {str(e)}"
             self.context.logger.error(error_msg)
@@ -246,7 +253,7 @@ class NanoTelProcessor(ProcessorBase):
 
     @staticmethod
     def _count_fastq_chunks(
-        fastq_files: List[Path], records_per_chunk: int = 10000
+        fastq_files: List[Path], records_per_chunk: int = NANOTEL_RECORDS_PER_CHUNK
     ) -> Optional[int]:
         """Count NanoTel chunks without loading the FASTQ reads into memory."""
         try:
@@ -255,7 +262,7 @@ class NanoTelProcessor(ProcessorBase):
                 opener = gzip.open if fastq_file.name.lower().endswith(".gz") else open
                 with opener(fastq_file, "rb") as handle:
                     line_count += sum(1 for _ in handle)
-            record_count = line_count // 4
+            record_count = line_count // FASTQ_LINES_PER_RECORD
             return max(1, math.ceil(record_count / records_per_chunk)) if record_count else None
         except OSError:
             return None
@@ -273,6 +280,7 @@ class NanoTelProcessor(ProcessorBase):
         results = {}
 
         for task in tasks:
+            self.context.command_executor.check_cancelled()
             barcode = task['barcode']
             self.context.logger.info(
                 f"Processing {barcode} ({task['fastq_count']} FASTQ files)..."
@@ -305,6 +313,8 @@ class NanoTelProcessor(ProcessorBase):
                         f"    NanoTel completed for {barcode} in {duration:.1f}s"
                     )
 
+            except WorkflowCancelled:
+                raise
             except Exception as e:
                 # Mark as failed in barcode manager
                 self.context.barcode_manager.register_failure(
@@ -393,6 +403,10 @@ class NanoTelProcessor(ProcessorBase):
                 continue
             key, value = line.split(":", 1)
             key = key.strip()
+            short_match = re.fullmatch(r"% of telomeres shorter than (\d+) bp", key)
+            if short_match:
+                values["Short telomere threshold"] = f"{short_match.group(1)} bp"
+                key = required_fields[-1]
             if key in required_fields or key in km_fields or key == "KM Median":
                 values[key] = value.strip()
 
@@ -441,9 +455,13 @@ class NanoTelProcessor(ProcessorBase):
             },
             {
                 "key": "% of telomeres shorter than 2kb",
-                "header": ("% of telomeres", "shorter than 2kb"),
+                "header": ("% of telomeres", "below length threshold"),
             },
         ]
+
+        if any("Short telomere threshold" in row for row in rows):
+            columns.append({"key": "Short telomere threshold",
+                            "header": ("Short telomere", "threshold")})
 
         km_columns = (
             ("KM Median Telomeric Length", ("KM Median", "Telomeric Length")),
@@ -601,10 +619,15 @@ class NanoTelProcessor(ProcessorBase):
             'max_edge_distance',
             nanotel_params.get('min_edge_distance', 134),
         )
+        short_threshold = int(
+            nanotel_params.get('short_telomere_threshold_bp', 2000)
+        )
+        if short_threshold <= 0:
+            raise ValueError('Short telomere threshold must be greater than zero')
 
         # Build command parts as individual arguments so paths with spaces
         # (for example "Telomere Analyzer") are quoted correctly.
-        cmd_parts = [
+        command_arguments = [
             "Rscript", "--vanilla",
             nanotel_script,
             "-i", str(task['input_dir']),
@@ -620,19 +643,20 @@ class NanoTelProcessor(ProcessorBase):
             # Use the checkbox value for both the regular telomere pattern
             # and any selected TVR patterns.
             "--max_mismatch", str(max_mismatch),
+            "--short_telomere_threshold_bp", str(short_threshold),
         ]
 
         if summary_only:
-            cmd_parts.append(self._summary_only_flag(nanotel_script))
+            command_arguments.append(self._summary_only_flag(nanotel_script))
 
         if tvr_patterns:
             if isinstance(tvr_patterns, str):
                 tvr_patterns_arg = tvr_patterns
             else:
                 tvr_patterns_arg = " ".join(str(pattern) for pattern in tvr_patterns)
-            cmd_parts.extend(["--tvr_patterns", str(tvr_patterns_arg)])
+            command_arguments.extend(["--tvr_patterns", str(tvr_patterns_arg)])
 
-        return self._format_command(cmd_parts)
+        return format_command(command_arguments)
 
     @staticmethod
     def _summary_only_flag(nanotel_script: str) -> str:
@@ -648,12 +672,6 @@ class NanoTelProcessor(ProcessorBase):
             return "--quick_run"
         return "--skip_single_read_outputs"
 
-    def _format_command(self, cmd_parts: List[str]) -> str:
-        """Quote a command safely for the current platform."""
-        args = [str(part) for part in cmd_parts]
-        if os.name == "nt":
-            return subprocess.list2cmdline(args)
-        return shlex.join(args)
 
     def _collect_statistics(self, results_per_barcode: Dict[str, bool]) -> Dict[str, any]:
         """

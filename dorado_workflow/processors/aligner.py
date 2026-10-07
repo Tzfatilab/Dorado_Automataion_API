@@ -8,12 +8,13 @@ Handles alignment of BAM or FASTQ files to reference genome using minimap2.
 from pathlib import Path
 from typing import Dict, Optional
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
+from ..utils.cancellation import WorkflowCancelled
+from ..utils.shell_commands import format_command
 from datetime import datetime
 import os
 import re
 import shutil
 import subprocess
-import shlex
 
 class AlignmentProcessor(ProcessorBase):
     """
@@ -159,6 +160,8 @@ class AlignmentProcessor(ProcessorBase):
             self.log_complete(result)
             return result
 
+        except WorkflowCancelled:
+            raise
         except Exception as e:
             error_msg = f"Alignment failed: {str(e)}"
             self.context.logger.error(error_msg)
@@ -230,31 +233,32 @@ class AlignmentProcessor(ProcessorBase):
 
     def _align_one_file(self, input_file: Path, output_bam: Path,
                         reference: Path, preset: str, input_type: str) -> None:
+        temporary_bam = output_bam.with_name(f"{output_bam.name}.tmp.bam")
         if input_type == "bam":
-            command_text = (
-                f"samtools fastq {self._quote_shell_path(input_file)} | "
-                f"minimap2 -ax {preset} {self._quote_shell_path(reference)} - | "
-                f"samtools sort -o {self._quote_shell_path(output_bam)} -"
-            )
+            # Carry modification tags through FASTQ comments; soft clipping
+            # keeps supplementary alignments consistent with the MM/MN tags.
+            commands = [
+                ["samtools", "fastq", "-T", "MM,ML,Mm,Ml,MN", input_file],
+                ["minimap2", "-y", "-Y", "-ax", preset, reference, "-"],
+            ]
         else:
-            command_text = (
-                f"minimap2 -ax {preset} {self._quote_shell_path(reference)} "
-                f"{self._quote_shell_path(input_file)} | "
-                f"samtools sort -o {self._quote_shell_path(output_bam)} -"
+            commands = [["minimap2", "-ax", preset, reference, input_file]]
+        commands.append(["samtools", "sort", "-o", temporary_bam, "-"])
+
+        try:
+            self.context.command_executor.execute_pipeline(
+                commands, gui_output_filter=self._show_minimap_gui_line
             )
-
-        self.context.logger.info(f"Alignment command: {command_text}", gui_visible=False)
-        self.context.command_executor.execute(
-            command_text,
-            stream_output=True,
-            gui_output_filter=self._show_minimap_gui_line,
-        )
-
-        if not output_bam.exists() or output_bam.stat().st_size == 0:
-            raise RuntimeError(f"Alignment produced no BAM output: {output_bam}")
+            if not temporary_bam.exists() or temporary_bam.stat().st_size == 0:
+                raise RuntimeError(f"Alignment produced no BAM output: {output_bam}")
+            # Never publish a partial BAM if an upstream tool failed.
+            temporary_bam.replace(output_bam)
+        finally:
+            if temporary_bam.exists():
+                temporary_bam.unlink()
 
     def _index_bam(self, bam_path: Path) -> None:
-        command = self._format_command(["samtools", "index", str(bam_path)])
+        command = format_command(["samtools", "index", str(bam_path)])
         self.context.command_executor.execute(command, capture_output=True)
 
     def _write_alignment_summary(self, bam_paths: list[Path]) -> Path:
@@ -271,8 +275,8 @@ class AlignmentProcessor(ProcessorBase):
         with summary_path.open("w", encoding="utf-8", newline="\n") as handle:
             handle.write("\t".join(header) + "\n")
             for bam_path in bam_paths:
-                command = self._format_command(["samtools", "view", str(bam_path)])
-                process = subprocess.Popen(
+                command = format_command(["samtools", "view", str(bam_path)])
+                process = self.context.command_executor.popen(
                     command,
                     shell=True,
                     stdout=subprocess.PIPE,
@@ -312,6 +316,7 @@ class AlignmentProcessor(ProcessorBase):
                     process.stdout.close()
                 if process.stderr:
                     process.stderr.close()
+                self.context.command_executor.check_cancelled()
                 if returncode:
                     raise subprocess.CalledProcessError(
                         returncode,
@@ -392,16 +397,6 @@ class AlignmentProcessor(ProcessorBase):
             except OSError:
                 shutil.copy2(source, destination)
 
-    def _format_command(self, cmd_parts: list) -> str:
-        args = [str(part) for part in cmd_parts]
-        if os.name == "nt":
-            return subprocess.list2cmdline(args)
-        return shlex.join(args)
-
-    def _quote_shell_path(self, path: Path) -> str:
-        if os.name == "nt":
-            return subprocess.list2cmdline([str(path)])
-        return shlex.quote(str(path))
 
     def _detect_input_type(self, input_path: Path) -> Optional[str]:
         """

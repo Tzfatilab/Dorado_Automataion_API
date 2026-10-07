@@ -46,6 +46,7 @@ def setup_context(
         organism: Optional[str] = None,
         log_callback: Optional[Callable[[str], None]] = None,
         log_level: str = "INFO",
+        config_data: Optional[dict] = None,
 ) -> WorkflowContext:
     """
     Initialize and setup workflow context with all dependencies.
@@ -59,7 +60,9 @@ def setup_context(
         WorkflowContext with all initialized dependencies
     """
     # Initialize configuration
-    if config_path:
+    if config_data is not None:
+        config = ConfigManager(config_data=config_data)
+    elif config_path:
         config = ConfigManager(config_path)
     else:
         config = ConfigManager()
@@ -74,7 +77,7 @@ def setup_context(
     log_file = path_mgr.get_log_file_path()
     logger = WorkflowLogger(
         log_file,
-        log_level=log_level,
+        log_level=config.get_logging_config().get("log_level", log_level) if config_data is not None else log_level,
         log_callback=log_callback,
     )
 
@@ -110,9 +113,10 @@ def cmd_fastq_workflow(args) -> int:
     context = setup_context(args.trial_name, args.output_dir, args.config, organism=args.organism)
     operator = WorkflowOperator(context)
 
-    success = operator.run_fastq_workflow(
-        fastq_input=args.input,
-        organism=args.organism
+    success = operator.run_nanotel_workflow(
+        path_input=args.input,
+        organism=args.organism,
+        run_mapping=True,
     )
 
     return 0 if success else 1

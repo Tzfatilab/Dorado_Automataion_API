@@ -1,4 +1,3 @@
-import sys
 from PySide6.QtCore import QObject, Signal
 
 """Utilities for forwarding console-like stream output into the Qt GUI."""

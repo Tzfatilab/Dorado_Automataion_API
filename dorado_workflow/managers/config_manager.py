@@ -7,9 +7,20 @@ Automatically locates config file in the package's configs directory.
 """
 
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Dict, Any, Optional
-import os
+from ..utils.analysis_validation import validate_nanotel_settings
+
+
+def organism_nanotel_settings(config, organism):
+    """Resolve organism analysis defaults with legacy profile-wide fallback."""
+    organism = str(organism).strip().lower()
+    if organism in {"fish", "zebra fish", "zabra fish"}:
+        organism = "zebrafish"
+    settings = deepcopy(config.get("nanotel", {}))
+    settings.update(config.get("organism_specific", {}).get(organism, {}).get("nanotel", {}))
+    return settings
 
 class ConfigManager:
     """
@@ -19,13 +30,13 @@ class ConfigManager:
     - Auto-locates config in package's configs/ directory
     - Dynamic organism switching with parameter merging
     - Helper methods for easy config access
-    - No validation (trust the config is correct)
+    - Validate supplied NanoTel numerical settings without changing defaults
     """
 
     # Default config filename
     DEFAULT_CONFIG_NAME = "default_config.json"
 
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(self, config_path: Optional[Path] = None, config_data: Optional[Dict[str, Any]] = None):
         """
         Initialize the config manager.
 
@@ -44,7 +55,13 @@ class ConfigManager:
             self.config_path = self._find_default_config()
 
         # Load configuration
-        self.config = self._load_config()
+        self.config = deepcopy(config_data) if config_data is not None else self._load_config()
+        self._nanotel_run_overrides = {}
+        if not isinstance(self.config, dict):
+            raise ValueError(f"Configuration must be a JSON object: {self.config_path}")
+        if not isinstance(self.config.get('nanotel', {}), dict):
+            raise ValueError("Configuration section 'nanotel' must be a JSON object")
+        validate_nanotel_settings(self.config.get('nanotel', {}))
 
         # Current organism (can be changed dynamically)
         self._current_organism = self.config.get('lab_info', {}).get('default_organism', 'mouse')
@@ -76,8 +93,7 @@ class ConfigManager:
                 f"Expected location: {config_path}\n\n"
                 f"The configuration file must be created before running the workflow.\n"
                 f"This file contains lab-specific paths and settings.\n\n"
-                f"To create a default configuration file, run:\n"
-                f"  python main.py --create-config\n\n"
+                f"Restore configs/default_config.json from the repository or reinstall the package.\n\n"
                 f"Then edit the file with your lab's paths:\n"
                 f"  - Dorado model path\n"
                 f"  - Reference genome paths (mouse/human)\n"
@@ -136,7 +152,7 @@ class ConfigManager:
         Merges organism-specific parameters into the main config sections.
         """
         # Start with base config
-        merged = self.config.copy()
+        merged = deepcopy(self.config)
 
         # Get organism-specific overrides
         organism_params = self.config.get('organism_specific', {}).get(self._current_organism, {})
@@ -170,6 +186,9 @@ class ConfigManager:
                     # Update the parameter
                     merged['r_analysis'][target_section][param_name] = param_value
 
+        merged["nanotel"] = organism_nanotel_settings(self.config, self._current_organism)
+        merged["nanotel"].update(self._nanotel_run_overrides)
+        validate_nanotel_settings(merged["nanotel"])
         self._merged_config = merged
 
     # ==================== Organism Management ====================
@@ -260,25 +279,28 @@ class ConfigManager:
         return self.config.get('demuxing', {})
 
     def get_nanotel_params(self) -> Dict[str, Any]:
-        """Get NanoTel parameters."""
-        return self.config.get('nanotel', {})
+        """Get organism defaults overlaid with explicit settings for this run."""
+        return self._merged_config.get('nanotel', {})
 
     def update_nanotel_params(self, params: Dict[str, Any]) -> None:
         """Apply run-specific NanoTel parameter overrides."""
         if not params:
             return
 
+        validate_nanotel_settings(params)
+
         if 'nanotel' not in self.config:
             self.config['nanotel'] = {}
 
         self.config['nanotel'].update(params)
+        self._nanotel_run_overrides.update(params)
         self._update_merged_config()
 
     def get_tvr_patterns(self, organism: Optional[str] = None) -> list:
         """Get TVR patterns configured for NanoTel/R analysis."""
         org = self._normalize_organism(organism or self._current_organism)
         organism_config = self.config.get('organism_specific', {}).get(org, {})
-        if organism_config.get('tvr_patterns'):
+        if 'tvr_patterns' in organism_config:
             return organism_config.get('tvr_patterns', [])
         return self.config.get('nanotel', {}).get('tvr_patterns', [])
 
