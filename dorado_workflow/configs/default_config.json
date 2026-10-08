@@ -13,7 +13,8 @@
     },
     "dorado_model": "data/dna_r10.4.1_e8.2_400bps_sup@v5.2.0",
     "nanotel_script": "data/NanoTel.R",
-    "default_output_base": "~/minknow_runs"
+    "default_input_base": "~",
+    "default_output_base": "~"
   },
 
   "basecalling": {
@@ -46,7 +47,6 @@
     "max_edge_distance": 134,
     "tsq1_pattern": "AACCGC",
     "tvr_patterns": [
-      "TTAGGG",
       "TCAGGG",
       "TGAGGG",
       "TTGGGG",
@@ -99,8 +99,7 @@
       "tail_min_end": 35000,
       "tail_min_pos": 145000,
       "tvr_patterns": [
-        "TTAGGG",
-        "TCAGGG",
+          "TCAGGG",
         "TGAGGG",
         "TTGGGG",
         "CGAGGG",
@@ -117,8 +116,7 @@
       "tail_min_end": 35000,
       "tail_min_pos": 145000,
       "tvr_patterns": [
-        "TTAGGG",
-        "TCAGGG",
+          "TCAGGG",
         "TGAGGG",
         "TTGGGG",
         "CGAGGG",

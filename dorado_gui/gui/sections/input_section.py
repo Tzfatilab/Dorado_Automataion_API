@@ -116,7 +116,7 @@ class InputSection:
         """
         if edit is None:
             edit = self.input_path
-        path = QFileDialog.getExistingDirectory(self, "Select input")
+        path = QFileDialog.getExistingDirectory(self, "Select input", edit.text())
         if path:
             edit.setText(path)
 

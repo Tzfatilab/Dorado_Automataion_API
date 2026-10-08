@@ -10,13 +10,51 @@ from dorado_workflow.managers.config_manager import ConfigManager
 from dorado_workflow.utils.analysis_validation import validate_nanotel_settings
 
 
-def parse_patterns(text):
+def canonical_patterns(config=None):
+    motif = (config or {}).get("nanotel", {}).get("telomere_pattern", "CCCTAA").upper()
+    return {motif, motif.translate(str.maketrans("ACGT", "TGCA"))[::-1]}
+
+
+def local_paths(paths, defaults):
+    """Resolve bundled resources locally and recover unavailable folder defaults."""
+    result = merge_config(defaults, paths)
+    package = Path(__file__).resolve().parents[2] / "dorado_workflow"
+    for key in ("default_input_base", "default_output_base"):
+        value = Path(result.get(key, "~")).expanduser()
+        result[key] = str(value.absolute() if value.is_dir() else Path.home())
+    for key in ("dorado_model", "nanotel_script"):
+        value = Path(result[key]).expanduser()
+        if not value.is_absolute():
+            value = package / value
+        if not value.exists():
+            value = package / defaults[key]
+        result[key] = str(value.resolve())
+    for org, path in result["references"].items():
+        value = Path(path).expanduser()
+        if not value.is_absolute():
+            value = package / value
+        if not value.exists():
+            value = package / defaults["references"][org]
+        result["references"][org] = str(value.resolve())
+    return result
+
+
+def remove_legacy_canonical(config):
+    forbidden = canonical_patterns(config)
+    for section in [config["nanotel"], *config["organism_specific"].values()]:
+        if isinstance(section.get("tvr_patterns"), list):
+            section["tvr_patterns"] = [p for p in section["tvr_patterns"] if p not in forbidden]
+
+
+def parse_patterns(text, canonical=None):
     patterns = list(dict.fromkeys(re.split(r"[\s,;]+", text.strip().upper())))
     patterns = [pattern for pattern in patterns if pattern]
     if any(not re.fullmatch(r"[ACGT]+", pattern) for pattern in patterns):
         raise ValueError("Sequences may contain only A, C, G and T.")
     if any(len(pattern) < 5 for pattern in patterns):
         raise ValueError("Each TVR sequence must contain at least 5 bases.")
+    if set(patterns) & (canonical or canonical_patterns()):
+        raise ValueError("Canonical telomere repeats (including the reverse complement) cannot be added as TVRs.")
     return patterns
 
 
@@ -71,6 +109,8 @@ def validate_config(config):
             if value is not None and value > 2_147_483_647:
                 raise ValueError(f"{key} must not exceed 2147483647.")
     for patterns in pattern_lists:
+        if isinstance(patterns, list) and any(p in canonical_patterns(config) for p in patterns if isinstance(p, str)):
+            raise ValueError("Canonical telomere repeats cannot be included in TVR presets.")
         if not isinstance(patterns, list) or any(
             not isinstance(p, str) or not re.fullmatch(r"[ACGT]+", p) for p in patterns
         ):
@@ -79,7 +119,7 @@ def validate_config(config):
             raise ValueError("TVR presets must not contain duplicate sequences.")
         if any(len(pattern) < 5 for pattern in patterns):
             raise ValueError("Each TVR sequence must contain at least 5 bases.")
-    for key in ("dorado_model", "nanotel_script", "default_output_base"):
+    for key in ("dorado_model", "nanotel_script", "default_input_base", "default_output_base"):
         value = config["paths"].get(key)
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"A nonempty path is required for {key}.")
@@ -111,6 +151,8 @@ class SettingsStore:
     def __init__(self, path):
         self.path = Path(path)
         self.defaults = copy.deepcopy(ConfigManager().config)
+        self.defaults["paths"] = local_paths(self.defaults["paths"], self.defaults["paths"])
+        remove_legacy_canonical(self.defaults)
         self.profiles = {"Lab default": copy.deepcopy(self.defaults)}
         self.active = "Lab default"
         self.load_error = None
@@ -125,12 +167,15 @@ class SettingsStore:
                 for name, data in document["profiles"].items():
                     self.validate_name(name)
                     config = merge_config(self.defaults, data)
+                    remove_legacy_canonical(config)
+                    config["paths"] = local_paths(config["paths"], self.defaults["paths"])
                     validate_config(config)
                     profiles[name] = config
                 if document.get("active") not in profiles:
                     raise ValueError("The active profile is missing.")
                 active = document["active"]
                 app_paths = copy.deepcopy(document.get("app_paths", profiles[active]["paths"]))
+                app_paths = local_paths(app_paths, self.defaults["paths"])
                 probe = copy.deepcopy(self.defaults)
                 probe["paths"] = app_paths
                 validate_config(probe)
@@ -145,6 +190,8 @@ class SettingsStore:
                     for name, paths in overrides.items():
                         if name not in profiles:
                             raise ValueError("Path overrides reference an unknown profile.")
+                        paths = local_paths(paths, self.defaults["paths"])
+                        overrides[name] = paths
                         probe["paths"] = paths
                         validate_config(probe)
                 self.profiles, self.active = profiles, active
@@ -173,6 +220,12 @@ class SettingsStore:
     def save_app_paths(self, paths):
         """Save shared resources without changing analysis profiles or custom paths."""
         probe = copy.deepcopy(self.defaults)
+        paths = copy.deepcopy(paths)
+        for key in ("default_input_base", "default_output_base"):
+            folder = Path(paths.get(key, "")).expanduser()
+            if not paths.get(key, "").strip() or not folder.is_dir():
+                raise ValueError(f"Choose an existing folder for {key.replace('_', ' ')}.")
+            paths[key] = str(folder.resolve())
         probe["paths"] = copy.deepcopy(paths)
         validate_config(probe)
         profiles = copy.deepcopy(self.profiles)

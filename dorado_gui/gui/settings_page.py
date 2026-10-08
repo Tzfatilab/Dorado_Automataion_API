@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from gui.app_settings_page import AppSettingsPage
 from gui.ui_styles import ask_unsaved_settings
 from core.sequencing_kits import DORADO_KITS
-from core.settings_store import merge_config, parse_patterns, validate_config, write_json
+from core.settings_store import canonical_patterns, merge_config, parse_patterns, validate_config, write_json
 from dorado_workflow.managers.config_manager import organism_nanotel_settings
 
 
@@ -518,7 +518,7 @@ class SettingsPage(QWidget):
         save an undo snapshot. Only an inline addition clears the inline entry;
         bulk paste preserves any separate unfinished input."""
         try:
-            patterns = parse_patterns(self.sequence.text() if text is None else text)
+            patterns = parse_patterns(self.sequence.text() if text is None else text, canonical_patterns(self.draft))
             if not patterns:
                 raise ValueError("Enter at least one sequence.")
             fresh = [p for p in patterns if p not in self.patterns()]
