@@ -226,10 +226,11 @@ fit_km_result <- function(data, limit = KM_MAX_RELATIVE_CI_WIDTH_PCT,
   fit_error <- NULL
   estimates <- c(median = NA_real_, lower = NA_real_, upper = NA_real_)
   tryCatch(withCallingHandlers({
-    data$margin <- data$sequence_length - data$Telomere_end_mismatch
+    # The caller supplies canonical measurements from the selected matching mode.
+    data$margin <- data$sequence_length - data$telomere_end
     data$event <- as.integer(data$margin >= BUFFER)
     fit <- fit_function(
-      survival::Surv(Telomere_length_mismatch, event) ~ 1,
+      survival::Surv(telomere_length, event) ~ 1,
       data = data, conf.type = "log-log", conf.int = 0.95
     )
     fit_table <- summary_function(fit)$table
@@ -2655,6 +2656,10 @@ if(!is.null(opt$tvr_patterns)) {
 global_min_density <- opt$min_density
 global_subseq_length <- opt$subseq_length
 global_max_mismatch <- max(0L, min(1L, as.integer(opt$max_mismatch)))
+# TODO: consider omitting redundant canonical *_mismatch columns from NanoTel
+# outputs when the effective mismatch allowance is 0. This is a future schema
+# change: coordinate CSV producers, downstream readers, existing-file compatibility,
+# GUI/reporting and packaging tests before implementing it. Keep the columns for now.
 
 lockBinding("global_subseq_length", globalenv())
 lockBinding("global_min_density", globalenv())
@@ -2774,14 +2779,40 @@ if (!opt$summary_only) {
 # =====================================================================
 if (isTRUE(opt$analysis)) {
 
+  # Select canonical measurements explicitly for this analysis.
+  # TVR measurements are not used.
+  analysis_columns <- if (global_max_mismatch == 0L) {
+    c(
+      density = "telo_density",
+      start   = "Telomere_start",
+      end     = "Telomere_end",
+      length  = "Telomere_length"
+    )
+  } else {
+    c(
+      density = "telo_density_mismatch",
+      start   = "Telomere_start_mismatch",
+      end     = "Telomere_end_mismatch",
+      length  = "Telomere_length_mismatch"
+    )
+  }
+
   # --- Step 1: Filter ---
   df_step1_filtered <- ans_list$df_summary %>%
-    dplyr::filter(telo_density_mismatch >= opt$min_density,
-                  Telomere_start_mismatch <= opt$max_telomere_start)
+    dplyr::filter(
+      .data[[analysis_columns[["density"]]]] >= opt$min_density,
+      .data[[analysis_columns[["start"]]]] <= opt$max_telomere_start
+    )
 
   # KM uses density/start-filtered reads BEFORE running-median edge filtering.
   # Keep raw estimates and diagnostics internally, including withheld results.
-  km_result <- fit_km_result(df_step1_filtered)
+  # Neutral internal names separate the measurement from its matching mode.
+  km_input <- data.frame(
+    sequence_length = df_step1_filtered$sequence_length,
+    telomere_length = df_step1_filtered[[analysis_columns[["length"]]]],
+    telomere_end    = df_step1_filtered[[analysis_columns[["end"]]]]
+  )
+  km_result <- fit_km_result(km_input)
 
   df_filtered <- df_step1_filtered %>%
 
@@ -2790,8 +2821,12 @@ if (isTRUE(opt$analysis)) {
 
     # --- Step 3: Add running median and difference columns ---
     dplyr::mutate(
-      TelLenMM_RunningMed = sapply(seq_len(dplyr::n()),
-                                    function(i) median(Telomere_length_mismatch[1:i])),
+      TelLenMM_RunningMed = sapply(
+        seq_len(dplyr::n()),
+        function(i) median(
+          .data[[analysis_columns[["length"]]]][seq_len(i)]
+        )
+      ),
       SeqLen_minus_RunMed = sequence_length - TelLenMM_RunningMed
     )
 
@@ -2814,7 +2849,7 @@ if (isTRUE(opt$analysis)) {
   # (enough margin between sequence end and telomere end), 0 = censored.
   df_filtered <- df_filtered %>%
     dplyr::mutate(
-      margin = sequence_length - Telomere_end_mismatch,
+      margin = sequence_length - .data[[analysis_columns[["end"]]]],
       event  = as.integer(margin >= BUFFER)
     )
 
@@ -2823,9 +2858,9 @@ if (isTRUE(opt$analysis)) {
   n_censored     <- sum(df_filtered$event == 0)
   censoring_rate <- n_censored / n_reads
 
-  med_telo  <- median(df_filtered$Telomere_length_mismatch)
+  med_telo <- median(df_filtered[[analysis_columns[["length"]]]])
   pct_short <- round(100 * mean(
-    df_filtered$Telomere_length_mismatch < opt$short_telomere_threshold_bp,
+    df_filtered[[analysis_columns[["length"]]]] < opt$short_telomere_threshold_bp,
     na.rm = TRUE
   ), 1)
 
@@ -2860,7 +2895,7 @@ if (isTRUE(opt$analysis)) {
 
   p_telo <- ggplot(df_plot, aes(x = read_index)) +
     geom_line(aes(y = sequence_length,          color = "Read Length")) +
-    geom_line(aes(y = Telomere_length_mismatch, color = telomere_plot_label)) +
+    geom_line(aes(y = .data[[analysis_columns[["length"]]]], color = telomere_plot_label)) +
     geom_line(aes(y = TelLenMM_RunningMed,      color = "Running Median Telomere Length")) +
     scale_color_manual(
       values = c("Read Length"                    = "#E8735A",

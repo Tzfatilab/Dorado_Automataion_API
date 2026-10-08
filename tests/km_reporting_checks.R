@@ -30,8 +30,8 @@ for (limit in list(0, -1, Inf, NA_real_, "20", c(10, 20))) {
 }
 
 fixture <- data.frame(sequence_length = c(10000, 7000, 5000),
-                      Telomere_length_mismatch = c(5000, 6980, 4900),
-                      Telomere_end_mismatch = c(5000, 6980, 4900))
+                      telomere_length = c(5000, 6980, 4900),
+                      telomere_end = c(5000, 6980, 4900))
 spy <- function(formula, data, conf.type, conf.int) {
   check(nrow(data) == 3L) # Includes the third read, which fails the edge filter.
   check(identical(data$event, c(1L, 0L, 1L)))
@@ -42,13 +42,13 @@ r <- fit_km_result(fixture, fit_function = spy)
 check(is.null(r$error))
 reference_data <- transform(fixture, event = c(1, 0, 1))
 reference <- summary(survival::survfit(
-  survival::Surv(Telomere_length_mismatch, event) ~ 1, data = reference_data,
+  survival::Surv(telomere_length, event) ~ 1, data = reference_data,
   conf.type = "log-log", conf.int = 0.95))$table
 check(identical(r$median, unname(reference["median"])))
 check(identical(r$lower, unname(reference["0.95LCL"])))
 check(identical(r$upper, unname(reference["0.95UCL"])))
 boundary <- fixture
-boundary$Telomere_end_mismatch <- boundary$sequence_length - c(49, 50, 51)
+boundary$telomere_end <- boundary$sequence_length - c(49, 50, 51)
 fit_km_result(boundary, fit_function = function(formula, data, ...) {
   check(identical(data$event, c(0L, 1L, 1L)))
   survival::survfit(formula, data = data, ...)
@@ -72,7 +72,35 @@ check(length(blocks) == 1L)
 statements <- as.list(blocks[[1]][[3]])[-1]
 assignments <- Filter(function(x) is.call(x) && identical(x[[1]], as.name("<-")), statements)
 km_call <- Filter(function(x) identical(x[[2]], as.name("km_result")), assignments)[[1]]
-check(identical(km_call[[3]], quote(fit_km_result(df_step1_filtered))))
+check(identical(km_call[[3]], quote(fit_km_result(km_input))))
+column_selection <- Filter(function(x) identical(x[[2]], as.name("analysis_columns")), assignments)[[1]]
+km_input_assignment <- Filter(function(x) identical(x[[2]], as.name("km_input")), assignments)[[1]]
+# Deliberately different exact/mismatch measurements catch reliance on copied values.
+source_fixture <- data.frame(
+  sequence_length = c(10000, 7000, 5000),
+  telo_density = c(0.9, 0.8, 0.7), Telomere_start = c(1, 2, 3),
+  Telomere_length = c(5000, 6980, 4900), Telomere_end = c(5000, 6980, 4900),
+  telo_density_mismatch = c(0.95, 0.85, 0.75), Telomere_start_mismatch = c(4, 5, 6),
+  Telomere_length_mismatch = c(6000, 6950, 4951),
+  Telomere_end_mismatch = c(6000, 6950, 4951)
+)
+for (allowance in c(0L, 1L)) {
+  global_max_mismatch <- allowance
+  eval(column_selection)
+  suffix <- if (allowance == 0L) "" else "_mismatch"
+  check(identical(unname(analysis_columns),
+                  paste0(c("telo_density", "Telomere_start", "Telomere_end", "Telomere_length"), suffix)))
+  df_step1_filtered <- source_fixture
+  eval(km_input_assignment)
+  check(identical(km_input$telomere_length, source_fixture[[paste0("Telomere_length", suffix)]]))
+  check(identical(km_input$telomere_end, source_fixture[[paste0("Telomere_end", suffix)]]))
+  expected_event <- if (allowance == 0L) c(1L, 0L, 1L) else c(1L, 1L, 0L)
+  selected_fit <- fit_km_result(km_input, fit_function = function(formula, data, ...) {
+    check(identical(data$event, expected_event))
+    survival::survfit(formula, data = data, ...)
+  })
+  check(is.null(selected_fit$error))
+}
 km_index <- which(vapply(statements, identical, logical(1), km_call))
 edge_index <- which(vapply(statements, function(x) grepl("filter\\(SeqLen_minus_RunMed >", paste(deparse(x), collapse = " ")), logical(1)))
 check(km_index < edge_index)
@@ -98,8 +126,8 @@ for (name in names(cases)) {
 }
 check(cases$too_wide$median == 5000 && cases$too_wide$lower == 4400 && cases$too_wide$upper == 5600)
 # A tight deterministic sample exercises a genuinely reportable survival fit.
-tight <- data.frame(Telomere_length_mismatch = seq(4900, 5100, length.out = 101))
-tight$Telomere_end_mismatch <- tight$Telomere_length_mismatch
-tight$sequence_length <- tight$Telomere_length_mismatch + 1000
+tight <- data.frame(telomere_length = seq(4900, 5100, length.out = 101))
+tight$telomere_end <- tight$telomere_length
+tight$sequence_length <- tight$telomere_length + 1000
 check(fit_km_result(tight)$status == "reportable")
 cat("KM R checks passed\n")
