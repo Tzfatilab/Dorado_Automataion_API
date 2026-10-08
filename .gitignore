@@ -18,5 +18,8 @@ tests/integration_output/
 # Local working draft for team email questions; never commit its contents.
 /packaging/TEAM_EMAIL_QUESTIONS.local.md
 
+# Private analysis handoff and ongoing chat notes; never commit.
+/ANALYSIS_HANDOFF.local.md
+
 dorado_workflow/data/references/ZebraFish/
 dorado_workflow/r_analysis/.Rproj.user/

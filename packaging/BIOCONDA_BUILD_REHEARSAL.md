@@ -60,6 +60,11 @@ must change; the current behavior is authorized and technically functional.
 
 ## Remaining Validation
 
+- Before the next packaging phase, adapt analysis tests to the final GUI/reporting integration
+  and installed-package paths. The unused combined-text-report methods were removed; current KM
+  checks exercise NanoTel.R and its per-barcode text output directly. If GUI or combined exports
+  are added, test that they preserve withheld KM results and do not expose raw numerical estimates.
+  Update older fixtures/assertions for the configurable short-telomere cutoff and revised labels.
 - Repeat official Bioconda CI after final name, version, license, source URL/checksum, URLs, and
   maintainers are supplied.
 - Resolve the existing Dorado, reference-provenance, methylation, and other explicitly deferred

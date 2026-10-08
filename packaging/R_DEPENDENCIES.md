@@ -116,7 +116,7 @@ The analysis assertion is a structural smoke test based on five detected reads a
 does not validate a scientific estimate. That historical smoke test did not exercise KM reporting.
 Focused KM checks now run with `python -m unittest discover -s tests -p test_km_reporting.py -v`
 (set `RSCRIPT` to the Rscript executable if it is not on PATH). They use deterministic survival
-fixtures, reporting-boundary checks, and per-barcode/combined report checks rather than research
+fixtures, reporting-boundary checks, and per-barcode report checks rather than research
 simulations. Scientific approval of the reporting policy remains pending.
 
 Additional test coverage is still needed for:
