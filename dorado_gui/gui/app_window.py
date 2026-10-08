@@ -83,19 +83,44 @@ class AppWindow(
             QTimer.singleShot(0, lambda: QMessageBox.warning(self, "Saved profiles unavailable", self.settings_store.load_error))
 
     def show_initial_window(self, screen=None):
-        """Try 70%, then maximize if the rendered setup controls do not fit."""
+        """Prepare layout and backing pixels before exposing the native window."""
         screen = screen or self.screen() or QApplication.primaryScreen()
-        if screen is not None:
-            available = screen.availableGeometry()
+        available = screen.availableGeometry() if screen is not None else None
+        if available is not None:
             self.resize(round(available.width() * 0.70), round(available.height() * 0.70))
-        self.showNormal()
-        self._apply_screen_scaling()
-        if screen is not None:
+        # Scaling changes every stylesheet/layout; doing it after show() exposes
+        # an unpainted window while Windows waits for the GUI thread to finish.
+        if not getattr(self, "_startup_prepared", False):
+            self._apply_screen_scaling()
+            self._startup_prepared = True
+        self.ensurePolished()
+        self.layout().activate()
+        scroll = self.pages.widget(0)
+        content = scroll.widget()
+        content.ensurePolished()
+        content.layout().activate()
+        required = content.minimumSizeHint().expandedTo(content.minimumSize())
+        # Hidden scroll viewports can retain stale geometry. Derive the usable
+        # page area from the activated outer layout instead.
+        viewport = self.pages.contentsRect().size()
+        margin = 2 * scroll.frameWidth()
+        maximize = (required.width() > viewport.width() - margin or
+                    required.height() > viewport.height() - margin)
+        if maximize and available is not None:
+            self.resize(available.size())
+            self.layout().activate()
+            content.layout().activate()
+        elif available is not None:
             frame = self.frameGeometry()
             frame.moveCenter(available.center())
             self.move(frame.topLeft())
-        # Let Qt finish font scaling, layout and scrollbar calculations first.
-        QTimer.singleShot(0, self._fit_initial_window)
+        # Render while hidden to warm the widget paint/style caches. No event
+        # pumping or opacity timer: the first visible state is the final layout.
+        self.grab()
+        if maximize:
+            self.showMaximized()
+        else:
+            self.showNormal()
 
     def _fit_initial_window(self):
         """Keep the compact startup size only when setup needs no scrolling.
@@ -222,7 +247,11 @@ class AppWindow(
         content_layout = QVBoxLayout(content)
 
         content_layout.setSpacing(8)
-        content_layout.setContentsMargins(12, 6, 12, 10)
+        # The action buttons already include their own bottom spacing. Extra
+        # outer padding can push an otherwise fitting page a few pixels beyond
+        # the viewport and create a nearly full-height scrollbar.
+        content_layout.setContentsMargins(12, 6, 12, 0)
+        content_layout.setSizeConstraint(QLayout.SetMinAndMaxSize)
         content_layout.setAlignment(Qt.AlignTop)
 
         content_layout.addWidget(self._build_section_header())
@@ -249,6 +278,8 @@ class AppWindow(
         self.pages = QStackedWidget()
         pipeline_scroll = QScrollArea()
         pipeline_scroll.setWidgetResizable(True)
+        pipeline_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        pipeline_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         pipeline_scroll.setFrameShape(QScrollArea.NoFrame)
         pipeline_scroll.setWidget(content)
         self.pages.addWidget(pipeline_scroll)
@@ -282,6 +313,10 @@ class AppWindow(
         if profile_changed or not output.text() or output.text() == previous:
             output.setText(new_output)
         self._profile_output = new_output
+        new_input = config["paths"]["default_input_base"]
+        if initial or not self.input_path.text() or self.input_path.text() == getattr(self, "_profile_input", ""):
+            self.input_path.setText(new_input)
+        self._profile_input = new_input
         self._apply_analysis_defaults(force=profile_changed)
         self._applied_profile = self.settings_store.active
 

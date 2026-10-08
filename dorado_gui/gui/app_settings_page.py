@@ -46,6 +46,7 @@ class AppSettingsPage(QWidget):
             ("mouse", "Mouse reference genome", False),
             ("human", "Human reference genome", False),
             ("zebrafish", "Zebrafish reference genome", False),
+            ("default_input_base", "Default input folder", True),
             ("default_output_base", "Default output folder", True),
         ):
             fields.addWidget(QLabel(title))

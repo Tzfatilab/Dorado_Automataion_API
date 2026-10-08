@@ -516,6 +516,11 @@ def _build_nanotel_overrides(
     if "enter manual" in modes or "manual" in modes:
         tvr_patterns.extend(_parse_patterns(tvr_manual))
 
+    canonical = config_manager.config["nanotel"]["telomere_pattern"].upper()
+    reverse = canonical.translate(str.maketrans("ACGT", "TGCA"))[::-1]
+    if any(pattern.upper() in {canonical, reverse} for pattern in tvr_patterns):
+        raise ValueError("Canonical telomere repeats cannot be used as TVR patterns.")
+
     # Preserve selection order while removing patterns duplicated across modes.
     overrides["tvr_patterns"] = list(dict.fromkeys(tvr_patterns))
     # The checkbox allows one mismatch for both the regular telomere pattern
