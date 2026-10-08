@@ -311,6 +311,10 @@ class NanoTelProcessor(ProcessorBase):
             )
 
             try:
+                analysis_path = Path(task['output_dir']) / f"{barcode}_analysis.json"
+                previous_analysis_stamp = (
+                    analysis_path.stat().st_mtime_ns if analysis_path.exists() else None
+                )
                 command = self._build_command(task)
                 # Stream R's progress messages so GUI users see them as NanoTel runs.
                 self.context.command_executor.execute(
@@ -326,6 +330,11 @@ class NanoTelProcessor(ProcessorBase):
                 self.context.barcode_manager.register_success(barcode, 'nanotel')
 
                 results[barcode] = True
+                # Notify the GUI only after successful current-run output, never
+                # from a stale file. The GUI presents the already-assessed JSON.
+                if (analysis_path.exists()
+                        and analysis_path.stat().st_mtime_ns != previous_analysis_stamp):
+                    self.context.logger.info(f"NanoTel analysis JSON saved to: {analysis_path}")
                 self.context.logger.info(f"OK NanoTel completed for {barcode}")
 
                 if duration is None:
@@ -487,6 +496,11 @@ class NanoTelProcessor(ProcessorBase):
             "--max_mismatch", str(max_mismatch),
             "--short_telomere_threshold_bp", str(short_threshold),
         ]
+
+        # Summary-only output is removed after Excel creation; preserve its
+        # behavior until analysis-artifact retention is explicitly implemented.
+        if not summary_only:
+            command_arguments.append("--analysis")
 
         if summary_only:
             command_arguments.append(self._summary_only_flag(nanotel_script))

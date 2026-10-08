@@ -3,6 +3,7 @@
 The host supplies the log widget and progress labels. Workflow execution stays
 in AppWindow; this section only interprets and presents its messages.
 """
+import json
 import re
 from datetime import datetime
 from html import escape
@@ -144,6 +145,8 @@ class ExecutionLogSection:
         analysis_line = line.strip()
         if re.match(r"^NanoTel:\s*chunk\s+\d+", analysis_line, re.IGNORECASE):
             return
+        if self._handle_nanotel_analysis_result(analysis_line):
+            return
         if self._handle_nanotel_result_path(analysis_line):
             return
         if self._consume_next_nanotel_result_path():
@@ -195,6 +198,48 @@ class ExecutionLogSection:
         if analysis_line.startswith("Additional Telomere variant repeats patterns were added:"):
             self._nanotel_actual_tvr_enabled = True
         return line
+
+    def _handle_nanotel_analysis_result(self, analysis_line):
+        """Present assessed KM output; do not refit or reapply reporting policy."""
+        prefix = "NanoTel analysis JSON saved to:"
+        if not analysis_line.startswith(prefix):
+            return False
+        self._flush_pending_nanotel_stats_table()
+        try:
+            path = Path(analysis_line[len(prefix):].strip())
+            result = json.loads(path.read_text(encoding="utf-8"))
+            barcode = result["barcode"]
+            median = result["km_median_telomeric_length_bp"]
+            lower = result["km_median_95_ci_lower_bp"]
+            upper = result["km_median_95_ci_upper_bp"]
+            width = result["km_whole_relative_ci_width_pct"]
+            reason = result["km_reporting_reason"]
+            # Check completeness of approved output, not a second statistical rule.
+            # KM-input censoring remains in CSV only; do not add it to this table.
+            reported = all(value is not None for value in (median, lower, upper))
+            values = (
+                str(barcode),
+                f"{median:,.0f} bp" if reported else "Not reported",
+                f"{lower:,.0f}-{upper:,.0f} bp" if reported else "Not reported",
+                f"{width:.1f}%" if width is not None else "Not available",
+                "Reported" if reported else "Not reported",
+            )
+            headers = ("Barcode", "KM median", "95% CI", "Whole CI width", "Reporting")
+            style = "padding: 3px 7px; border: 1px solid #d7dce1;"
+            header = "".join(f'<th style="{style}">{escape(label)}</th>' for label in headers)
+            cells = "".join(f'<td style="{style}">{escape(value)}</td>' for value in values)
+        except (OSError, ValueError, KeyError, TypeError):
+            self._append_timestamped_text("    NanoTel KM report could not be read.")
+            return True
+
+        self._append_timestamped_text("    NanoTel KM reporting")
+        self._append_log_line(
+            f'<table style="border-collapse: collapse;"><tr>{header}</tr><tr>{cells}</tr></table>'
+        )
+        if reason:
+            self._append_log_line(f"<p>{escape(str(reason))}</p>")
+        self._append_log_blank()
+        return True
 
     def _handle_nanotel_result_path(self, analysis_line):
         """Collapse NanoTel output file paths into one result-directory line."""

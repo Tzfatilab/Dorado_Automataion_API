@@ -2,8 +2,10 @@
 
 These outputs belong to NanoTel.R's optional `--analysis` block, separate from
 `r_analysis`. Existing TXT, CSV and PNG outputs remain available. The application
-command does not yet enable `--analysis`; this change does not enable GUI analysis
-or add visible KM censoring information.
+enables `--analysis` for full NanoTel runs. Summary-only runs remain unchanged
+because their temporary NanoTel tree is deleted after Excel creation. KM results
+appear in a separate GUI log table; KM-input censoring remains silent.
+See [GUI integration handoff](GUI_ANALYSIS_INTEGRATION.md).
 
 ## Barcode files
 
@@ -91,4 +93,5 @@ Both plot types select exact canonical measurements at allowance 0 and canonical
 observations are retained without sampling. HTML viewers embed Plotly's installed
 JavaScript bundle and work offline; zoom, pan, reset, legend toggling, hover and
 PNG download are available. Standalone viewer files do not implement the report UI
-or enable GUI analysis. Plotly/htmltools requirements are declared in the recipe.
+or themselves enable analysis. Full application runs request analysis separately.
+Plotly/htmltools requirements are declared in the recipe.
