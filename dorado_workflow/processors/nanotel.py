@@ -15,6 +15,7 @@ from .base import ProcessorBase, ProcessorResult, WorkflowContext
 from ..utils.cancellation import WorkflowCancelled
 from ..utils.analysis_constants import NANOTEL_RECORDS_PER_CHUNK, FASTQ_LINES_PER_RECORD
 from ..utils.shell_commands import format_command
+from ..reports.km_statistics import write_km_run_statistics
 
 
 class NanoTelProcessor(ProcessorBase):
@@ -140,7 +141,30 @@ class NanoTelProcessor(ProcessorBase):
 
             # Process each barcode
             # Note: parallel processing could be added later if needed
+            km_sources = [
+                Path(task['output_dir']) / f"{task['barcode']}_km_statistics.csv"
+                for task in barcode_tasks
+            ]
+            # Compare before/after timestamps: an old --analysis export must not
+            # enter a new run that did not request analysis (or failed this time).
+            previous_km = {
+                path: path.stat().st_mtime_ns if path.exists() else None
+                for path in km_sources
+            }
             results_per_barcode = self._process_barcodes_sequential(barcode_tasks)
+
+            current_km = [
+                path for task, path in zip(barcode_tasks, km_sources)
+                if results_per_barcode.get(task['barcode']) and path.exists()
+                and path.stat().st_mtime_ns != previous_km[path]
+            ]
+            # These CSVs contain KM only; r_analysis owns the general run summary.
+            # Keep rates silent. Replace old aggregates with empty results if no
+            # current KM exports exist, rather than presenting a previous run.
+            if current_km or any((self.output_dir / name).exists() for name in (
+                'km_barcode_statistics.csv', 'km_run_statistics.csv'
+            )):
+                write_km_run_statistics(current_km, self.output_dir)
 
             # Collect statistics
             stats = self._collect_statistics(results_per_barcode)

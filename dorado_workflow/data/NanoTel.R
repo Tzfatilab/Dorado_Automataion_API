@@ -101,7 +101,7 @@ option_list = list(
               help = "Print version information and exit"),
 
   make_option("--analysis", action = "store_true", default = FALSE,
-              help = "Run post-processing filtration and produce filtered summary, stats txt, and plot.",
+              help = "Run post-processing filtration and produce filtered summary, stats TXT/JSON, KM CSV, and plot.",
               metavar = "Run analysis"),
 
   make_option("--max_telomere_start", action = "store", default = 150,
@@ -263,6 +263,54 @@ format_km_report <- function(result) {
   )
   if (!reportable) lines <- c(lines, paste0("KM Reporting Reason                       : ", result$reason))
   lines
+}
+
+# Machine-readable equivalent of results.txt; never export withheld KM estimates.
+# Non-finite descriptive values become JSON null, not NaN/Infinity.
+make_analysis_report <- function(barcode, n_reads, n_complete, n_censored,
+                                 censoring_rate, med_telo, pct_short,
+                                 short_threshold, km_result) {
+  reportable <- identical(km_result$status, "reportable")
+  finite_or_null <- function(x) if (length(x) == 1L && is.finite(x)) x else NULL
+  list(
+    barcode = barcode,
+    number_of_telomeric_reads_post_filtration = n_reads,
+    complete_telomeric_reads = n_complete,
+    incomplete_telomeric_reads = n_censored,
+    censoring_rate_pct = finite_or_null(100 * censoring_rate),
+    median_telomeric_length_post_filtration_bp = finite_or_null(med_telo),
+    short_telomere_threshold_bp = short_threshold,
+    telomeres_shorter_than_threshold_pct = finite_or_null(pct_short),
+    km_median_telomeric_length_bp = if (reportable) km_result$median else NULL,
+    km_median_95_ci_lower_bp = if (reportable) km_result$lower else NULL,
+    km_median_95_ci_upper_bp = if (reportable) km_result$upper else NULL,
+    km_whole_relative_ci_width_pct = finite_or_null(km_result$relative_ci_width_pct),
+    km_reporting_reason = km_result$reason
+  )
+}
+
+# KM censoring describes the pre-edge KM input, even when its median is withheld.
+# Store it silently in CSV; the visible TXT retains final-filter censoring only.
+make_km_statistics <- function(barcode, km_input, km_result) {
+  margins <- km_input$sequence_length - km_input$telomere_end
+  events <- as.integer(margins >= BUFFER)
+  valid_events <- all(is.finite(margins))
+  n <- nrow(km_input)
+  reportable <- identical(km_result$status, "reportable")
+  data.frame(
+    barcode = barcode,
+    km_status = km_result$status,
+    km_median_bp = if (reportable) km_result$median else NA_real_,
+    km_ci_lower_bp = if (reportable) km_result$lower else NA_real_,
+    km_ci_upper_bp = if (reportable) km_result$upper else NA_real_,
+    km_whole_relative_ci_width_pct = if (is.finite(km_result$relative_ci_width_pct))
+      km_result$relative_ci_width_pct else NA_real_,
+    km_input_read_count = n,
+    km_complete_read_count = if (valid_events) sum(events == 1L) else NA_integer_,
+    km_censored_read_count = if (valid_events) sum(events == 0L) else NA_integer_,
+    km_censoring_rate_pct = if (valid_events && n > 0L) 100 * mean(events == 0L) else NA_real_,
+    km_reporting_reason = if (is.null(km_result$reason)) "" else km_result$reason
+  )
 }
 
 
@@ -2779,6 +2827,10 @@ if (!opt$summary_only) {
 # =====================================================================
 if (isTRUE(opt$analysis)) {
 
+  if (!requireNamespace("jsonlite", quietly = TRUE)) {
+    stop("The --analysis JSON export requires the jsonlite package.")
+  }
+
   # Select canonical measurements explicitly for this analysis.
   # TVR measurements are not used.
   analysis_columns <- if (global_max_mismatch == 0L) {
@@ -2859,6 +2911,9 @@ if (isTRUE(opt$analysis)) {
   censoring_rate <- n_censored / n_reads
 
   med_telo <- median(df_filtered[[analysis_columns[["length"]]]])
+  # This is NanoTel.R's FINAL-filter population. r_analysis computes its own
+  # percentage with the same threshold but may add a minimum-read-length filter;
+  # the two percentages can differ and must not be treated as interchangeable.
   pct_short <- round(100 * mean(
     df_filtered[[analysis_columns[["length"]]]] < opt$short_telomere_threshold_bp,
     na.rm = TRUE
@@ -2884,6 +2939,21 @@ if (isTRUE(opt$analysis)) {
 
   write_lines(results_lines,
               file.path(opt$save_path, paste0(barcode_name, "_results.txt")))
+
+  analysis_report <- make_analysis_report(
+    barcode_name, n_reads, n_complete, n_censored, censoring_rate,
+    med_telo, pct_short, opt$short_telomere_threshold_bp, km_result
+  )
+  jsonlite::write_json(
+    analysis_report,
+    file.path(opt$save_path, paste0(barcode_name, "_analysis.json")),
+    auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null", digits = NA
+  )
+  # One barcode row is also usable after a standalone NanoTel.R --analysis run.
+  write_csv(
+    make_km_statistics(barcode_name, km_input, km_result),
+    file.path(opt$save_path, paste0(barcode_name, "_km_statistics.csv")), na = ""
+  )
 
   # --- Telomere plot (uses pre-final-filter data so x-axis extends to the crossing point) ---
   df_plot <- df_for_plot

@@ -1,8 +1,11 @@
 # Focused deterministic checks; load only KM helpers, never run NanoTel's CLI.
 args <- commandArgs(trailingOnly = TRUE)
 expressions <- parse(file = args[[1]])
+invisible(parse(file = file.path(dirname(dirname(args[[1]])),
+                                "r_analysis", "functions", "nanotel_functions.R")))
 needed <- c("BUFFER", "KM_MAX_RELATIVE_CI_WIDTH_PCT", "KM_REPORT_MESSAGES",
-            "assess_km_result", "fit_km_result", "format_km_report")
+            "assess_km_result", "fit_km_result", "format_km_report",
+            "make_analysis_report", "make_km_statistics")
 for (expr in expressions) {
   if (is.call(expr) && identical(expr[[1]], as.name("<-")) &&
       as.character(expr[[2]]) %in% needed) eval(expr)
@@ -123,7 +126,34 @@ for (name in names(cases)) {
     check(!any(grepl("5,000|4,400|5,600|5,500", km_lines)))
   }
   writeLines(results_lines, file.path(args[[2]], paste0(name, "_results.txt")), useBytes = TRUE)
+  report <- make_analysis_report(barcode_name, n_reads, n_complete, n_censored,
+                                censoring_rate, med_telo, pct_short, 2000, km_result)
+  # Export actual helper results for Python JSON/CSV assertions, without loading CLI packages.
+  jsonlite::write_json(report, file.path(args[[2]], paste0(name, "_analysis.json")),
+                       auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null", digits = NA)
+  km_row <- make_km_statistics(barcode_name, fixture, km_result)
+  write.table(km_row, file.path(args[[2]], paste0(name, "_km_statistics.csv")),
+              sep = ",", row.names = FALSE, na = "", qmethod = "double")
+  check(km_row$km_input_read_count == 3)
+  check(km_row$km_complete_read_count == 2 && km_row$km_censored_read_count == 1)
+  check(abs(km_row$km_censoring_rate_pct - 100 / 3) < 1e-10)
+  check(report$censoring_rate_pct == 50) # Final-filter rate must stay distinct.
+  if (name != "reportable") {
+    check(is.null(report$km_median_telomeric_length_bp))
+    check(is.na(km_row$km_median_bp))
+  }
 }
+empty_row <- make_km_statistics("empty", fixture[FALSE, ], failed)
+check(is.na(empty_row$km_censoring_rate_pct))
+missing_fixture <- fixture
+missing_fixture$telomere_end[1] <- NA_real_
+check(is.na(make_km_statistics("missing", missing_fixture, failed)$km_censoring_rate_pct))
+missing_fixture$telomere_end[1] <- Inf
+check(is.na(make_km_statistics("nonfinite", missing_fixture, failed)$km_censoring_rate_pct))
+empty_report <- make_analysis_report("empty", 0, 0, 0, NaN, NA_real_, NaN, 2000, failed)
+check(is.null(empty_report$censoring_rate_pct) &&
+      is.null(empty_report$median_telomeric_length_post_filtration_bp) &&
+      is.null(empty_report$telomeres_shorter_than_threshold_pct))
 check(cases$too_wide$median == 5000 && cases$too_wide$lower == 4400 && cases$too_wide$upper == 5600)
 # A tight deterministic sample exercises a genuinely reportable survival fit.
 tight <- data.frame(telomere_length = seq(4900, 5100, length.out = 101))

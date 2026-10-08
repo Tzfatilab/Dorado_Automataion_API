@@ -200,6 +200,9 @@ calculate_nanotel_summary_stats <- function(all_barcodes_data,
     summarise(
       amount_of_telomeres = n(),
       median_telomere_length = round(median(Telomere_length_mismatch, na.rm = TRUE), 1),
+      # r_analysis uses its own final-filter population, possibly including a
+      # minimum-read-length filter. The same threshold in NanoTel.R --analysis
+      # does not guarantee the same percentage; keep the two sources distinct.
       below_threshold_pct = round(100 * mean(
         Telomere_length_mismatch < short_telomere_threshold_bp,
         na.rm = TRUE
