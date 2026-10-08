@@ -28,6 +28,8 @@ tests that have not yet been supplied.
 | `testit` | `r-testit` | Enforce pattern/subsequence assumptions with `assert()`. |
 | `survival` | `r-survival` | Estimate the KM median and log-log 95% confidence interval for `--analysis`. |
 | `jsonlite` | `r-jsonlite` | Export assessed `--analysis` results as barcode JSON; already listed in the recipe for r_analysis. |
+| `plotly` | `r-plotly` | Generate interactive analysis line plots and telomere histograms; already in the recipe. |
+| `htmltools` | `r-htmltools` | Escape labels in standalone offline plot viewers; also supplied transitively by plotly. |
 
 `--analysis` reports the KM median only when its complete, valid log-log 95% confidence interval
 has whole relative width at most `KM_MAX_RELATIVE_CI_WIDTH_PCT` (default 20) in `NanoTel.R`.

@@ -51,7 +51,8 @@ If a reused output directory contains old run KM files but the current run produ
 no KM exports, the processor replaces the old aggregates with empty results.
 General run statistics remain owned by `r_analysis`; these KM files do not duplicate
 its CSV/TXT/Excel summaries. GUI/HTML should read these outputs rather than calculate
-statistics from formatted logs. Histogram bins and interactive plots are deferred.
+statistics from formatted logs. The run-level KM histograms remain deferred;
+the barcode telomere plots are described below.
 
 For standalone R barcode runs, combine their CSVs explicitly after processing:
 
@@ -60,3 +61,34 @@ python -m dorado_workflow.reports.km_statistics --output-dir RESULTS barcode01_k
 ```
 
 NanoTel JSON export requires `jsonlite`, already declared in the Bioconda recipe.
+
+## Interactive barcode plots
+
+- `<barcode>_telomere_plot.html`: read length, selected canonical telomere length
+  and running median versus descending read-length rank, before edge filtering.
+  Hover includes read ID, measurements and edge-filter status. The existing
+  `<barcode>_telomere_plot.png` is preserved.
+- `<barcode>_telomere_histogram.html`: final-filtered observed telomere lengths,
+  including censored reads in the bars. Pink ticks in a separate strip below the
+  bars and above the X-axis labels identify censored
+  observed lengths, not their unknown full lengths. Buttons switch the Y-axis
+  between counts and percentage of plotted reads (not all input barcode reads).
+  Linear bins reproduce BiModal's `pretty(range(length), n=45)` and right-closed
+  `hist(..., include.lowest=TRUE)` intervals. Finite positive lengths are plotted;
+  any omitted lengths are explicitly counted. A Gaussian kernel-density curve
+  (`stats::density`, bandwidth `nrd0`) smooths the observed lengths, scaled by the
+  bin width into count/percentage units. It includes censored observations at
+  their observed lengths; it is not a censoring-corrected distribution or a
+  mixture fit, and it does not change KM. Fewer than two distinct lengths give
+  no smoothing curve.
+- `<barcode>_telomere_histogram.png` and `_telomere_histogram_pct.png`: static
+  count/percentage companions with identical bins and censored ticks.
+- Each interactive plot has a matching `.plotly.json` specification containing
+  data, layout and toolbar configuration for future report integration.
+
+Both plot types select exact canonical measurements at allowance 0 and canonical
+`*_mismatch` measurements at allowance 1, never TVR measurements. All supplied
+observations are retained without sampling. HTML viewers embed Plotly's installed
+JavaScript bundle and work offline; zoom, pan, reset, legend toggling, hover and
+PNG download are available. Standalone viewer files do not implement the report UI
+or enable GUI analysis. Plotly/htmltools requirements are declared in the recipe.

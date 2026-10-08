@@ -21,5 +21,8 @@ tests/integration_output/
 # Private analysis handoff and ongoing chat notes; never commit.
 /ANALYSIS_HANDOFF.local.md
 
+# Local interactive-plot review examples; not part of the package.
+/analysis_plot_previews.local/
+
 dorado_workflow/data/references/ZebraFish/
 dorado_workflow/r_analysis/.Rproj.user/

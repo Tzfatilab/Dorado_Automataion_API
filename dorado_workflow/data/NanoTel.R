@@ -101,7 +101,7 @@ option_list = list(
               help = "Print version information and exit"),
 
   make_option("--analysis", action = "store_true", default = FALSE,
-              help = "Run post-processing filtration and produce filtered summary, stats TXT/JSON, KM CSV, and plot.",
+              help = "Run post-processing filtration and produce summaries, stats TXT/JSON, KM CSV, interactive plots and PNGs.",
               metavar = "Run analysis"),
 
   make_option("--max_telomere_start", action = "store", default = 150,
@@ -311,6 +311,229 @@ make_km_statistics <- function(barcode, km_input, km_result) {
     km_censoring_rate_pct = if (valid_events && n > 0L) 100 * mean(events == 0L) else NA_real_,
     km_reporting_reason = if (is.null(km_result$reason)) "" else km_result$reason
   )
+}
+
+# Plot inputs follow the selected canonical mode; never infer mode from a CSV name.
+# No sampling: retain every read in the supplied (pre-edge or final) population.
+make_analysis_plot_data <- function(data, columns, max_edge_distance) {
+  n <- nrow(data)
+  margin <- data$sequence_length - data[[columns[["end"]]]]
+  data.frame(
+    read_index = seq_len(n),
+    read_id = sub("[[:space:]].*$", "", as.character(data$sequence_ID)),
+    read_length_bp = data$sequence_length,
+    telomere_length_bp = data[[columns[["length"]]]],
+    running_median_bp = data$TelLenMM_RunningMed,
+    retained_by_edge_filter = data$SeqLen_minus_RunMed > max_edge_distance,
+    event = ifelse(is.finite(margin), as.integer(margin >= BUFFER), NA_integer_)
+  )
+}
+
+analysis_barcode_title <- function(barcode) {
+  if (grepl("^(barcode|bc)[_-]?[0-9]+$", barcode, ignore.case = TRUE)) {
+    return(sprintf("Barcode %02d", as.integer(gsub("[^0-9]", "", barcode))))
+  }
+  barcode
+}
+
+make_telomere_line_plot <- function(data, barcode, mismatch_allowance) {
+  mode <- if (mismatch_allowance == 0L) "exact" else "mismatch"
+  hover <- paste0(
+    "Read: ", htmltools::htmlEscape(data$read_id),
+    "<br>Rank: ", data$read_index,
+    "<br>Read length: ", format(data$read_length_bp, big.mark = ",", trim = TRUE), " bp",
+    "<br>Telomere length (", mode, "): ", format(data$telomere_length_bp, big.mark = ",", trim = TRUE), " bp",
+    "<br>Running median: ", format(data$running_median_bp, big.mark = ",", trim = TRUE), " bp",
+    "<br>Edge filter: ", ifelse(is.na(data$retained_by_edge_filter), "Unknown",
+                                ifelse(data$retained_by_edge_filter, "Retained", "Removed"))
+  )
+  p <- plotly::plot_ly()
+  for (series in list(
+    list("Read Length", data$read_length_bp, "#E8735A"),
+    list(paste0("Telomere Length (", mode, ")"), data$telomere_length_bp, "#228B22"),
+    list("Running Median Telomere Length", data$running_median_bp, "#4169E1")
+  )) {
+    p <- plotly::add_trace(p, x = data$read_index, y = series[[2]],
+                          type = "scattergl", mode = "lines", name = series[[1]],
+                          line = list(color = series[[3]]), text = hover,
+                          hovertemplate = "%{text}<extra>%{fullData.name}</extra>")
+  }
+  p <- plotly::layout(p,
+    title = list(text = paste0("Telomere and Read Lengths - ",
+                              htmltools::htmlEscape(analysis_barcode_title(barcode)),
+                              "<br><sup>Density/start-filtered reads, before edge filtering</sup>")),
+    xaxis = list(title = "Read rank (longest to shortest)", tickformat = ",d"),
+    yaxis = list(title = "Length (bp)", tickformat = ",d", rangemode = "tozero"),
+    legend = list(orientation = "h", y = -0.18), margin = list(t = 95, b = 110),
+    dragmode = "zoom", plot_bgcolor = "white", paper_bgcolor = "white")
+  if (!nrow(data)) p <- plotly::layout(p, annotations = list(
+    list(text = "No reads passed the density/start filters", x = 0.5, y = 0.5,
+         xref = "paper", yref = "paper", showarrow = FALSE)))
+  p
+}
+
+make_telomere_histogram_data <- function(data) {
+  # Match BiModal's linear pretty(..., n=45) breaks and right-closed intervals.
+  # Bars include censored reads; the rug marks them again, not an extra population.
+  valid <- is.finite(data$telomere_length_bp) & data$telomere_length_bp > 0
+  reads <- data[valid, , drop = FALSE]
+  excluded <- sum(!valid)
+  trend <- data.frame()
+  if (!nrow(reads)) return(list(reads = reads, bins = data.frame(), trend = trend, excluded = excluded))
+  breaks <- pretty(range(reads$telomere_length_bp), n = 45L)
+  histogram <- hist(reads$telomere_length_bp, breaks = breaks,
+                    include.lowest = TRUE, right = TRUE, plot = FALSE)
+  bins <- data.frame(
+    lower_bp = head(histogram$breaks, -1L), upper_bp = tail(histogram$breaks, -1L),
+    center_bp = histogram$mids, count = histogram$counts,
+    pct = 100 * histogram$counts / nrow(reads)
+  )
+  # Visual Gaussian KDE of OBSERVED lengths (including censored observations),
+  # not a mixture fit or censoring-corrected estimate. Scale by the bin width
+  # so the curve has the same count/percentage units as the bars.
+  if (nrow(reads) >= 2L && length(unique(reads$telomere_length_bp)) > 1L) {
+    smooth <- stats::density(reads$telomere_length_bp, bw = "nrd0", kernel = "gaussian",
+                             n = 512L, from = max(0, min(breaks)), to = max(breaks))
+    trend <- data.frame(length_bp = smooth$x,
+                        count = smooth$y * nrow(reads) * diff(breaks)[1],
+                        pct = smooth$y * 100 * diff(breaks)[1])
+  }
+  list(reads = reads, bins = bins, trend = trend, excluded = excluded)
+}
+
+make_telomere_histogram_plot <- function(histogram, barcode, mismatch_allowance) {
+  bins <- histogram$bins
+  reads <- histogram$reads
+  trend <- histogram$trend
+  mode <- if (mismatch_allowance == 0L) "exact" else "mismatch"
+  title <- paste0("Telomere Lengths Distribution - ", analysis_barcode_title(barcode))
+  subtitle <- sprintf("Final-filtered reads | %s | complete: %d | censored: %d | unknown: %d",
+                      mode, sum(reads$event == 1L, na.rm = TRUE),
+                      sum(reads$event == 0L, na.rm = TRUE), sum(is.na(reads$event)))
+  if (histogram$excluded) subtitle <- paste0(subtitle, " | non-positive/non-finite lengths omitted: ", histogram$excluded)
+  p <- plotly::plot_ly()
+  if (nrow(bins)) {
+    hover <- sprintf("Telomere length: %s%.0f, %.0f] bp<br>Reads: %d<br>Percentage of plotted reads: %.2f%%",
+                     c("[", rep("(", nrow(bins) - 1L)), bins$lower_bp, bins$upper_bp,
+                     bins$count, bins$pct)
+    p <- plotly::add_trace(p, x = bins$center_bp, y = bins$count,
+      width = bins$upper_bp - bins$lower_bp, type = "bar", name = "Telomeric reads",
+      marker = list(color = "#D9E8F5", line = list(color = "white", width = 1)),
+      text = hover, textposition = "none", hovertemplate = "%{text}<extra></extra>")
+    if (nrow(trend)) p <- plotly::add_trace(p,
+      x = trend$length_bp, y = trend$count, type = "scatter", mode = "lines",
+      name = "Smoothed observed lengths", line = list(color = "#263B64", width = 2.5),
+      hovertemplate = "Telomere length: %{x:,.0f} bp<br>Smoothed height: %{y:.2f}<extra>Observed lengths only</extra>")
+    count_values <- if (nrow(trend)) list(bins$count, trend$count) else list(bins$count)
+    pct_values <- if (nrow(trend)) list(bins$pct, trend$pct) else list(bins$pct)
+    trace_indices <- if (nrow(trend)) list(0L, 1L) else list(0L)
+    # Switch bars and trend together; the separate rug strip has no count units.
+    p <- plotly::layout(p, updatemenus = list(list(
+      type = "buttons", direction = "right", x = 0, y = 1.13,
+      buttons = list(
+        list(label = "Read count", method = "update", args = list(
+          list(y = count_values),
+          list("yaxis.title.text" = "Read count", "yaxis.ticksuffix" = "",
+               "yaxis.tickformat" = ",d", "yaxis.autorange" = TRUE), trace_indices)),
+        list(label = "Percentage", method = "update", args = list(
+          list(y = pct_values),
+          list("yaxis.title.text" = "Percentage of plotted reads", "yaxis.ticksuffix" = "%",
+               "yaxis.tickformat" = ".1f", "yaxis.autorange" = TRUE), trace_indices))
+      ))))
+  }
+  censored <- reads[which(reads$event == 0L), , drop = FALSE]
+  if (nrow(censored)) p <- plotly::add_trace(p,
+    x = censored$telomere_length_bp, y = rep(0.5, nrow(censored)), yaxis = "y2",
+    type = "scatter", mode = "markers", name = "Censored reads (observed lengths)",
+    marker = list(symbol = "line-ns", size = 16, color = "#CC79A7", opacity = 0.55,
+                  line = list(color = "#CC79A7", width = 1)),
+    text = htmltools::htmlEscape(censored$read_id),
+    hovertemplate = "Read: %{text}<br>Observed telomere length: %{x:,.0f} bp<br>Censored: full length unknown<extra></extra>")
+  p <- plotly::layout(p,
+    title = list(text = paste0(htmltools::htmlEscape(title), "<br><sup>", subtitle, "</sup>")),
+    xaxis = list(title = "Telomere length (bp)", tickformat = ",d", anchor = "y2"),
+    yaxis = list(title = "Read count", tickformat = ",d", rangemode = "tozero", domain = c(0.12, 1)),
+    yaxis2 = list(domain = c(0, 0.07), range = c(0, 1), visible = FALSE, fixedrange = TRUE),
+    shapes = list(list(type = "rect", xref = "paper", yref = "paper",
+                       x0 = 0, x1 = 1, y0 = 0, y1 = 0.07, fillcolor = "#FFF8FA",
+                       line = list(color = "#F1DCE5", width = 1), layer = "below")),
+    legend = list(orientation = "h", y = -0.18), margin = list(t = 145, b = 110),
+    dragmode = "zoom", plot_bgcolor = "white", paper_bgcolor = "white")
+  if (!nrow(reads)) p <- plotly::layout(p, annotations = list(
+    list(text = "No final-filtered reads with finite positive telomere lengths",
+         x = 0.5, y = 0.5, xref = "paper", yref = "paper", showarrow = FALSE)))
+  p
+}
+
+save_analysis_plot <- function(plot, prefix) {
+  plot <- plotly::config(plot, displaylogo = FALSE, responsive = TRUE,
+    toImageButtonOptions = list(format = "png", filename = basename(prefix),
+                               width = 1800, height = 900, scale = 1))
+  specification <- as.character(plotly::plotly_json(plot, jsonedit = FALSE))
+  writeLines(specification, paste0(prefix, ".plotly.json"), useBytes = TRUE)
+  # For GUI/HTML developers: reuse this specification's data/layout/config with
+  # Plotly.newPlot. The standalone viewer is a plot artifact, not the report UI.
+  # Embed the installed Plotly bundle for offline use, without a Pandoc dependency.
+  bundle <- system.file("htmlwidgets/lib/plotlyjs/plotly-latest.min.js", package = "plotly")
+  if (!nzchar(bundle)) stop("Plotly's JavaScript bundle could not be found.")
+  javascript <- jsonlite::base64_enc(readBin(bundle, "raw", n = file.info(bundle)$size))
+  safe_specification <- gsub("</", "<\\/", specification, fixed = TRUE)
+  writeLines(c(
+    "<!doctype html><html><head><meta charset='utf-8'>",
+    "<meta name='viewport' content='width=device-width, initial-scale=1'>",
+    paste0("<title>", htmltools::htmlEscape(basename(prefix)), "</title>"),
+    "<style>html,body{margin:0;height:100%;font-family:Arial,sans-serif}#plot{width:100%;height:100%;min-height:620px}</style>",
+    paste0("<script src='data:application/javascript;base64,", javascript, "'></script>"),
+    "</head><body><div id='plot'></div><script type='application/json' id='figure'>",
+    safe_specification,
+    "</script><script>const f=JSON.parse(document.getElementById('figure').textContent);Plotly.newPlot('plot',f.data,f.layout,f.config);</script></body></html>"
+  ), paste0(prefix, ".html"), useBytes = TRUE)
+}
+
+save_telomere_histogram_png <- function(histogram, path, barcode, mismatch_allowance,
+                                        percentage = FALSE) {
+  grDevices::png(path, width = 1800, height = 1200, res = 170)
+  on.exit(grDevices::dev.off(), add = TRUE)
+  par(mar = c(5, 5, 5, 2) + 0.1, las = 1)
+  bins <- histogram$bins
+  title <- paste0("Telomere Lengths Distribution - ", analysis_barcode_title(barcode))
+  if (!nrow(bins)) {
+    plot.new(); title(main = title); text(0.5, 0.5, "No final-filtered reads with finite positive telomere lengths")
+    return(invisible(NULL))
+  }
+  heights <- if (percentage) bins$pct else bins$count
+  trend <- histogram$trend
+  trend_heights <- if (percentage) trend$pct else trend$count
+  upper <- max(1, heights, trend_heights) * 1.12
+  strip_height <- upper * 0.055
+  plot(NA, xlim = range(c(bins$lower_bp, bins$upper_bp)),
+       ylim = c(-strip_height * 1.8, upper), xlab = "Telomere length (bp)",
+       ylab = if (percentage) "Percentage of plotted reads (%)" else "Read count",
+       main = title, xaxt = "n", yaxt = "n")
+  rect(bins$lower_bp, 0, bins$upper_bp, heights, col = "#D9E8F5", border = "white")
+  if (nrow(trend)) lines(trend$length_bp, trend_heights, col = "#263B64", lwd = 2.5)
+  xticks <- axTicks(1); yticks <- axTicks(2)
+  yticks <- yticks[yticks >= 0]
+  if (!percentage) yticks <- yticks[yticks == floor(yticks)]
+  axis(1, at = xticks, labels = format(xticks, big.mark = ",", scientific = FALSE, trim = TRUE))
+  axis(2, at = yticks, labels = if (percentage) paste0(yticks, "%") else yticks)
+  limits <- par("usr")[1:2]
+  rect(limits[1], -strip_height * 1.5, limits[2], -strip_height * 0.5,
+       col = "#FFF8FA", border = "#F1DCE5")
+  censored_x <- histogram$reads$telomere_length_bp[which(histogram$reads$event == 0L)]
+  segments(censored_x, -strip_height * 1.4, censored_x, -strip_height * 0.6,
+           col = adjustcolor("#CC79A7", 0.55))
+  legend_indices <- if (nrow(trend)) 1:3 else c(1, 3)
+  legend("topright", legend = c("Telomeric reads", "Smoothed observed lengths", "Censored reads (observed lengths)")[legend_indices],
+         pch = c(15, NA, 124)[legend_indices], lty = c(NA, 1, NA)[legend_indices],
+         lwd = c(1, 2.5, 1)[legend_indices],
+         col = c("#D9E8F5", "#263B64", "#CC79A7")[legend_indices], bty = "n", cex = 0.8)
+  subtitle <- sprintf("Final-filtered reads | %s | complete: %d | censored: %d | unknown: %d",
+                if (mismatch_allowance == 0L) "exact" else "mismatch",
+                sum(histogram$reads$event == 1L, na.rm = TRUE),
+                sum(histogram$reads$event == 0L, na.rm = TRUE), sum(is.na(histogram$reads$event)))
+  if (histogram$excluded) subtitle <- paste0(subtitle, " | invalid lengths omitted: ", histogram$excluded)
+  mtext(subtitle, side = 3, line = 0.4, cex = 0.8)
 }
 
 
@@ -2830,6 +3053,10 @@ if (isTRUE(opt$analysis)) {
   if (!requireNamespace("jsonlite", quietly = TRUE)) {
     stop("The --analysis JSON export requires the jsonlite package.")
   }
+  if (!requireNamespace("plotly", quietly = TRUE) ||
+      !requireNamespace("htmltools", quietly = TRUE)) {
+    stop("The --analysis interactive plots require plotly and htmltools.")
+  }
 
   # Select canonical measurements explicitly for this analysis.
   # TVR measurements are not used.
@@ -2985,6 +3212,27 @@ if (isTRUE(opt$analysis)) {
     plot     = p_telo,
     width    = 12, height = 6, dpi = 150
   )
+
+  # Preserve the line plot's pre-edge population; the histogram uses final reads.
+  # Selected exact/mismatch columns are shared with filtering/KM, not TVR columns.
+  line_data <- make_analysis_plot_data(df_for_plot, analysis_columns, opt$max_edge_distance)
+  histogram_data <- make_telomere_histogram_data(
+    make_analysis_plot_data(df_filtered, analysis_columns, opt$max_edge_distance)
+  )
+  save_analysis_plot(
+    make_telomere_line_plot(line_data, barcode_name, global_max_mismatch),
+    file.path(opt$save_path, paste0(barcode_name, "_telomere_plot"))
+  )
+  save_analysis_plot(
+    make_telomere_histogram_plot(histogram_data, barcode_name, global_max_mismatch),
+    file.path(opt$save_path, paste0(barcode_name, "_telomere_histogram"))
+  )
+  save_telomere_histogram_png(histogram_data,
+    file.path(opt$save_path, paste0(barcode_name, "_telomere_histogram.png")),
+    barcode_name, global_max_mismatch)
+  save_telomere_histogram_png(histogram_data,
+    file.path(opt$save_path, paste0(barcode_name, "_telomere_histogram_pct.png")),
+    barcode_name, global_max_mismatch, percentage = TRUE)
 
 } # end --analysis block
 

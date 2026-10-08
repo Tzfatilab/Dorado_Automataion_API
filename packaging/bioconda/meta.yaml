@@ -60,6 +60,7 @@ requirements:
     - r-plotly
     - r-shiny
     - r-htmlwidgets
+    - r-htmltools
     - r-rcolorbrewer
     - r-gridextra
     - r-fuzzyjoin
