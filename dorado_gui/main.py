@@ -37,7 +37,7 @@ def _build_parser():
 
 
 def _show_initial_window(window, screen):
-    """Open a centered window at 70% of the available screen dimensions."""
+    """Prefer centered 70% sizing, maximizing when setup controls need more room."""
     window.show_initial_window(screen)
 
 

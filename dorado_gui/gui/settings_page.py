@@ -273,29 +273,11 @@ class SettingsPage(QWidget):
                     control.setSpecialValueText("Disabled")
             control.setAccessibleName(title)
             control.setFixedWidth(140)
-            # Reserve a separate button column; native Windows spin buttons can
-            # otherwise overlap the text or clip when the interface is scaled.
+            # Keep numeric validation while presenting a plain editable field.
+            control.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
             control.setMinimumHeight(34)
             control.setStyleSheet("""
-                QSpinBox, QDoubleSpinBox { padding: 3px 26px 3px 8px; min-height: 24px; }
-                QSpinBox::up-button, QDoubleSpinBox::up-button {
-                    subcontrol-origin: border; subcontrol-position: top right;
-                    width: 22px; height: 16px; background: #eff6ff;
-                    border-left: 1px solid #cbd5e1;
-                }
-                QSpinBox::down-button, QDoubleSpinBox::down-button {
-                    subcontrol-origin: border; subcontrol-position: bottom right;
-                    width: 22px; height: 16px; background: #eff6ff;
-                    border-left: 1px solid #cbd5e1;
-                }
-                QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
-                    width: 0; height: 0; border-left: 4px solid transparent;
-                    border-right: 4px solid transparent; border-bottom: 5px solid #162238;
-                }
-                QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
-                    width: 0; height: 0; border-left: 4px solid transparent;
-                    border-right: 4px solid transparent; border-top: 5px solid #162238;
-                }
+                QSpinBox, QDoubleSpinBox { padding: 3px 8px; min-height: 24px; }
             """)
             control.valueChanged.connect(self.mark_dirty)
             fields.addWidget(self.label(title), row, 0)
