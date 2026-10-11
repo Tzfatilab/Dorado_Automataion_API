@@ -1,0 +1,58 @@
+================================================================================
+NANOTEL BATCH ANALYSIS REPORT
+================================================================================
+Analysis date: 2026-10-11
+Analysis time: 12:45:18
+
+ANALYSIS PARAMETERS:
+  Input directory: C:\Users\inbar\OneDrive\Desktop\Dudi\Telomere Analyzer_20261011_123541\results\nanotel
+  Output directory: C:\Users\inbar\OneDrive\Desktop\Dudi\Telomere Analyzer_20261011_123541\results\nanotel
+  Density threshold: 0.75
+  Max telomere start: 134
+  Maximum edge distance: 134
+
+PROCESSING RESULTS:
+  Total barcodes processed: 2
+  Total reads after filtering: 13
+  Average reads per barcode: 6.5
+
+BARCODE DETAILS:
+   BARCODE02 :
+    Reads: 12
+    Mean telomere length: 4663.7 bp
+    Mean read length: 17863.8 bp
+    Mean density: 0.957
+
+   BARCODE19 :
+    Reads: 1
+    Mean telomere length: 12573 bp
+    Mean read length: 17449 bp
+    Mean density: 0.935
+
+SUMMARY STATISTICS:
+
+   BARCODE02 :
+    Telomeres: 12
+    Median length: 4896.5 bp
+    Below 2000 bp: 16.7 %
+    Median read length: 16096 bp
+    Mean density: 0.957
+
+   BARCODE19 :
+    Telomeres: 1
+    Median length: 12573 bp
+    Below 2000 bp: 0 %
+    Median read length: 17449 bp
+    Mean density: 0.935
+
+OUTPUT FILES:
+  - Filtered summary files: filtered_summary*.csv
+  - Summary statistics: nanotel_summary_statistics.csv
+  - Analysis report: nanotel_analysis_report.txt
+
+NEXT STEPS:
+  1. Review filtered summary files for quality
+  2. Proceed with mapping analysis using filtered data
+  3. Check summary statistics for outliers
+
+================================================================================

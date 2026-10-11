@@ -21,6 +21,8 @@ from .interactive.importers import import_results
 from .interactive.dashboard import dashboard_data
 from .barcode_comparisons import comparison_figures
 from .availability import availability_html
+from .barcode_dashboard import barcode_views, ROUTER
+from .barcode_histograms import histogram_sections, telomere_plot_sections
 
 TITLE = "Telomere Analysis Summary - All Barcodes"
 # Inline SVG paths, in the same order as the six card specifications below.
@@ -36,7 +38,7 @@ ICONS = [
 ]
 
 
-def render_screen(run):
+def render_screen(run, results_root=None):
     """Render an imported Run model without writing files or changing its data.
 
     Aggregates come from dashboard_data(), which preserves population and
@@ -50,6 +52,9 @@ def render_screen(run):
     # Reuse the shared aggregate layer; do not average barcode medians here.
     data = dashboard_data(run)
     metrics = data["metrics"]
+    nanotel_population = any(b.metrics.get("amount_of_telomeres") and
+        b.metrics["amount_of_telomeres"].population == "NanoTel final-filtered reads" for b in run.barcodes)
+
     # Use an explicit run chromosome statistic when supplied. Reference counts
     # must never substitute for missing chromosome annotations.
     if "detected_chromosomes" in run.metrics:
@@ -98,12 +103,16 @@ def render_screen(run):
             continue
         # Positive values only on the log axis; this is a display restriction,
         # not a new analysis filter. The panel caption discloses it.
-        values = [r["length_bp"] / 1000 for r in item["lengths"]["value"] if r["length_bp"] > 0]
+        records = [r for r in item["lengths"]["value"] if r["length_bp"] > 0]
+        values = [r["length_bp"] / 1000 for r in records]
+        # Keep identity attached to each plotted observation, including duplicate
+        # lengths. Matching by a y value would route equal-length reads incorrectly.
+        customdata = [[item["id"], r.get("read_id")] for r in records]
         # Each barcode is a separate trace. Plotly computes presentation
         # quartiles from these source lengths; jitter only separates markers
         # horizontally and never changes a read's length.
         boxes.add_trace(go.Box(name=item["label"].replace("barcode", "BC"), y=values,
-            boxpoints="all", jitter=0.16, pointpos=0, fillcolor="#a6d0f5", line_color="#214e78",
+            customdata=customdata, boxpoints="all", jitter=0.16, pointpos=0, fillcolor="#a6d0f5", line_color="#214e78",
             marker=dict(color="#3d83c9", size=5), hovertemplate="%{y:.3f} kb<extra>%{fullData.name}</extra>"))
     boxes.update_layout(xaxis_title="Barcode", yaxis_title="Telomere length (kb)", yaxis_type="log")
     # Both panels share typography, dimensions and offline Plotly settings.
@@ -123,10 +132,20 @@ def render_screen(run):
                             config={"responsive": True, "displaylogo": False, "scrollZoom": False})
         panels.append(f'<section><h2><span class="number">{index}</span>{title}</h2>{chart}<p class="note">{note}</p></section>')
     # Resolve beside this module, independent of the process working directory.
+    histograms = histogram_sections(run, results_root)
+    read_plots = telomere_plot_sections(run, results_root)
+    # Sections 2 and 3 share a row on desktop and stack on smaller screens.
+    barcode_plots = {b.id: '<div class="charts">' + histograms[b.id] + read_plots[b.id] + '</div>'
+                     for b in run.barcodes}
+    navigation, barcode_pages = barcode_views(run, ICONS, barcode_plots)
     css = Path(__file__).with_name("all_barcodes.css").read_text(encoding="utf-8")
     # Combine the complete page in memory. Cards appear before the two panels;
     # CSS controls wrapping while figure scripts attach hover/zoom behavior.
-    return f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{TITLE}</title><style>{css}</style><script>{get_plotlyjs()}</script></head><body><header><h1>{TITLE}</h1><span>Project overview &nbsp; | &nbsp; NanoTel summary</span></header><main><section><h2><span class="number">1</span>Key Statistics (All Barcodes)</h2><div class="stats">{"".join(cards)}</div></section><div class="charts">{"".join(panels)}</div>{availability_html(run)}</main></body></html>'
+    html = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{TITLE}</title><style>{css}</style><script>{get_plotlyjs()}</script></head><body><header><h1>{TITLE}</h1><span>Project overview &nbsp; | &nbsp; NanoTel summary</span></header><main><div id="run-overview">{navigation}<section><h2><span class="number">1</span>Key Statistics (All Barcodes)</h2><div class="stats">{"".join(cards)}</div></section><div class="charts">{"".join(panels)}</div>{availability_html(run)}</div>{barcode_pages}<section id="unknown-barcode" hidden><h2>Barcode or read not found</h2><a href="#/">Back to All Barcodes</a></section></main>{ROUTER}</body></html>'
+    if nanotel_population:
+        html = html.replace('Post-filtered', 'NanoTel final-filtered').replace('post-filtered', 'NanoTel final-filtered')
+    return html
+
 
 
 def generate_report(results, output):
@@ -150,7 +169,7 @@ def generate_report(results, output):
     # Finish importing and rendering before creating the output folder, so
     # calculation/import errors do not leave an empty report destination.
     print(f"Rendering five sections for {len(run.barcodes)} barcodes...", flush=True)
-    page = render_screen(run)
+    page = render_screen(run, results_root=results)
     destination = Path(output)
     # Refuse overwrites, including an existing empty destination directory.
     destination.mkdir(parents=True, exist_ok=False)
@@ -161,21 +180,17 @@ def generate_report(results, output):
 
 
 def generate_run_report(results, nanotel_directory):
-    """Save the automatic dashboard directly beside NanoTel outputs.
+    """Save a self-contained dashboard.html directly under NanoTel.
 
-    Import the entire results root so post-analysis and mapping data are included.
-    Replace only this generated HTML, leaving all scientific outputs untouched.
+    Source provenance and links to barcode reports are embedded in the HTML.
+    Scientific exports stay at their original paths for downstream consumers.
     """
-    destination = Path(nanotel_directory) / "all_barcodes.html"
-    page = render_screen(import_results(results))
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_suffix(".html.tmp")
-    try:
-        temporary.write_text(page, encoding="utf-8")
-        temporary.replace(destination)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return destination.resolve()
+    from .output_layout import write_run_reports, organize_barcode_reports
+    organize_barcode_reports(nanotel_directory)
+    run = import_results(results)
+    page = render_screen(run, results_root=results)
+    return write_run_reports(nanotel_directory, run, page)
+
 
 
 def main():

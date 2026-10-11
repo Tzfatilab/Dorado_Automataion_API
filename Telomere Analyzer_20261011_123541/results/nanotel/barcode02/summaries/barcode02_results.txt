@@ -1,0 +1,14 @@
+Results for barcode02
+==========================================
+Number of telomeric reads (post-filtration) : 12
+Complete Telomeric Reads                    : 11
+Incomplete Telomeric Reads                  : 1
+Censoring Rate                              : 8.3%
+
+Median Telomeric Length (post-filtration)  : 4,896 bp
+% of telomeres shorter than 2000 bp : 16.7%
+
+KM Median Telomeric Length                 : Not reported
+KM Median 95% Confidence Interval          : Not reported
+KM Whole Relative CI Width                 : 74.6%
+KM Reporting Reason                       : The KM estimate is not reported because its confidence interval is too wide (74.6%; reporting limit 20.0%). Consider additional sequencing.

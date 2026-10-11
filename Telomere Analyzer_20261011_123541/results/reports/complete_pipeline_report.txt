@@ -1,0 +1,24 @@
+================================================================================
+COMPLETE R ANALYSIS PIPELINE REPORT
+================================================================================
+Pipeline date: 2026-10-11
+Pipeline start time: 12:45:13
+Pipeline end time: 12:45:18
+Total duration: 0.1 minutes
+
+PIPELINE CONFIGURATION:
+  Base output directory: C:\Users\inbar\OneDrive\Desktop\Dudi\Telomere Analyzer_20261011_123541\results
+  NanoTel analysis: ENABLED
+  Mapping analysis: DISABLED
+  Methylation analysis: DISABLED
+  Stop on error: YES
+
+ANALYSIS RESULTS:
+
+1. NANOTEL ANALYSIS:
+   Status: SUCCESS
+   Barcodes processed: 2
+   Files processed: 2
+   Output directory: C:\Users\inbar\OneDrive\Desktop\Dudi\Telomere Analyzer_20261011_123541\results\nanotel
+
+================================================================================

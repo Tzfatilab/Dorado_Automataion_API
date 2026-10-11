@@ -218,3 +218,23 @@ h2 {
 .stat-2 h3 { white-space: nowrap; font-size: clamp(12px, 1vw, 16px); }
 .stat-2 { gap: 8px; }
 .stat-2 svg { width: 32px; }
+
+/* Barcode pages share the overview grid and header, without added chart panels. */
+[hidden] { display: none !important; }
+.barcode-navigation, .breadcrumbs { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:16px 0; }
+.barcode-link, .breadcrumbs a { color:#2456a6; text-decoration:none; background:white; border:1px solid #dce4ed; border-radius:8px; padding:8px 12px; }
+.barcode-link:hover, .breadcrumbs a:hover { background:#eaf2ff; }
+.barcode-link:focus-visible, .breadcrumbs a:focus-visible { outline:2px solid #2456a6; outline-offset:2px; }
+.barcode-page .stat-2 { background:#fff3f1; color:#8d5547; }
+.barcode-page .stat-2 h3 { white-space:normal; font-size:16px; }
+.barcode-page .stat-5 { background:#effafa; color:#32777e; }
+.saved-histogram { display:block; width:100%; min-height:620px; background:white; }
+.saved-histogram.composition-plot { min-height:350px; }
+.histogram-heading { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+.histogram-heading h2 { margin-bottom:0; }
+.histogram-controls { display:flex; gap:8px; }
+.histogram-controls button { font:600 15px "Segoe UI",Arial,sans-serif; padding:10px 18px; border:1px solid #ccd8e8; border-radius:7px; background:white; color:#20324c; cursor:pointer; }
+.histogram-controls button[aria-pressed="true"] { background:#2d65ce; color:white; border-color:#2d65ce; }
+.histogram-controls button:focus-visible { outline:3px solid #93b7f2; outline-offset:2px; }
+/* Compact, horizontally scrollable read browser with accessible native controls. */
+.reads-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.reads-toolbar h2{margin:0 auto 0 0}.reads-toolbar small{font-size:16px;font-weight:500}.reads-toolbar label{font-size:14px}.reads-toolbar input,.reads-toolbar select,.read-pagination button{padding:8px 10px;border:1px solid #cdd9e9;border-radius:6px;background:white;color:#18324d}.reads-scroll{overflow-x:auto}.reads-table{width:100%;border-collapse:collapse;font-size:14px}.reads-table th,.reads-table td{padding:9px 12px;text-align:left;border:1px solid #edf1f7;white-space:nowrap}.reads-table th{background:#f1f5fa}.reads-table tr:nth-child(even){background:#f7f9fc}.reads-table td:first-child{max-width:320px;overflow:hidden;text-overflow:ellipsis}.read-pagination{display:flex;justify-content:flex-end;align-items:center;gap:8px}.read-pagination button[aria-current=page]{background:#395dcc;color:white}.read-pagination button:disabled{opacity:.45}.read-status{font-size:14px;color:#65788c}#read-detail{overflow-wrap:anywhere}#read-detail dl{display:grid;grid-template-columns:max-content 1fr;gap:12px}#read-detail dd{margin:0}

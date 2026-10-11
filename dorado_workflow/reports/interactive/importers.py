@@ -256,6 +256,10 @@ class ResultImporter:
         raw, filtered, stats = {}, {}, None
         for pattern, target in (("barcode*_summary.csv", raw), ("filtered_summary*.csv", filtered)):
             for path in self.files(pattern):
+                # NanoTel's filtered_sorted summary describes another population;
+                # it is neither a raw summary nor the R post-analysis table.
+                if target is raw and not re.fullmatch(r"barcode\d+_summary\.csv", path.name, re.IGNORECASE):
+                    continue
                 barcode = barcode_from_summary_filename(path.name)
                 if barcode is None:
                     self.warnings.append(f"Unrecognized barcode filename: {path.name}")
@@ -361,8 +365,18 @@ class ResultImporter:
             self.mapping(b)
             self.density_details(b)
             self.motif_details(b)
+            from .coverage import import_coverage
+            import_coverage(self, b)
             import_statistics(self, b, number)
             barcodes.append(b)
+
+        # A standalone/partially completed run may have NanoTel analysis exports
+        # without R post-analysis tables. Use one population for the whole run;
+        # never silently mix the two filtering definitions across barcodes.
+        if barcodes and not filtered and not stat_rows:
+            from .nanotel_final import import_final_population
+            for barcode in barcodes:
+                import_final_population(self, barcode, number)
 
         if not barcodes:
             self.warnings.append("No supported barcode summaries or statistics found; this is not proof of zero reads")
@@ -399,7 +413,7 @@ class ResultImporter:
         validate(run)
         return run
 
-    def filtered_lengths(self, barcode, table):
+    def filtered_lengths(self, barcode, table, length_field="Telomere_length_mismatch", population="post_filtered_telomeres"):
         """Use already-filtered lengths; reject inconsistent partial distributions."""
         # Accept the exported filtered population as-is. Validate every row and compare
         # its size with the source summary before exposing a complete distribution.
@@ -415,7 +429,7 @@ class ResultImporter:
             cleaned.setdefault(read.original_id.split()[0], []).append(read.id)
         for row, ev in table[1]:
             rid = identity(row)
-            length = number(row, "Telomere_length_mismatch", ev, unit="bp")
+            length = number(row, length_field, ev, unit="bp")
             if not rid or rid in seen or length.status != A.AVAILABLE:
                 barcode.metrics[key] = unavailable("Filtered lengths contain missing/duplicate IDs or invalid lengths", A.INVALID)
                 return
@@ -435,8 +449,8 @@ class ResultImporter:
             return
         if not rows and (reported is None or reported.status != A.AVAILABLE):
             return  # Empty fallback sheets may be synthesized by the Excel writer.
-        barcode.metrics[key] = Fact(A.AVAILABLE, rows, unit="bp", population="post_filtered_telomeres",
-            evidence=[Evidence(table[2].id, fields=["read_id", "Telomere_length_mismatch"])])
+        barcode.metrics[key] = Fact(A.AVAILABLE, rows, unit="bp", population=population,
+            evidence=[Evidence(table[2].id, fields=["read_id", length_field])])
 
     def log_counts(self, barcode):
         """Read exact labels emitted by NanoTel, not guessed read counts."""
@@ -464,6 +478,12 @@ class ResultImporter:
         # calls separately. Ordinals distinguish duplicate IDs without silently merging them.
         rid = identity(row)
         metrics = {"read_length": number(row, "sequence_length", ev, unit="bp")}
+        # Serial is NanoTel's original read number (also used in read plots).
+        # Preserve it as a display fact; hashed IDs still identify routes/joins.
+        serial = number(row, "Serial", ev)
+        if serial.status == A.AVAILABLE and (serial.value < 1 or serial.value != int(serial.value)):
+            serial = unavailable("Invalid NanoTel read number", A.INVALID)
+        metrics["read_number"] = serial
         calls = {}
         warnings = []
         for method, suffix in (("exact", ""), ("mismatch", "_mismatch"), ("tvr_inclusive", "_mismatch_tvr")):
@@ -528,6 +548,8 @@ class ResultImporter:
                     "chromosome": chromosome_fact(row.get("alignment_genome"), ev),
                     "arm": unavailable("Head/Tail does not establish a chromosome arm"),
                     **interval}
+                from .reference_annotations import reference_annotation
+                alignment.update(reference_annotation(self, row.get("alignment_genome")))
                 # SAM reserves 255 for unavailable MAPQ; it is not a high-quality
                 # score and must not be plotted or displayed as one.
                 if alignment["mapq"].value == 255:

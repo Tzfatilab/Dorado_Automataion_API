@@ -1,0 +1,3 @@
+barcode,amount_of_telomeres,median_telomere_length,below_2000bp_pct,med_read_len,mean_density,mean_telo_start
+barcode02,12,4896.5,16.7,16096,0.957,85.9
+barcode19,1,12573,0,17449,0.935,90

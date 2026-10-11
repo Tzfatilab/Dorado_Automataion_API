@@ -1,7 +1,7 @@
 """Presentation-only comparisons of exported, post-filtered telomere records."""
 from collections import Counter, defaultdict
 from html import escape
-from statistics import median
+from statistics import median, quantiles
 import re
 
 
@@ -15,6 +15,7 @@ def comparison_data(run):
     Head/Tail is never interpreted as a chromosome arm.
     """
     composition, groups, omitted = [], defaultdict(list), []
+    observations = defaultdict(list)
     for barcode in run.barcodes:
         lengths = barcode.metrics.get("filtered_length_records")
         if not lengths or lengths.status != "available":
@@ -24,13 +25,14 @@ def comparison_data(run):
         rows = lengths.value
         with_tvr, covered, motifs = 0, 0, Counter()
         match_counts = Counter()
+        positions = []
         for item in rows:
             read = by_id.get(item["read_id"])
             if read is None:
                 continue
-            track = read.tracks["motifs"]
-            interval = read.calls["exact"]["interval"]
-            if (track.status == "available" and interval.status == "available"
+            track = read.tracks.get("motifs")
+            interval = read.calls.get("exact", {}).get("interval")
+            if (track and interval and track.status == "available" and interval.status == "available"
                     and "tvr_inclusive" in track.value["methods"]):
                 covered += 1
                 # Count source hits, not covered bases. Only the TVR-inclusive
@@ -41,6 +43,14 @@ def comparison_data(run):
                             and hit["end"] <= interval.value["end"]):
                         label = hit["motif"] + (" (canonical)" if hit["role"] == "canonical" else "")
                         match_counts[label] += 1
+                        # Normalize exported match starts within the exact call.
+                        # This is a presentation axis, not inferred biological polarity.
+                        span = interval.value['end'] - interval.value['start']
+                        serial = read.metrics.get('read_number')
+                        read_label = (f'Read {int(serial.value)}' if serial and serial.status == 'available'
+                                      else read.original_id.split()[0])
+                        positions.append(dict(motif=label, percent=100*(hit['start']-interval.value['start'])/span,
+                            start=hit['start']+1, end=hit['end'], read=read_label))
                 # Count each motif at most once per read; a multi-motif read may
                 # contribute to several motif percentages but only one stack class.
                 found = {hit["motif"] for hit in track.value["matches"]
@@ -66,14 +76,26 @@ def comparison_data(run):
             # chromosome multimapping contributes once; cross-chromosome reads
             # are excluded from this chromosome-specific median.
             if len(chromosomes) == 1:
-                groups[(barcode.label, next(iter(chromosomes)))].append(item["length_bp"])
+                key = (barcode.label, next(iter(chromosomes)))
+                groups[key].append(item["length_bp"])
+                # Retain molecule identity beside each value for read-level clicks.
+                serial = read.metrics.get('read_number')
+                label = (f'Read {int(serial.value)}' if serial and serial.status == 'available'
+                         else read.original_id.split()[0])
+                observations[key].append(dict(read_id=read.id, barcode_id=barcode.id,
+                    label=label, length_kb=item['length_bp']/1000))
         if rows and covered == len(rows):
             composition.append(dict(barcode=barcode.label, total=len(rows), with_tvr=with_tvr,
-                                    without_tvr=len(rows)-with_tvr, motifs=dict(motifs), match_counts=dict(match_counts)))
+                                    without_tvr=len(rows)-with_tvr, motifs=dict(motifs), match_counts=dict(match_counts), positions=positions))
         else:
             omitted.append(barcode.label)
-    cells = [dict(barcode=b, chromosome=c, median_kb=median(values)/1000, reads=len(values))
-             for (b,c),values in groups.items()]
+    # Presentation quartiles use linear interpolation (inclusive/type 7).
+    # Single-read groups have coincident quartiles, not a fabricated spread.
+    cells = []
+    for (b, c), values in groups.items():
+        q1, _, q3 = quantiles(values, n=4, method='inclusive') if len(values) > 1 else [values[0]] * 3
+        cells.append(dict(barcode=b, chromosome=c, median_kb=median(values)/1000,
+                          q1_kb=q1/1000, q3_kb=q3/1000, reads=len(values), observations=observations[(b,c)]))
     return dict(composition=composition, cells=cells, omitted=omitted)
 
 

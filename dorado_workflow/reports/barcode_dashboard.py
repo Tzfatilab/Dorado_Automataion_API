@@ -1,0 +1,144 @@
+"""Offline barcode navigation and summary cards; no new scientific calculations."""
+from html import escape
+from .barcode_comparisons import comparison_data
+from .barcode_composition import composition_section
+from .barcode_positions import positions_section
+from .barcode_chromosomes import chromosome_section
+from .barcode_reads import reads_section, READ_SCRIPT
+
+
+def barcode_views(run, icons, histograms=None):
+    """Render six cards per barcode from exported facts and existing aggregates.
+
+    TVR counts require complete motif coverage of the post-filtered population.
+    Chromosome counts use the same unambiguous assignments as the heatmap.
+    Missing coverage remains unavailable, never zero or 100% canonical.
+    """
+    comparisons = comparison_data(run)
+    histograms = histograms or {}
+    composition = {row['barcode']: row for row in comparisons['composition']}
+    pages, links = [], []
+    for barcode in run.barcodes:
+        label = barcode.label.replace('barcode', 'Barcode ')
+        route = '#/barcode/' + barcode.id
+        links.append(f'<a class="barcode-link" href="{route}">{escape(label)}</a>')
+        def value(key):
+            fact = barcode.metrics.get(key)
+            return fact.value if fact and fact.status == 'available' else None
+        total, telomeric = value('total_reads'), value('amount_of_telomeres')
+        med = value('median_telomere_length')
+        motifs = composition.get(barcode.label)
+        chromosomes = {c['chromosome'] for c in comparisons['cells'] if c['barcode'] == barcode.label}
+        percent = f'{100*telomeric/total:.1f}% of input reads' if total and telomeric is not None and telomeric <= total else 'Post-filtered reads'
+        tvr_note = (f"{100*motifs['with_tvr']/motifs['total']:.1f}% of post-filtered reads" if motifs else 'Complete motif exports required')
+        specs = [
+            ('Total reads', total, 'Input reads', icons[0]),
+            ('Telomeric reads', telomeric, percent, icons[2]),
+            ('Median telomere length', med, 'Post-filtered reads', icons[4]),
+            ('Reads with TVRs', motifs['with_tvr'] if motifs else None, tvr_note,
+             '<path d="M8 40V23M19 40V8M30 40V17M41 40V4"/>'),
+            ('Distinct TVR motifs', len(motifs['motifs']) if motifs else None,
+             'Noncanonical motifs inside exact telomeres',
+             '<circle cx="24" cy="10" r="6"/><circle cx="10" cy="36" r="6"/><circle cx="38" cy="36" r="6"/><path d="m21 16-8 14m14-14 8 14M16 36h16"/>'),
+            ('Chromosomes detected', len(chromosomes) if chromosomes else None,
+             'Unambiguous mapped post-filtered reads', icons[5]),
+        ]
+        cards = []
+        for index, (title, number, note, icon) in enumerate(specs):
+            display = 'Unavailable' if number is None else f'{number/1000:,.2f} kb' if index == 2 else f'{number:,}'
+            cards.append(f'<article class="stat stat-{index}"><svg aria-hidden="true" viewBox="0 0 48 48">{icon}</svg>'
+                f'<div><h3>{title}</h3><strong class="{"missing" if number is None else ""}">{display}</strong><p>{escape(note)}</p></div></article>')
+        pages.append(f'<div class="barcode-page" id="{barcode.id}" data-label="{escape(label, quote=True)}" data-chart-label="{escape(barcode.label.replace("barcode", "BC"), quote=True)}" hidden>'
+            f'<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#/">All Barcodes</a> <span>› {escape(label)}</span></nav>'
+            f'<section><h2><span class="number">1</span>Key Statistics ({escape(label)})</h2><div class="stats">{"".join(cards)}</div></section>'
+            '<p class="note">TVR counts use exported noncanonical matches inside exact telomere intervals of post-filtered reads. Missing details remain unavailable.</p>'
+            + histograms.get(barcode.id, '') + '<div class="charts">' + composition_section(motifs)
+            + positions_section(motifs) + '</div>'
+            + chromosome_section([c for c in comparisons['cells'] if c['barcode'] == barcode.label])
+            + reads_section(barcode) + '</div>')
+    navigation = '<nav class="barcode-navigation" aria-label="Choose a barcode"><strong>Explore a barcode</strong>' + ''.join(links) + '</nav>'
+    return navigation, ''.join(pages)
+
+
+# Fragment routing requires no server, fetch requests or external assets.
+# Labels are read from escaped DOM attributes rather than interpolated into JS.
+ROUTER = READ_SCRIPT + """<script>
+(() => {
+  const overview = document.getElementById('run-overview');
+  const pages = [...document.querySelectorAll('.barcode-page')];
+  const title = document.querySelector('header h1');
+  const missing = document.getElementById('unknown-barcode');
+  function route() {
+    const hash = location.hash || '#/';
+    const page = pages.find(p => hash === '#/barcode/' + p.id);
+    overview.hidden = hash !== '#/';
+    pages.forEach(p => p.hidden = p !== page);
+    const readVisible = window.showReadDetail(hash);
+    missing.hidden = hash === '#/' || !!page || readVisible;
+    if (!readVisible) title.textContent = 'Telomere Analysis Summary - ' + (page ? page.dataset.label : 'All Barcodes');
+    document.title = title.textContent;
+    // Render the source-saved histogram only once its barcode is visible, so
+    // Plotly measures the correct width. No bins or scientific values change.
+    if (page) page.querySelectorAll('.saved-histogram').forEach(plot => {
+      if (plot.dataset.started) { if (plot._fullLayout) Plotly.Plots.resize(plot); return; }
+      plot.dataset.started = 'true';
+      let figure;
+      try { figure = JSON.parse(plot.nextElementSibling.textContent); }
+      catch (_) { plot.textContent = 'Saved chart data is invalid.'; return; }
+      // Move only the existing count/percentage menu into the section header.
+      // Its saved update arguments supply every value: no binning or conversion.
+      const menu = (figure.layout.updatemenus || []).find(m =>
+        m.buttons && ['Read count', 'Percentage'].every(label =>
+          m.buttons.some(b => b.label === label && b.method === 'update')));
+      const controls = plot.closest('section').querySelector('.histogram-controls');
+      if (menu && controls) menu.visible = false;
+      Plotly.newPlot(plot, figure.data, figure.layout, {...figure.config, responsive:true})
+        .then(() => {
+          plot.on('plotly_click', event => {
+            const point = event.points[0];
+            if (point && point.data.meta === 'read-links' && point.customdata) {
+              location.hash = '#/barcode/' + point.customdata[0] + '/read/' + point.customdata[1];
+            }
+          });
+          if (!menu || !controls) return;
+          menu.buttons.forEach((saved, index) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = saved.label;
+            button.setAttribute('aria-pressed', String(index === (menu.active ?? 0)));
+            button.addEventListener('click', () => {
+              Plotly.update(plot, ...saved.args).then(() => {
+                controls.querySelectorAll('button').forEach(b =>
+                  b.setAttribute('aria-pressed', String(b === button)));
+              });
+            });
+            controls.appendChild(button);
+          });
+        })
+        .catch(() => { delete plot.dataset.started; plot.textContent = 'This chart could not be displayed. Return to this barcode to retry.'; });
+    });
+    if (!overview.hidden) overview.querySelectorAll('.js-plotly-plot').forEach(p => Plotly.Plots.resize(p));
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll('.js-plotly-plot').forEach(plot => {
+    plot.on('plotly_click', event => {
+      const point = event.points[0];
+      if (!point) return;
+      // Box-summary clicks have no individual observation index. Only a dot
+      // with a joined source read may navigate to the read dashboard.
+      if (point.data.type === 'box' && Number.isInteger(point.pointNumber)) {
+        const identity = (point.data.customdata || [])[point.pointNumber];
+        if (identity && identity[1]) {
+          location.hash = '#/barcode/' + identity[0] + '/read/' + identity[1];
+          return;
+        }
+      }
+      const label = point.data.type === 'heatmap' ? point.y : point.data.type === 'box' ? point.data.name : point.x;
+      const page = pages.find(p => p.dataset.chartLabel === label);
+      if (page) location.hash = '#/barcode/' + page.id;
+    });
+  });
+  window.addEventListener('hashchange', route);
+  route();
+})();
+</script>"""

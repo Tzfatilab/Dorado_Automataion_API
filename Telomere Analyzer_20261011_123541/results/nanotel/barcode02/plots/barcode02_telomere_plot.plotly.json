@@ -1,0 +1,199 @@
+{
+  "visdat": {
+    "9a8c59a85315": ["function () ", "plotlyVisDat"]
+  },
+  "cur_data": "9a8c59a85315",
+  "attrs": {
+    "9a8c59a85315": {
+      "alpha_stroke": 1,
+      "sizes": [10, 100],
+      "spans": [1, 20],
+      "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+      "y": [35551, 27986, 27722, 25788, 17729, 17200, 14992, 12375, 11955, 8641, 7213, 7213, 2151],
+      "type": "scattergl",
+      "mode": "lines",
+      "name": "Read Length",
+      "line": {
+        "color": "#E8735A"
+      },
+      "text": ["Read: e6d7969a-b0b4-4f2b-950b-723dd0d1af5d<br>Rank: 1<br>Read length: 35,551 bp<br>Telomere length (exact): 6,326 bp<br>Running median: 6,326.0 bp<br>Edge filter: Retained", "Read: 43c63f0a-9056-4164-999b-2a878765a0de<br>Rank: 2<br>Read length: 27,986 bp<br>Telomere length (exact): 7,267 bp<br>Running median: 6,796.5 bp<br>Edge filter: Retained", "Read: 9be37c66-e310-4fc9-8d33-525b9a066d47<br>Rank: 3<br>Read length: 27,722 bp<br>Telomere length (exact): 5,479 bp<br>Running median: 6,326.0 bp<br>Edge filter: Retained", "Read: fe3dc69b-9d4d-49c3-b9e9-2295de787e23<br>Rank: 4<br>Read length: 25,788 bp<br>Telomere length (exact): 4,518 bp<br>Running median: 5,902.5 bp<br>Edge filter: Retained", "Read: 3e9e8af4-480b-40bf-b6de-19b5fcb75861<br>Rank: 5<br>Read length: 17,729 bp<br>Telomere length (exact): 2,626 bp<br>Running median: 5,479.0 bp<br>Edge filter: Retained", "Read: ce85f290-d039-4909-b3fa-fbae8e2d1c08<br>Rank: 6<br>Read length: 17,200 bp<br>Telomere length (exact): 1,588 bp<br>Running median: 4,998.5 bp<br>Edge filter: Retained", "Read: 280b4226-209c-4aa3-bd7d-373b76e44869<br>Rank: 7<br>Read length: 14,992 bp<br>Telomere length (exact): 4,381 bp<br>Running median: 4,518.0 bp<br>Edge filter: Retained", "Read: f3ca94c2-57d0-4cce-ad6f-c33b7d32e905<br>Rank: 8<br>Read length: 12,375 bp<br>Telomere length (exact): 1,978 bp<br>Running median: 4,449.5 bp<br>Edge filter: Retained", "Read: cc0648cf-c603-4bb4-b034-01c81bc7da05<br>Rank: 9<br>Read length: 11,955 bp<br>Telomere length (exact): 2,854 bp<br>Running median: 4,381.0 bp<br>Edge filter: Retained", "Read: 52d9aed0-79c3-4e32-bccd-e13d6763316e<br>Rank: 10<br>Read length: 8,641 bp<br>Telomere length (exact): 6,560 bp<br>Running median: 4,449.5 bp<br>Edge filter: Retained", "Read: 02c45ec5-466f-4d2b-88f4-9d8c47ed72ee<br>Rank: 11<br>Read length: 7,213 bp<br>Telomere length (exact): 5,275 bp<br>Running median: 4,518.0 bp<br>Edge filter: Retained", "Read: 413a5261-19cf-4e46-b9e9-f6a287131a1b<br>Rank: 12<br>Read length: 7,213 bp<br>Telomere length (exact): 7,112 bp<br>Running median: 4,896.5 bp<br>Edge filter: Retained", "Read: 700a243b-9ed0-4a66-8779-4775a48c35b2<br>Rank: 13<br>Read length: 2,151 bp<br>Telomere length (exact): 2,053 bp<br>Running median: 4,518.0 bp<br>Edge filter: Removed"],
+      "hovertemplate": "%{text}<extra>%{fullData.name}<\/extra>",
+      "inherit": true
+    },
+    "9a8c59a85315.1": {
+      "alpha_stroke": 1,
+      "sizes": [10, 100],
+      "spans": [1, 20],
+      "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+      "y": [6326, 7267, 5479, 4518, 2626, 1588, 4381, 1978, 2854, 6560, 5275, 7112, 2053],
+      "type": "scattergl",
+      "mode": "lines",
+      "name": "Telomere Length (exact)",
+      "line": {
+        "color": "#228B22"
+      },
+      "text": ["Read: e6d7969a-b0b4-4f2b-950b-723dd0d1af5d<br>Rank: 1<br>Read length: 35,551 bp<br>Telomere length (exact): 6,326 bp<br>Running median: 6,326.0 bp<br>Edge filter: Retained", "Read: 43c63f0a-9056-4164-999b-2a878765a0de<br>Rank: 2<br>Read length: 27,986 bp<br>Telomere length (exact): 7,267 bp<br>Running median: 6,796.5 bp<br>Edge filter: Retained", "Read: 9be37c66-e310-4fc9-8d33-525b9a066d47<br>Rank: 3<br>Read length: 27,722 bp<br>Telomere length (exact): 5,479 bp<br>Running median: 6,326.0 bp<br>Edge filter: Retained", "Read: fe3dc69b-9d4d-49c3-b9e9-2295de787e23<br>Rank: 4<br>Read length: 25,788 bp<br>Telomere length (exact): 4,518 bp<br>Running median: 5,902.5 bp<br>Edge filter: Retained", "Read: 3e9e8af4-480b-40bf-b6de-19b5fcb75861<br>Rank: 5<br>Read length: 17,729 bp<br>Telomere length (exact): 2,626 bp<br>Running median: 5,479.0 bp<br>Edge filter: Retained", "Read: ce85f290-d039-4909-b3fa-fbae8e2d1c08<br>Rank: 6<br>Read length: 17,200 bp<br>Telomere length (exact): 1,588 bp<br>Running median: 4,998.5 bp<br>Edge filter: Retained", "Read: 280b4226-209c-4aa3-bd7d-373b76e44869<br>Rank: 7<br>Read length: 14,992 bp<br>Telomere length (exact): 4,381 bp<br>Running median: 4,518.0 bp<br>Edge filter: Retained", "Read: f3ca94c2-57d0-4cce-ad6f-c33b7d32e905<br>Rank: 8<br>Read length: 12,375 bp<br>Telomere length (exact): 1,978 bp<br>Running median: 4,449.5 bp<br>Edge filter: Retained", "Read: cc0648cf-c603-4bb4-b034-01c81bc7da05<br>Rank: 9<br>Read length: 11,955 bp<br>Telomere length (exact): 2,854 bp<br>Running median: 4,381.0 bp<br>Edge filter: Retained", "Read: 52d9aed0-79c3-4e32-bccd-e13d6763316e<br>Rank: 10<br>Read length: 8,641 bp<br>Telomere length (exact): 6,560 bp<br>Running median: 4,449.5 bp<br>Edge filter: Retained", "Read: 02c45ec5-466f-4d2b-88f4-9d8c47ed72ee<br>Rank: 11<br>Read length: 7,213 bp<br>Telomere length (exact): 5,275 bp<br>Running median: 4,518.0 bp<br>Edge filter: Retained", "Read: 413a5261-19cf-4e46-b9e9-f6a287131a1b<br>Rank: 12<br>Read length: 7,213 bp<br>Telomere length (exact): 7,112 bp<br>Running median: 4,896.5 bp<br>Edge filter: Retained", "Read: 700a243b-9ed0-4a66-8779-4775a48c35b2<br>Rank: 13<br>Read length: 2,151 bp<br>Telomere length (exact): 2,053 bp<br>Running median: 4,518.0 bp<br>Edge filter: Removed"],
+      "hovertemplate": "%{text}<extra>%{fullData.name}<\/extra>",
+      "inherit": true
+    },
+    "9a8c59a85315.2": {
+      "alpha_stroke": 1,
+      "sizes": [10, 100],
+      "spans": [1, 20],
+      "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+      "y": [6326, 6796.5, 6326, 5902.5, 5479, 4998.5, 4518, 4449.5, 4381, 4449.5, 4518, 4896.5, 4518],
+      "type": "scattergl",
+      "mode": "lines",
+      "name": "Running Median Telomere Length",
+      "line": {
+        "color": "#4169E1"
+      },
+      "text": ["Read: e6d7969a-b0b4-4f2b-950b-723dd0d1af5d<br>Rank: 1<br>Read length: 35,551 bp<br>Telomere length (exact): 6,326 bp<br>Running median: 6,326.0 bp<br>Edge filter: Retained", "Read: 43c63f0a-9056-4164-999b-2a878765a0de<br>Rank: 2<br>Read length: 27,986 bp<br>Telomere length (exact): 7,267 bp<br>Running median: 6,796.5 bp<br>Edge filter: Retained", "Read: 9be37c66-e310-4fc9-8d33-525b9a066d47<br>Rank: 3<br>Read length: 27,722 bp<br>Telomere length (exact): 5,479 bp<br>Running median: 6,326.0 bp<br>Edge filter: Retained", "Read: fe3dc69b-9d4d-49c3-b9e9-2295de787e23<br>Rank: 4<br>Read length: 25,788 bp<br>Telomere length (exact): 4,518 bp<br>Running median: 5,902.5 bp<br>Edge filter: Retained", "Read: 3e9e8af4-480b-40bf-b6de-19b5fcb75861<br>Rank: 5<br>Read length: 17,729 bp<br>Telomere length (exact): 2,626 bp<br>Running median: 5,479.0 bp<br>Edge filter: Retained", "Read: ce85f290-d039-4909-b3fa-fbae8e2d1c08<br>Rank: 6<br>Read length: 17,200 bp<br>Telomere length (exact): 1,588 bp<br>Running median: 4,998.5 bp<br>Edge filter: Retained", "Read: 280b4226-209c-4aa3-bd7d-373b76e44869<br>Rank: 7<br>Read length: 14,992 bp<br>Telomere length (exact): 4,381 bp<br>Running median: 4,518.0 bp<br>Edge filter: Retained", "Read: f3ca94c2-57d0-4cce-ad6f-c33b7d32e905<br>Rank: 8<br>Read length: 12,375 bp<br>Telomere length (exact): 1,978 bp<br>Running median: 4,449.5 bp<br>Edge filter: Retained", "Read: cc0648cf-c603-4bb4-b034-01c81bc7da05<br>Rank: 9<br>Read length: 11,955 bp<br>Telomere length (exact): 2,854 bp<br>Running median: 4,381.0 bp<br>Edge filter: Retained", "Read: 52d9aed0-79c3-4e32-bccd-e13d6763316e<br>Rank: 10<br>Read length: 8,641 bp<br>Telomere length (exact): 6,560 bp<br>Running median: 4,449.5 bp<br>Edge filter: Retained", "Read: 02c45ec5-466f-4d2b-88f4-9d8c47ed72ee<br>Rank: 11<br>Read length: 7,213 bp<br>Telomere length (exact): 5,275 bp<br>Running median: 4,518.0 bp<br>Edge filter: Retained", "Read: 413a5261-19cf-4e46-b9e9-f6a287131a1b<br>Rank: 12<br>Read length: 7,213 bp<br>Telomere length (exact): 7,112 bp<br>Running median: 4,896.5 bp<br>Edge filter: Retained", "Read: 700a243b-9ed0-4a66-8779-4775a48c35b2<br>Rank: 13<br>Read length: 2,151 bp<br>Telomere length (exact): 2,053 bp<br>Running median: 4,518.0 bp<br>Edge filter: Removed"],
+      "hovertemplate": "%{text}<extra>%{fullData.name}<\/extra>",
+      "inherit": true
+    }
+  },
+  "layout": {
+    "margin": {
+      "b": 110,
+      "l": 60,
+      "t": 95,
+      "r": 10
+    },
+    "title": {
+      "text": "Telomere and Read Lengths - Barcode 02<br><sup>Density/start-filtered reads, before edge filtering<\/sup>"
+    },
+    "xaxis": {
+      "domain": [0, 1],
+      "automargin": true,
+      "title": "Read rank (longest to shortest)",
+      "tickformat": ",d"
+    },
+    "yaxis": {
+      "domain": [0, 1],
+      "automargin": true,
+      "title": "Length (bp)",
+      "tickformat": ",d",
+      "rangemode": "tozero"
+    },
+    "legend": {
+      "orientation": "h",
+      "y": -0.17999999999999999
+    },
+    "dragmode": "zoom",
+    "plot_bgcolor": "white",
+    "paper_bgcolor": "white",
+    "hovermode": "closest",
+    "showlegend": true
+  },
+  "source": "A",
+  "config": {
+    "modeBarButtonsToAdd": ["hoverclosest", "hovercompare"],
+    "showSendToCloud": false,
+    "displaylogo": false,
+    "responsive": true,
+    "toImageButtonOptions": {
+      "format": "png",
+      "filename": "barcode02_telomere_plot",
+      "width": 1800,
+      "height": 900,
+      "scale": 1
+    }
+  },
+  "data": [
+    {
+      "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+      "y": [35551, 27986, 27722, 25788, 17729, 17200, 14992, 12375, 11955, 8641, 7213, 7213, 2151],
+      "type": "scattergl",
+      "mode": "lines",
+      "name": "Read Length",
+      "line": {
+        "color": "#E8735A"
+      },
+      "text": ["Read: e6d7969a-b0b4-4f2b-950b-723dd0d1af5d<br>Rank: 1<br>Read length: 35,551 bp<br>Telomere length (exact): 6,326 bp<br>Running median: 6,326.0 bp<br>Edge filter: Retained", "Read: 43c63f0a-9056-4164-999b-2a878765a0de<br>Rank: 2<br>Read length: 27,986 bp<br>Telomere length (exact): 7,267 bp<br>Running median: 6,796.5 bp<br>Edge filter: Retained", "Read: 9be37c66-e310-4fc9-8d33-525b9a066d47<br>Rank: 3<br>Read length: 27,722 bp<br>Telomere length (exact): 5,479 bp<br>Running median: 6,326.0 bp<br>Edge filter: Retained", "Read: fe3dc69b-9d4d-49c3-b9e9-2295de787e23<br>Rank: 4<br>Read length: 25,788 bp<br>Telomere length (exact): 4,518 bp<br>Running median: 5,902.5 bp<br>Edge filter: Retained", "Read: 3e9e8af4-480b-40bf-b6de-19b5fcb75861<br>Rank: 5<br>Read length: 17,729 bp<br>Telomere length (exact): 2,626 bp<br>Running median: 5,479.0 bp<br>Edge filter: Retained", "Read: ce85f290-d039-4909-b3fa-fbae8e2d1c08<br>Rank: 6<br>Read length: 17,200 bp<br>Telomere length (exact): 1,588 bp<br>Running median: 4,998.5 bp<br>Edge filter: Retained", "Read: 280b4226-209c-4aa3-bd7d-373b76e44869<br>Rank: 7<br>Read length: 14,992 bp<br>Telomere length (exact): 4,381 bp<br>Running median: 4,518.0 bp<br>Edge filter: Retained", "Read: f3ca94c2-57d0-4cce-ad6f-c33b7d32e905<br>Rank: 8<br>Read length: 12,375 bp<br>Telomere length (exact): 1,978 bp<br>Running median: 4,449.5 bp<br>Edge filter: Retained", "Read: cc0648cf-c603-4bb4-b034-01c81bc7da05<br>Rank: 9<br>Read length: 11,955 bp<br>Telomere length (exact): 2,854 bp<br>Running median: 4,381.0 bp<br>Edge filter: Retained", "Read: 52d9aed0-79c3-4e32-bccd-e13d6763316e<br>Rank: 10<br>Read length: 8,641 bp<br>Telomere length (exact): 6,560 bp<br>Running median: 4,449.5 bp<br>Edge filter: Retained", "Read: 02c45ec5-466f-4d2b-88f4-9d8c47ed72ee<br>Rank: 11<br>Read length: 7,213 bp<br>Telomere length (exact): 5,275 bp<br>Running median: 4,518.0 bp<br>Edge filter: Retained", "Read: 413a5261-19cf-4e46-b9e9-f6a287131a1b<br>Rank: 12<br>Read length: 7,213 bp<br>Telomere length (exact): 7,112 bp<br>Running median: 4,896.5 bp<br>Edge filter: Retained", "Read: 700a243b-9ed0-4a66-8779-4775a48c35b2<br>Rank: 13<br>Read length: 2,151 bp<br>Telomere length (exact): 2,053 bp<br>Running median: 4,518.0 bp<br>Edge filter: Removed"],
+      "hovertemplate": ["%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>"],
+      "marker": {
+        "color": "rgba(31,119,180,1)",
+        "line": {
+          "color": "rgba(31,119,180,1)"
+        }
+      },
+      "error_y": {
+        "color": "rgba(31,119,180,1)"
+      },
+      "error_x": {
+        "color": "rgba(31,119,180,1)"
+      },
+      "xaxis": "x",
+      "yaxis": "y",
+      "frame": null
+    },
+    {
+      "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+      "y": [6326, 7267, 5479, 4518, 2626, 1588, 4381, 1978, 2854, 6560, 5275, 7112, 2053],
+      "type": "scattergl",
+      "mode": "lines",
+      "name": "Telomere Length (exact)",
+      "line": {
+        "color": "#228B22"
+      },
+      "text": ["Read: e6d7969a-b0b4-4f2b-950b-723dd0d1af5d<br>Rank: 1<br>Read length: 35,551 bp<br>Telomere length (exact): 6,326 bp<br>Running median: 6,326.0 bp<br>Edge filter: Retained", "Read: 43c63f0a-9056-4164-999b-2a878765a0de<br>Rank: 2<br>Read length: 27,986 bp<br>Telomere length (exact): 7,267 bp<br>Running median: 6,796.5 bp<br>Edge filter: Retained", "Read: 9be37c66-e310-4fc9-8d33-525b9a066d47<br>Rank: 3<br>Read length: 27,722 bp<br>Telomere length (exact): 5,479 bp<br>Running median: 6,326.0 bp<br>Edge filter: Retained", "Read: fe3dc69b-9d4d-49c3-b9e9-2295de787e23<br>Rank: 4<br>Read length: 25,788 bp<br>Telomere length (exact): 4,518 bp<br>Running median: 5,902.5 bp<br>Edge filter: Retained", "Read: 3e9e8af4-480b-40bf-b6de-19b5fcb75861<br>Rank: 5<br>Read length: 17,729 bp<br>Telomere length (exact): 2,626 bp<br>Running median: 5,479.0 bp<br>Edge filter: Retained", "Read: ce85f290-d039-4909-b3fa-fbae8e2d1c08<br>Rank: 6<br>Read length: 17,200 bp<br>Telomere length (exact): 1,588 bp<br>Running median: 4,998.5 bp<br>Edge filter: Retained", "Read: 280b4226-209c-4aa3-bd7d-373b76e44869<br>Rank: 7<br>Read length: 14,992 bp<br>Telomere length (exact): 4,381 bp<br>Running median: 4,518.0 bp<br>Edge filter: Retained", "Read: f3ca94c2-57d0-4cce-ad6f-c33b7d32e905<br>Rank: 8<br>Read length: 12,375 bp<br>Telomere length (exact): 1,978 bp<br>Running median: 4,449.5 bp<br>Edge filter: Retained", "Read: cc0648cf-c603-4bb4-b034-01c81bc7da05<br>Rank: 9<br>Read length: 11,955 bp<br>Telomere length (exact): 2,854 bp<br>Running median: 4,381.0 bp<br>Edge filter: Retained", "Read: 52d9aed0-79c3-4e32-bccd-e13d6763316e<br>Rank: 10<br>Read length: 8,641 bp<br>Telomere length (exact): 6,560 bp<br>Running median: 4,449.5 bp<br>Edge filter: Retained", "Read: 02c45ec5-466f-4d2b-88f4-9d8c47ed72ee<br>Rank: 11<br>Read length: 7,213 bp<br>Telomere length (exact): 5,275 bp<br>Running median: 4,518.0 bp<br>Edge filter: Retained", "Read: 413a5261-19cf-4e46-b9e9-f6a287131a1b<br>Rank: 12<br>Read length: 7,213 bp<br>Telomere length (exact): 7,112 bp<br>Running median: 4,896.5 bp<br>Edge filter: Retained", "Read: 700a243b-9ed0-4a66-8779-4775a48c35b2<br>Rank: 13<br>Read length: 2,151 bp<br>Telomere length (exact): 2,053 bp<br>Running median: 4,518.0 bp<br>Edge filter: Removed"],
+      "hovertemplate": ["%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>"],
+      "marker": {
+        "color": "rgba(255,127,14,1)",
+        "line": {
+          "color": "rgba(255,127,14,1)"
+        }
+      },
+      "error_y": {
+        "color": "rgba(255,127,14,1)"
+      },
+      "error_x": {
+        "color": "rgba(255,127,14,1)"
+      },
+      "xaxis": "x",
+      "yaxis": "y",
+      "frame": null
+    },
+    {
+      "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+      "y": [6326, 6796.5, 6326, 5902.5, 5479, 4998.5, 4518, 4449.5, 4381, 4449.5, 4518, 4896.5, 4518],
+      "type": "scattergl",
+      "mode": "lines",
+      "name": "Running Median Telomere Length",
+      "line": {
+        "color": "#4169E1"
+      },
+      "text": ["Read: e6d7969a-b0b4-4f2b-950b-723dd0d1af5d<br>Rank: 1<br>Read length: 35,551 bp<br>Telomere length (exact): 6,326 bp<br>Running median: 6,326.0 bp<br>Edge filter: Retained", "Read: 43c63f0a-9056-4164-999b-2a878765a0de<br>Rank: 2<br>Read length: 27,986 bp<br>Telomere length (exact): 7,267 bp<br>Running median: 6,796.5 bp<br>Edge filter: Retained", "Read: 9be37c66-e310-4fc9-8d33-525b9a066d47<br>Rank: 3<br>Read length: 27,722 bp<br>Telomere length (exact): 5,479 bp<br>Running median: 6,326.0 bp<br>Edge filter: Retained", "Read: fe3dc69b-9d4d-49c3-b9e9-2295de787e23<br>Rank: 4<br>Read length: 25,788 bp<br>Telomere length (exact): 4,518 bp<br>Running median: 5,902.5 bp<br>Edge filter: Retained", "Read: 3e9e8af4-480b-40bf-b6de-19b5fcb75861<br>Rank: 5<br>Read length: 17,729 bp<br>Telomere length (exact): 2,626 bp<br>Running median: 5,479.0 bp<br>Edge filter: Retained", "Read: ce85f290-d039-4909-b3fa-fbae8e2d1c08<br>Rank: 6<br>Read length: 17,200 bp<br>Telomere length (exact): 1,588 bp<br>Running median: 4,998.5 bp<br>Edge filter: Retained", "Read: 280b4226-209c-4aa3-bd7d-373b76e44869<br>Rank: 7<br>Read length: 14,992 bp<br>Telomere length (exact): 4,381 bp<br>Running median: 4,518.0 bp<br>Edge filter: Retained", "Read: f3ca94c2-57d0-4cce-ad6f-c33b7d32e905<br>Rank: 8<br>Read length: 12,375 bp<br>Telomere length (exact): 1,978 bp<br>Running median: 4,449.5 bp<br>Edge filter: Retained", "Read: cc0648cf-c603-4bb4-b034-01c81bc7da05<br>Rank: 9<br>Read length: 11,955 bp<br>Telomere length (exact): 2,854 bp<br>Running median: 4,381.0 bp<br>Edge filter: Retained", "Read: 52d9aed0-79c3-4e32-bccd-e13d6763316e<br>Rank: 10<br>Read length: 8,641 bp<br>Telomere length (exact): 6,560 bp<br>Running median: 4,449.5 bp<br>Edge filter: Retained", "Read: 02c45ec5-466f-4d2b-88f4-9d8c47ed72ee<br>Rank: 11<br>Read length: 7,213 bp<br>Telomere length (exact): 5,275 bp<br>Running median: 4,518.0 bp<br>Edge filter: Retained", "Read: 413a5261-19cf-4e46-b9e9-f6a287131a1b<br>Rank: 12<br>Read length: 7,213 bp<br>Telomere length (exact): 7,112 bp<br>Running median: 4,896.5 bp<br>Edge filter: Retained", "Read: 700a243b-9ed0-4a66-8779-4775a48c35b2<br>Rank: 13<br>Read length: 2,151 bp<br>Telomere length (exact): 2,053 bp<br>Running median: 4,518.0 bp<br>Edge filter: Removed"],
+      "hovertemplate": ["%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>", "%{text}<extra>%{fullData.name}<\/extra>"],
+      "marker": {
+        "color": "rgba(44,160,44,1)",
+        "line": {
+          "color": "rgba(44,160,44,1)"
+        }
+      },
+      "error_y": {
+        "color": "rgba(44,160,44,1)"
+      },
+      "error_x": {
+        "color": "rgba(44,160,44,1)"
+      },
+      "xaxis": "x",
+      "yaxis": "y",
+      "frame": null
+    }
+  ],
+  "highlight": {
+    "on": "plotly_click",
+    "persistent": false,
+    "dynamic": false,
+    "selectize": false,
+    "opacityDim": 0.20000000000000001,
+    "selected": {
+      "opacity": 1
+    },
+    "debounce": 0
+  },
+  "shinyEvents": ["plotly_hover", "plotly_click", "plotly_selected", "plotly_relayout", "plotly_brushed", "plotly_brushing", "plotly_clickannotation", "plotly_doubleclick", "plotly_deselect", "plotly_afterplot", "plotly_sunburstclick"],
+  "base_url": "https://plot.ly"
+}

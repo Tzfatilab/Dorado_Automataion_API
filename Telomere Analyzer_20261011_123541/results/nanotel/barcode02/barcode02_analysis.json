@@ -1,0 +1,15 @@
+{
+  "barcode": "barcode02",
+  "number_of_telomeric_reads_post_filtration": 12,
+  "complete_telomeric_reads": 11,
+  "incomplete_telomeric_reads": 1,
+  "censoring_rate_pct": 8.33333333333333,
+  "median_telomeric_length_post_filtration_bp": 4896.5,
+  "short_telomere_threshold_bp": 2000,
+  "telomeres_shorter_than_threshold_pct": 16.7,
+  "km_median_telomeric_length_bp": null,
+  "km_median_95_ci_lower_bp": null,
+  "km_median_95_ci_upper_bp": null,
+  "km_whole_relative_ci_width_pct": 74.5781990521327,
+  "km_reporting_reason": "The KM estimate is not reported because its confidence interval is too wide (74.6%; reporting limit 20.0%). Consider additional sequencing."
+}

@@ -470,24 +470,11 @@ save_analysis_plot <- function(plot, prefix) {
     toImageButtonOptions = list(format = "png", filename = basename(prefix),
                                width = 1800, height = 900, scale = 1))
   specification <- as.character(plotly::plotly_json(plot, jsonedit = FALSE))
-  writeLines(specification, paste0(prefix, ".plotly.json"), useBytes = TRUE)
-  # For GUI/HTML developers: reuse this specification's data/layout/config with
-  # Plotly.newPlot. The standalone viewer is a plot artifact, not the report UI.
-  # Embed the installed Plotly bundle for offline use, without a Pandoc dependency.
-  bundle <- system.file("htmlwidgets/lib/plotlyjs/plotly-latest.min.js", package = "plotly")
-  if (!nzchar(bundle)) stop("Plotly's JavaScript bundle could not be found.")
-  javascript <- jsonlite::base64_enc(readBin(bundle, "raw", n = file.info(bundle)$size))
-  safe_specification <- gsub("</", "<\\/", specification, fixed = TRUE)
-  writeLines(c(
-    "<!doctype html><html><head><meta charset='utf-8'>",
-    "<meta name='viewport' content='width=device-width, initial-scale=1'>",
-    paste0("<title>", htmltools::htmlEscape(basename(prefix)), "</title>"),
-    "<style>html,body{margin:0;height:100%;font-family:Arial,sans-serif}#plot{width:100%;height:100%;min-height:620px}</style>",
-    paste0("<script src='data:application/javascript;base64,", javascript, "'></script>"),
-    "</head><body><div id='plot'></div><script type='application/json' id='figure'>",
-    safe_specification,
-    "</script><script>const f=JSON.parse(document.getElementById('figure').textContent);Plotly.newPlot('plot',f.data,f.layout,f.config);</script></body></html>"
-  ), paste0(prefix, ".html"), useBytes = TRUE)
+  # Keep only the source specification needed to regenerate the dashboard.
+  details <- file.path(dirname(prefix), "report_details")
+  dir.create(details, recursive=TRUE, showWarnings=FALSE)
+  writeLines(specification, file.path(details, paste0(basename(prefix), ".plotly.json")), useBytes = TRUE)
+
 }
 
 save_telomere_histogram_png <- function(histogram, path, barcode, mismatch_allowance,
@@ -822,10 +809,39 @@ get_density_iranges <- function(sequence, patterns, with_mismatch = FALSE, tvr_p
   return(list(total_density, mp_all, motif_matches=motif_matches))
 }
 
+# Versioned report measurements over existing calls/hits; no additional search,
+# boundary detection or filtering. Coordinates remain 1-based inclusive.
+report_repeat_coverage <- function(read_id, boundary, hits) {
+  if (length(boundary) != 1L || width(boundary) <= 0L) return(NULL)
+  clipped_union <- function(role) {
+    chosen <- hits[hits$role == role, , drop=FALSE]
+    if (!nrow(chosen)) return(IRanges::IRanges())
+    ranges <- IRanges::IRanges(start=chosen$start, end=chosen$end)
+    IRanges::reduce(IRanges::intersect(ranges, boundary))
+  }
+  canonical <- clipped_union("canonical")
+  tvr <- clipped_union("tvr")
+  # Each category is a union: overlapping hits never inflate its coverage.
+  # Categories may overlap each other; export that ambiguity, do not assign it.
+  canonical_bp <- sum(width(canonical)); tvr_bp <- sum(width(tvr))
+  overlap_bp <- sum(width(IRanges::intersect(canonical, tvr)))
+  denominator <- as.integer(width(boundary))
+  list(schema_version=1L, definition="union_coverage_exact_interval_v1",
+    read_id=read_id, method="tvr_inclusive", convention="one_based_inclusive",
+    space="nanotel_analyzed_read", start=as.integer(start(boundary)),
+    end=as.integer(end(boundary)), denominator_bp=denominator,
+    canonical_bp=canonical_bp, tvr_bp=tvr_bp, overlap_bp=overlap_bp,
+    unassigned_bp=denominator-canonical_bp-tvr_bp+overlap_bp,
+    canonical_pct=100*canonical_bp/denominator, tvr_pct=100*tvr_bp/denominator,
+    tvr_block_count=length(tvr),
+    blocks=lapply(seq_along(tvr), function(i) list(start=as.integer(start(tvr)[i]),
+      end=as.integer(end(tvr)[i]))))
+}
+
 # Export only already-computed windows and hits, in the analyzed read's native
 # 1-based inclusive coordinates. A completion row distinguishes zero hits from
 # a missing search. Summary-only runs intentionally omit these detailed files.
-export_report_density <- function(read_id, serial, analyses, output_dir) {
+export_report_density <- function(read_id, serial, analyses, output_dir, exact_boundary=NULL) {
   folder <- file.path(output_dir, "report_details")
   dir.create(folder, recursive=TRUE, showWarnings=FALSE)
   densities <- list(); motifs <- list()
@@ -845,6 +861,13 @@ export_report_density <- function(read_id, serial, analyses, output_dir) {
       convention="one_based_inclusive", space="nanotel_analyzed_read"), rows)
   }
   stem <- make_barcode_read_stem(serial)
+  if (!is.null(exact_boundary) && !is.null(analyses$tvr_inclusive)) {
+    coverage <- report_repeat_coverage(read_id, exact_boundary,
+      analyses$tvr_inclusive[[2]]$motif_matches)
+    if (!is.null(coverage)) jsonlite::write_json(coverage,
+      file.path(folder, paste0(stem, "_coverage.json")), auto_unbox=TRUE,
+      pretty=TRUE, digits=NA)
+  }
   write.csv(do.call(rbind, densities), file.path(folder, paste0(stem, "_density.csv")), row.names=FALSE)
   write.csv(do.call(rbind, motifs), file.path(folder, paste0(stem, "_motifs.csv")), row.names=FALSE, na="")
 }
@@ -2395,7 +2418,7 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
 
   if(!summary_only) {
     export_report_density(current_fastq_name, current_serial,
-      list(exact=analyze_list, mismatch=analyze_list2, tvr_inclusive=analyze_list3), dirname(output_dir))
+      list(exact=analyze_list, mismatch=analyze_list2, tvr_inclusive=analyze_list3), dirname(output_dir), telo_position)
     # changed to compressed file: 2026-01-29
     output_telo_fasta <- file.path(output_dir, paste0(make_barcode_read_stem(current_serial),
                                                       ".fasta.gz"))
@@ -3257,12 +3280,6 @@ if (isTRUE(opt$analysis)) {
     theme_prism() +
     theme(legend.position = "bottom")
 
-  ggsave(
-    filename = file.path(opt$save_path, paste0(barcode_name, "_telomere_plot.png")),
-    plot     = p_telo,
-    width    = 12, height = 6, dpi = 150
-  )
-
   # Preserve the line plot's pre-edge population; the histogram uses final reads.
   # Selected exact/mismatch columns are shared with filtering/KM, not TVR columns.
   line_data <- make_analysis_plot_data(df_for_plot, analysis_columns, opt$max_edge_distance)
@@ -3277,12 +3294,6 @@ if (isTRUE(opt$analysis)) {
     make_telomere_histogram_plot(histogram_data, barcode_name, global_max_mismatch),
     file.path(opt$save_path, paste0(barcode_name, "_telomere_histogram"))
   )
-  save_telomere_histogram_png(histogram_data,
-    file.path(opt$save_path, paste0(barcode_name, "_telomere_histogram.png")),
-    barcode_name, global_max_mismatch)
-  save_telomere_histogram_png(histogram_data,
-    file.path(opt$save_path, paste0(barcode_name, "_telomere_histogram_pct.png")),
-    barcode_name, global_max_mismatch, percentage = TRUE)
 
 } # end --analysis block
 

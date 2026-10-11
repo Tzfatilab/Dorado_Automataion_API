@@ -42,7 +42,7 @@ def motif_comparison(run):
         reads = [read for read in barcode.reads if read.id in ids]
         if not reads or len(reads) != len(lengths.value):
             continue
-        if any(read.tracks["motifs"].status != A.AVAILABLE or
+        if any(not read.tracks.get("motifs") or read.tracks["motifs"].status != A.AVAILABLE or
                "tvr_inclusive" not in read.tracks["motifs"].value["methods"] or
                read.calls["exact"]["interval"].status != A.AVAILABLE for read in reads):
             continue
@@ -73,7 +73,12 @@ def dashboard_data(run):
     # Whole-run totals require complete barcode coverage; summing only known
     # barcodes would understate the run and give a misleading percentage.
     total = sum_complete(run.barcodes, "total_reads", "input_reads")
-    filtered = sum_complete(run.barcodes, "amount_of_telomeres", "post_filtered_telomeres")
+    populations = {b.metrics["amount_of_telomeres"].population for b in run.barcodes
+                   if b.metrics["amount_of_telomeres"].status == A.AVAILABLE}
+    population = next(iter(populations)) if len(populations) == 1 else "post_filtered_telomeres"
+    filtered = sum_complete(run.barcodes, "amount_of_telomeres", population)
+    if len(populations) > 1:
+        filtered = unavailable("Barcode counts describe different filtering populations")
     detected = sum_complete(run.barcodes, "detected_telomeric_reads", "detected_telomeric_reads")
     pct = unavailable("Requires input counts and post-filtered counts for every barcode")
     # Both operands must be available. Zero input has no defined percentage;
@@ -81,18 +86,21 @@ def dashboard_data(run):
     if total.status == filtered.status == A.AVAILABLE:
         if total.value > 0 and filtered.value <= total.value:
             pct = aggregate(100 * filtered.value / total.value, total.evidence + filtered.evidence,
-                            "%", "post_filtered_telomeres / input_reads")
+                            "%", population + " / input_reads")
         elif total.value == 0:
             pct = unavailable("No input reads; percentage is undefined", A.NOT_APPLICABLE)
         else:
             pct = unavailable("Filtered counts exceed the reported input count", A.INVALID)
     distributions = [{"id": b.id, "label": b.label, "lengths": asdict(b.metrics["filtered_length_records"])} for b in run.barcodes]
-    complete = bool(distributions) and all(d["lengths"]["status"] == A.AVAILABLE for d in distributions)
+    length_populations = {d['lengths'].get('population') for d in distributions
+                          if d['lengths']['status'] == A.AVAILABLE}
+    complete = (bool(distributions) and len(length_populations) <= 1
+                and all(d["lengths"]["status"] == A.AVAILABLE for d in distributions))
     # Pool individual exported lengths before taking the run median. Taking
     # a median of barcode medians would weight small and large barcodes equally.
     all_lengths = [r["length_bp"] for d in distributions if d["lengths"]["status"] == A.AVAILABLE for r in d["lengths"]["value"]]
     evidence = [e for b in run.barcodes for e in b.metrics["filtered_length_records"].evidence]
-    med = aggregate(median(all_lengths), evidence, "bp", "post_filtered_telomeres") if complete and all_lengths else unavailable("Complete filtered per-read lengths are required; barcode medians are not averaged")
+    med = aggregate(median(all_lengths), evidence, "bp", population) if complete and all_lengths else unavailable("Complete filtered per-read lengths are required; barcode medians are not averaged")
     # Build reference-by-barcode cells from mapped post-filtered read lengths.
     # These labels are references, not inferred chromosomes or chromosome arms.
     cells = []; references = set(); mapped_evidence = []
