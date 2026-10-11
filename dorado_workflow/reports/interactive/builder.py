@@ -21,6 +21,7 @@ def build_report(run: Run, destination) -> Path:
     One local script per barcode avoids loading every molecule on the run page.
     Scripts use fixed hash filenames; scientific names are data, never paths.
     """
+    # Reject inconsistent IDs, facts or evidence before producing browser files.
     validate(run)
     from plotly.offline import get_plotlyjs
     destination = Path(destination).resolve()
@@ -38,10 +39,14 @@ def build_report(run: Run, destination) -> Path:
         for name in ("report.css", "report.js"):
             shutil.copyfile(templates / name, assets / name)
         (assets / "plotly.min.js").write_text(get_plotlyjs(), encoding="utf-8")
+        # Work on a serialized copy: removing read details from the lightweight
+        # index must never remove reads from the caller's scientific model.
         index = asdict(run)
         index["dashboard"] = dashboard_data(run)
         for barcode in index["barcodes"]:
             full = dict(barcode)
+            # The index keeps barcode summaries; full reads load on navigation
+            # from a local script, avoiding file:// fetch restrictions.
             barcode.pop("reads")
             (data_dir / (barcode["id"] + ".js")).write_text(
                 "window.NanoTelData.barcodes[" + payload(barcode["id"]) + "]=" + payload(full) + ";\n",
@@ -54,5 +59,6 @@ def build_report(run: Run, destination) -> Path:
         (staged / "report-data.json").write_text(json.dumps(full_document, ensure_ascii=True, allow_nan=False, indent=2), encoding="utf-8")
         if destination.exists():
             destination.rmdir()  # Only the previously verified empty directory.
+        # Publish the completed folder only after all staged files were written.
         staged.rename(destination)
     return destination / "index.html"

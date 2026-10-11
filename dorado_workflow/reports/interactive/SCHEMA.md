@@ -251,3 +251,27 @@ The existing scalar TVR branch's union behavior is unchanged: recorded search
 hits are not a claim that every hit contributed to the density calculation.
 For recovered exports, motif_recovery.json records the saved FASTA hashes,
 NanoTel code hash and search settings and is included in source provenance.
+
+## Automatic report connections
+
+Full NanoTel runs export existing density windows and per-pattern search hits to
+`nanotel/<barcode>/report_details/`. Summary-only skips these detail exports;
+missing files never imply zero TVRs. Older runs need new exports, not reconstructed
+curves from their summary densities. Both exports retain the full source read ID.
+
+`barcode.metrics.nanotel_final_*` imports the descriptive fields from
+`<barcode>_analysis.json` for the NanoTel final-filtered population.
+`barcode.metrics.km_*` imports `<barcode>_km_statistics.csv` for the pre-edge KM
+population. Only source status `reportable` allows numeric KM median/CI values;
+other statuses retain a reason and null estimates. No fitting or pooling occurs.
+`below_<threshold>bp_pct` remains a distinct R post-analysis filtered statistic.
+
+Chromosome labels recognize only `chrN`, `chrX`, `chrY`, `chrM`, `chrMT`, optionally
+followed by `_Head` or `_Tail`. These suffixes do not establish p/q arms. The run
+count describes distinct chromosomes among imported post-filtered reads with
+unambiguous chromosome assignments; it is not genome-wide coverage.
+
+The All Barcodes HTML includes an expandable availability/provenance section.
+Coverage counts refer to imported records, and warnings disclose skipped joins
+and invalid sources. Supporting FASTA/PNG files remain scientific artifacts,
+not inputs from which this report recalculates calls.

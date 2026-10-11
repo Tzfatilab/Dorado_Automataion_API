@@ -4,6 +4,7 @@
     absent records as failed. Ambiguous joins remain visible as warnings.
 """
 import csv
+import fnmatch
 import hashlib
 import json
 import math
@@ -14,12 +15,15 @@ from openpyxl import load_workbook
 
 from ..nanotel_workbook import barcode_from_summary_filename
 from .coordinates import normalize_interval
+from .supplementary import import_statistics, chromosome_fact, detected_chromosomes
 from .models import (Availability as A, Barcode, Evidence, Fact, Read, Run,
                      Source, safe_id, unavailable, validate)
 
 
 class ResultImporter:
     def __init__(self, root, metadata_path=None):
+        # Resolve the selected results root once; all discovery and provenance paths
+        # are relative to this directory. Explicit metadata can override saved settings.
         self.root = Path(root).resolve()
         if not self.root.is_dir():
             raise ValueError("Results directory does not exist")
@@ -27,6 +31,7 @@ class ResultImporter:
         self.warnings = []
         self.metadata = {}
         self.meta_evidence = []
+        # The persisted R configuration describes what was requested for this run.
         saved_config = self.root / "reports/r_pipeline_config.json"
         if saved_config.is_file():
             saved = json.loads(saved_config.read_text(encoding="utf-8-sig"))
@@ -38,6 +43,8 @@ class ResultImporter:
             if type(summary_only) is bool:
                 self.metadata["stages"]["summary_only"] = summary_only
             self.meta_evidence.append(Evidence(self.source(saved_config, "json").id))
+        # An explicit snapshot is authoritative, but its types and coordinate
+        # convention must be validated before downstream adapters use it.
         if metadata_path:
             path = Path(metadata_path).resolve()
             supplied = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -57,6 +64,8 @@ class ResultImporter:
             self.meta_evidence.append(Evidence(self.source(path, "json").id))
 
     def source(self, path, fmt, sheet=None):
+        # Register an artifact once per path/sheet identity. SHA-256 records the exact
+        # bytes read; separate workbook sheets keep distinct source IDs.
         path = Path(path)
         label = path.relative_to(self.root).as_posix() if path.is_relative_to(self.root) else path.name
         key = safe_id("s", label, sheet or "")
@@ -67,10 +76,18 @@ class ResultImporter:
 
     def files(self, pattern):
         # A previously generated report is never an input to its next build.
-        return sorted(p for p in self.root.rglob(pattern)
-                      if "report" not in p.relative_to(self.root).parts and p.is_file())
+        # Discover matching artifacts in deterministic order. The report directory
+        # is excluded so generated files do not become scientific inputs.
+        # Cache discovery once instead of rescanning large read/plot folders
+        # for every barcode and every detail adapter.
+        if not hasattr(self, "_file_index"):
+            self._file_index = sorted(p for p in self.root.rglob("*")
+                if "report" not in p.relative_to(self.root).parts and p.is_file())
+        return [p for p in self._file_index if fnmatch.fnmatch(p.name, pattern)]
 
     def csv_table(self, path):
+        # Read a header-based table with UTF-8 BOM support. Evidence row numbers
+        # start at 2 because row 1 is the CSV header; malformed tables raise errors.
         source = self.source(path, "csv")
         with path.open(encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
@@ -85,6 +102,8 @@ class ResultImporter:
             return headers, rows, source
 
     def workbook_tables(self, path):
+        # Read only recognized summary sheets, using stored cell values rather than
+        # evaluating Excel formulas. Always close the workbook, including on errors.
         workbook = load_workbook(path, read_only=True, data_only=True)
         tables = {}
         try:
@@ -104,12 +123,17 @@ class ResultImporter:
         return tables
 
     def unavailable_stage(self, stage, reason):
+        # Distinguish a disabled stage from a requested-but-missing export. If the
+        # request status itself is unknown, record not_exported instead of guessing.
         requested = self.metadata.get("stages", {}).get(stage)
         status = A.NOT_REQUESTED if requested is False else A.MISSING if requested is True else A.NOT_EXPORTED
         return unavailable(reason, status)
 
     def motif_details(self, barcode):
         """Read preserved R search hits, never search sequences or call regions."""
+        # Join preserved search hits to one unambiguous full read ID within a barcode.
+        # Completion markers distinguish a valid zero-match search from absent data.
+        # Invalid or incomplete exports invalidate the track rather than showing partial hits.
         paths = [p for p in self.files("*read*_motifs.csv")
                  if p.parent.name == "report_details" and
                  (p.name.startswith(f"{barcode.label}_read") or
@@ -136,6 +160,8 @@ class ResultImporter:
                 if (method not in read.calls or row.get("convention") != "one_based_inclusive"
                         or row.get("space") != "nanotel_analyzed_read"):
                     invalid.add(read.id); continue
+                # A repeated completion marker suggests duplicated exports; do not
+                # combine them and accidentally double the match population.
                 if row.get("record_type") == "search_complete":
                     methods = completed.setdefault(read.id, set())
                     if method in methods:
@@ -171,6 +197,9 @@ class ResultImporter:
 
     def density_details(self, barcode):
         """Import exported plot samples; never reconstruct density from sequence."""
+        # Import existing window densities without recomputing them from sequence.
+        # Each method retains its own samples; invalid coordinates, fractions or duplicate
+        # window starts invalidate the entire affected read track.
         # Parallel R workers may not inherit the global barcode filename prefix.
         # In that case the enclosing barcode directory supplies the identity.
         paths = [p for p in self.files("*read*_density.csv")
@@ -221,6 +250,9 @@ class ResultImporter:
                 read.evidence.extend(Evidence(sid) for sid in {e.source_id for _, e in samples})
 
     def run(self):
+        # Assemble source tables first, then barcode/read models, and finally run metadata.
+        # CSV sources take precedence over workbook fallbacks. Detail adapters enrich
+        # existing reads; they do not run telomere detection or scientific filtering.
         raw, filtered, stats = {}, {}, None
         for pattern, target in (("barcode*_summary.csv", raw), ("filtered_summary*.csv", filtered)):
             for path in self.files(pattern):
@@ -236,6 +268,8 @@ class ResultImporter:
             raise ValueError("Ambiguous run statistics CSVs")
         if stat_paths:
             stats = self.csv_table(stat_paths[0])
+        # Excel is a fallback for pipeline runs that removed their summary CSVs.
+        # setdefault below keeps any already-loaded CSV authoritative.
         workbooks = self.files("nanotel_summary.xlsx")
         if len(workbooks) > 1:
             raise ValueError("Ambiguous NanoTel workbooks; select one results directory")
@@ -278,6 +312,8 @@ class ResultImporter:
                     if not read_id:
                         b.warnings.append(f"Skipped row {ev.row}: missing read identifier")
                         continue
+                    # Preserve duplicate rows independently; later joins must not
+                    # attach one mapping/detail record to multiple molecules.
                     ordinal = counts.get(read_id, 0)
                     counts[read_id] = ordinal + 1
                     read = self.read(row, ev, b.id, ordinal)
@@ -304,6 +340,12 @@ class ResultImporter:
             if label in stat_rows:
                 row, ev = stat_rows[label]
                 b.evidence.append(ev)
+                # Dynamic column name records the actual configured threshold.
+                # Keep this R post-analysis percentage separate from NanoTel's.
+                for field in row:
+                    if re.fullmatch(r"below_\d+(?:\.\d+)?bp_pct", field):
+                        b.metrics[field] = number(row, field, ev, unit="%",
+                            population="R post-analysis filtered telomeres", maximum=100)
                 for key, unit in (("amount_of_telomeres", "reads"), ("median_telomere_length", "bp"),
                                   ("mean_density", "fraction")):
                     b.metrics[key] = number(row, key, ev, unit=unit, population="post_filtered_telomeres",
@@ -312,11 +354,14 @@ class ResultImporter:
                 b.metrics[key] = unavailable("Not explicitly exported in supported summary tables")
             for key in ("amount_of_telomeres", "median_telomere_length", "mean_density"):
                 b.metrics.setdefault(key, unavailable("Post-filtered statistics table is unavailable"))
+            # These adapters attach existing exports to the barcode model. They
+            # do not select reads using thresholds or recalculate scientific calls.
             self.filtered_lengths(b, filtered.get(label))
             self.log_counts(b)
             self.mapping(b)
             self.density_details(b)
             self.motif_details(b)
+            import_statistics(self, b, number)
             barcodes.append(b)
 
         if not barcodes:
@@ -327,6 +372,8 @@ class ResultImporter:
             stages.setdefault(key, unavailable("Run stage was not explicitly recorded"))
         settings = Fact(A.AVAILABLE, self.metadata["settings"], evidence=self.meta_evidence) if self.metadata.get("settings") is not None else unavailable("Settings snapshot not supplied")
         organism = Fact(A.AVAILABLE, self.metadata["organism"], evidence=self.meta_evidence) if self.metadata.get("organism") else unavailable("Organism not recorded in summary files")
+        # Recover organism only from explicit run-log declarations, and only if
+        # all declarations agree. Reference filenames are not an organism source.
         if organism.status != A.AVAILABLE:
             found = []
             for path in self.files("*.log"):
@@ -346,11 +393,16 @@ class ResultImporter:
             evidence=[Evidence(s.id) for s in run.sources]) if run.sources else unavailable("No supported sources found", A.MISSING)
         for key in ("total_reads", "telomeric_reads", "telomeric_percentage", "median_telomere_length"):
             run.metrics[key] = unavailable("No source-reported run-wide statistic in supported exports; see barcode statistics")
+        # Enforce model-wide ID/evidence/value invariants after every adapter has
+        run.metrics["detected_chromosomes"] = detected_chromosomes(run)
+        # contributed its sources, before handing the model to the renderer.
         validate(run)
         return run
 
     def filtered_lengths(self, barcode, table):
         """Use already-filtered lengths; reject inconsistent partial distributions."""
+        # Accept the exported filtered population as-is. Validate every row and compare
+        # its size with the source summary before exposing a complete distribution.
         key = "filtered_length_records"
         barcode.metrics[key] = unavailable("Filtered per-read lengths were not exported")
         if not table:
@@ -375,6 +427,8 @@ class ResultImporter:
             if len(matching) == 1:
                 target = by_report_id[matching[0]]
                 target.filtering = Fact(A.AVAILABLE, "present_in_filtered_output", evidence=[ev])
+        # A source count mismatch means this cannot be advertised as the complete
+        # filtered distribution, even if all individual length values are valid.
         reported = barcode.metrics.get("amount_of_telomeres")
         if reported and reported.status == A.AVAILABLE and reported.value != len(rows):
             barcode.metrics[key] = unavailable("Filtered row count disagrees with source summary", A.INVALID)
@@ -386,6 +440,8 @@ class ResultImporter:
 
     def log_counts(self, barcode):
         """Read exact labels emitted by NanoTel, not guessed read counts."""
+        # Use one completed barcode log and exact NanoTel labels. Ambiguous or unfinished
+        # logs cannot establish reliable totals and leave existing availability unchanged.
         paths = [p for p in self.files("nanotel_barcode*.log") if barcode_from_summary_filename(p.name) == barcode.label]
         if len(paths) != 1:
             return
@@ -404,6 +460,8 @@ class ResultImporter:
                     evidence=[Evidence(self.source(path, "log").id, row)])
 
     def read(self, row, ev, barcode_id, ordinal):
+        # Construct one source-row record, retaining exact, mismatch and TVR-inclusive
+        # calls separately. Ordinals distinguish duplicate IDs without silently merging them.
         rid = identity(row)
         metrics = {"read_length": number(row, "sequence_length", ev, unit="bp")}
         calls = {}
@@ -423,7 +481,7 @@ class ResultImporter:
                 coords = interval["normalized"].value
                 if coords["end"] - coords["start"] != reported.value:
                     warnings.append(f"{method}: reported length differs from interval span; reported value retained")
-        tracks = {key: unavailable("Detailed track is not imported in milestone 1")
+        tracks = {key: unavailable("No compatible detailed export supplied")
                   for key in ("density", "motifs", "tvr_regions")}
         if self.metadata.get("stages", {}).get("summary_only") is True:
             tracks = {key: unavailable("Summary-only run: detailed tracks were not requested", A.NOT_REQUESTED) for key in tracks}
@@ -433,6 +491,8 @@ class ResultImporter:
             self.unavailable_stage("mapping", "No unambiguous mapping record available"), tracks, [ev], warnings)
 
     def mapping(self, barcode):
+        # Prefer a single combined mapping export over its component files. Join cleaned
+        # read IDs only when unique, retain all alignments, and never infer arms from labels.
         candidates = [p for p in self.mapping_paths
                       if barcode_from_summary_filename(p.name) == barcode.label]
         combined = [p for p in candidates if p.name.endswith("_combined.csv")]
@@ -465,9 +525,11 @@ class ResultImporter:
                 alignment = {"reference": text_fact(row, "alignment_genome", ev),
                     "strand": text_fact(row, "alignment_direction", ev),
                     "mapq": number(row, "alignment_mapq", ev, maximum=255),
-                    "chromosome": unavailable("Reference-to-chromosome annotation not supplied"),
+                    "chromosome": chromosome_fact(row.get("alignment_genome"), ev),
                     "arm": unavailable("Head/Tail does not establish a chromosome arm"),
                     **interval}
+                # SAM reserves 255 for unavailable MAPQ; it is not a high-quality
+                # score and must not be plotted or displayed as one.
                 if alignment["mapq"].value == 255:
                     alignment["mapq"] = unavailable("SAM MAPQ 255 means mapping quality unavailable", A.NOT_APPLICABLE)
                 matches.setdefault(targets[0].id, []).append((alignment, ev))
@@ -478,11 +540,15 @@ class ResultImporter:
 
 
 def identity(row):
+    # Support both known source identifier columns; preserve full header text
+    # apart from surrounding whitespace so original source identity remains inspectable.
     value = row.get("sequence_ID") or row.get("read_id")
     return str(value).strip() if value is not None else ""
 
 
 def number(row, key, ev, *, unit=None, population=None, maximum=None):
+    # Normalize one numeric source cell into a Fact, preserving field-level evidence.
+    # Missing cells are unavailable; invalid values are invalid, never coerced to zero.
     value = row.get(key)
     if value is None or str(value).strip() in {"", "NA", "NaN", "nan"}:
         return unavailable(f"{key} not exported or unavailable")
@@ -501,10 +567,14 @@ def number(row, key, ev, *, unit=None, population=None, maximum=None):
 
 
 def text_fact(row, key, ev):
+    # Keep source text literal and attach the originating field; absent text stays
+    # unavailable. HTML escaping belongs to the rendering layer.
     value = row.get(key)
     return Fact(A.AVAILABLE, str(value), evidence=[Evidence(ev.source_id, ev.row, [key])]) if value not in (None, "") else unavailable(f"{key} missing")
 
 
 def import_results(root, metadata_path=None) -> Run:
     """Read one results directory without modifying any scientific artifact."""
+    # Public read-only entry point: create fresh importer state for each run so
+    # source registries and warnings cannot leak between report builds.
     return ResultImporter(root, metadata_path).run()

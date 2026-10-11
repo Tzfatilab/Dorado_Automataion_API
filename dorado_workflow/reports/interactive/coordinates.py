@@ -17,6 +17,8 @@ def normalize_interval(start, end, *, convention, space, evidence, length=None):
     NanoTel R intervals are 1-based inclusive on the analyzed sequence. This
     does not establish their orientation relative to the original FASTQ read.
     """
+    # Preserve the original endpoints and their declared coordinate convention
+    # alongside normalized values so users can trace every conversion.
     raw = {"start": start, "end": end, "convention": convention, "space": space}
     if convention not in {"one_based_inclusive", "zero_based_half_open"}:
         normalized = unavailable("Source coordinate convention is unknown")
@@ -26,6 +28,7 @@ def normalize_interval(start, end, *, convention, space, evidence, length=None):
         try:
             a, b = integer(start), integer(end)
             if convention == "one_based_inclusive":
+                # [1, 6] inclusive becomes [0, 6) half-open: only start shifts.
                 a -= 1
             if a < 0 or b <= a or (length is not None and b > length):
                 raise ValueError("Interval outside its coordinate space")

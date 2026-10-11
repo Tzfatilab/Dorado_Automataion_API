@@ -521,8 +521,12 @@ save_telomere_histogram_png <- function(histogram, path, barcode, mismatch_allow
   rect(limits[1], -strip_height * 1.5, limits[2], -strip_height * 0.5,
        col = "#FFF8FA", border = "#F1DCE5")
   censored_x <- histogram$reads$telomere_length_bp[which(histogram$reads$event == 0L)]
-  segments(censored_x, -strip_height * 1.4, censored_x, -strip_height * 0.6,
-           col = adjustcolor("#CC79A7", 0.55))
+  # A barcode may have no censored reads. Base graphics cannot combine empty
+  # x coordinates with scalar y coordinates, so draw markers only when present.
+  if (length(censored_x)) {
+    segments(censored_x, -strip_height * 1.4, censored_x, -strip_height * 0.6,
+             col = adjustcolor("#CC79A7", 0.55))
+  }
   legend_indices <- if (nrow(trend)) 1:3 else c(1, 3)
   legend("topright", legend = c("Telomeric reads", "Smoothed observed lengths", "Censored reads (observed lengths)")[legend_indices],
          pch = c(15, NA, 124)[legend_indices], lty = c(NA, 1, NA)[legend_indices],
@@ -727,6 +731,16 @@ get_density_iranges <- function(sequence, patterns, with_mismatch = FALSE, tvr_p
   }
 
   mp_all <- IRanges()# union of all the IRanges of all the patterns in the list
+  # Preserve the existing search hits before union removes motif identity.
+  # This extra return member never changes the density/ranges used for calling.
+  motif_matches <- data.frame(motif=character(), matched_sequence=character(),
+                              start=integer(), end=integer(), role=character(), max_mismatch=integer())
+  retain_hits <- function(hits, motif, role, allowance) {
+    if (!length(hits)) return(invisible(NULL))
+    motif_matches <<- rbind(motif_matches, data.frame(
+      motif=motif, matched_sequence=as.character(Views(unlist(sequence), start=start(hits), end=end(hits))),
+      start=start(hits), end=end(hits), role=role, max_mismatch=allowance))
+  }
   if (is.list(patterns)) {
     patterns <- unique(patterns)  # make sure there are no dups
 
@@ -741,6 +755,7 @@ get_density_iranges <- function(sequence, patterns, with_mismatch = FALSE, tvr_p
         curr_mp <- trim(curr_mp)
       }
 
+      retain_hits(curr_mp, pat, "canonical", max_mismatch)
       mp_all <- IRanges::union(mp_all, curr_mp)
 
 
@@ -751,6 +766,9 @@ get_density_iranges <- function(sequence, patterns, with_mismatch = FALSE, tvr_p
     fixed <- !str_detect(string = patterns, pattern = "[WSMKRYBDHVN]")
     mp_all <- matchPattern(pattern = patterns, subject = unlist(sequence),
                            max.mismatch = max_mismatch, fixed = fixed)
+    # Trimming is part of the original search semantics; retain those same hits.
+    report_hits <- if (!fixed || max_mismatch > 0) trim(mp_all) else mp_all
+    retain_hits(report_hits, patterns, "canonical", max_mismatch)
     if( (fixed == FALSE) || (max_mismatch > 0) ) {
       mp_all <- trim(mp_all)
       mp_all <- IRanges::union(mp_all, mp_all) # incase there are overlaps
@@ -776,6 +794,7 @@ get_density_iranges <- function(sequence, patterns, with_mismatch = FALSE, tvr_p
           curr_mp <- trim(curr_mp)
         }
 
+        retain_hits(curr_mp, pat, "tvr", global_max_mismatch)
         mp_all <- IRanges::union(mp_all, curr_mp)
       }
 
@@ -789,6 +808,8 @@ get_density_iranges <- function(sequence, patterns, with_mismatch = FALSE, tvr_p
       mp_curr <- matchPattern(pattern = tvr_patterns, subject = unlist(sequence),
                               fixed = fixed,
                               max.mismatch = global_max_mismatch)
+      report_hits <- if (!fixed || global_max_mismatch > 0) trim(mp_curr) else mp_curr
+      retain_hits(report_hits, tvr_patterns, "tvr", global_max_mismatch)
       if( (fixed == FALSE) || (global_max_mismatch > 0) ) {
         mp_curr <- trim(mp_curr)
         mp_all <- IRanges::union(mp_all, mp_curr) # incase there are overlaps
@@ -798,7 +819,34 @@ get_density_iranges <- function(sequence, patterns, with_mismatch = FALSE, tvr_p
   }
 
   total_density <- sum(width(mp_all)) / nchar(sequence)
-  return(list(total_density, mp_all))
+  return(list(total_density, mp_all, motif_matches=motif_matches))
+}
+
+# Export only already-computed windows and hits, in the analyzed read's native
+# 1-based inclusive coordinates. A completion row distinguishes zero hits from
+# a missing search. Summary-only runs intentionally omit these detailed files.
+export_report_density <- function(read_id, serial, analyses, output_dir) {
+  folder <- file.path(output_dir, "report_details")
+  dir.create(folder, recursive=TRUE, showWarnings=FALSE)
+  densities <- list(); motifs <- list()
+  for (method in names(analyses)) {
+    analysis <- analyses[[method]]
+    if (is.null(analysis)) next
+    windows <- analysis[[1]]
+    densities[[method]] <- data.frame(read_id=read_id, method=method,
+      start=windows$start_index, end=windows$end_index, density=windows$density,
+      convention="one_based_inclusive", space="nanotel_analyzed_read")
+    hits <- analysis[[2]]$motif_matches
+    marker <- data.frame(motif="", matched_sequence="", start=NA_integer_, end=NA_integer_,
+                         role="", max_mismatch=NA_integer_)
+    rows <- rbind(marker, hits)
+    motifs[[method]] <- cbind(data.frame(read_id=read_id, method=method,
+      record_type=c("search_complete", rep("match", nrow(hits))),
+      convention="one_based_inclusive", space="nanotel_analyzed_read"), rows)
+  }
+  stem <- make_barcode_read_stem(serial)
+  write.csv(do.call(rbind, densities), file.path(folder, paste0(stem, "_density.csv")), row.names=FALSE)
+  write.csv(do.call(rbind, motifs), file.path(folder, paste0(stem, "_motifs.csv")), row.names=FALSE, na="")
 }
 
 
@@ -2346,6 +2394,8 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
   }
 
   if(!summary_only) {
+    export_report_density(current_fastq_name, current_serial,
+      list(exact=analyze_list, mismatch=analyze_list2, tvr_inclusive=analyze_list3), dirname(output_dir))
     # changed to compressed file: 2026-01-29
     output_telo_fasta <- file.path(output_dir, paste0(make_barcode_read_stem(current_serial),
                                                       ".fasta.gz"))

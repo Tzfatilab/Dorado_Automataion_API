@@ -49,7 +49,8 @@ def run_pipeline(
         short_telomere_threshold: str = "",
         config_data=None,
         log_cb=None,
-        stop_cb=None
+        stop_cb=None,
+        report_cb=None,
 ) -> tuple[int, str]:
     """Run the selected workflow and return a WorkerThread status tuple."""
     run_started_at = time.monotonic()
@@ -121,7 +122,28 @@ def run_pipeline(
         return (1, "No workflow selected")
 
     check_cancelled()
-    return _finish_pipeline_run(result, run_started_at, context, log)
+    # Generate once, after filtering/mapping finish, in the existing worker thread.
+    # A display/export failure must not discard successful scientific results.
+    report_warning = ""
+    if result and do_nanotel:
+        try:
+            from dorado_workflow.reports.all_barcodes import generate_run_report
+            log("Generating All Barcodes HTML report...")
+            report_path = generate_run_report(
+                context.path_manager.get_results_dir_path(),
+                context.path_manager.get_nanotel_output_dir_path(),
+            )
+            check_cancelled()
+            log(f"All Barcodes report: {report_path}")
+            if report_cb:
+                report_cb(str(report_path))
+        except WorkflowCancelled:
+            raise
+        except Exception as exc:
+            report_warning = f"\nHTML report could not be generated: {exc}"
+            log(report_warning.strip())
+    status, message = _finish_pipeline_run(result, run_started_at, context, log)
+    return status, message + report_warning
 
 
 def _make_log_callback(log_cb):

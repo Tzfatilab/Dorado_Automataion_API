@@ -96,7 +96,8 @@ main_nanotel_analysis <- function(config_file) {
 
   # Create analysis report
   report_file <- file.path(config$output_dir, "nanotel_analysis_report.txt")
-  generate_nanotel_report(processed_data, summary_stats, report_file, config)
+  generate_nanotel_report(processed_data, summary_stats, report_file, config,
+                          short_telomere_threshold_bp = short_telomere_threshold_bp)
 
   log_message("NanoTel batch analysis completed successfully!")
 
@@ -109,7 +110,12 @@ main_nanotel_analysis <- function(config_file) {
 }
 
 # Generate detailed analysis report
-generate_nanotel_report <- function(processed_data, summary_stats, output_file, config) {
+generate_nanotel_report <- function(processed_data, summary_stats, output_file, config,
+                                    short_telomere_threshold_bp = config$short_telomere_threshold_bp %||% 2000) {
+
+  # The batch caller passes the same validated threshold used for statistics.
+  # Direct callers resolve it from their config (or the existing 2000 bp default);
+  # R functions cannot access another caller's local variables implicitly.
 
   log_message("Generating NanoTel analysis report")
 

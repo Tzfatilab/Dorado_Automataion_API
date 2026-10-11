@@ -6,11 +6,15 @@ from .models import Availability as A, Fact, unavailable
 
 
 def aggregate(value, evidence, unit, population):
+    # Wrap a presentation-derived value with its units, population and supporting
+    # evidence. The origin distinguishes this value from a statistic exported by NanoTel.
     return Fact(A.AVAILABLE, value, unit=unit, population=population,
                 origin="presentation_aggregate", evidence=evidence)
 
 
 def sum_complete(barcodes, key, population):
+    # Require every imported barcode to supply this metric. A partial sum would look
+    # like a complete run total, so missing contributors make the whole result unavailable.
     facts = [b.metrics.get(key) for b in barcodes]
     if not facts or any(f is None or f.status != A.AVAILABLE for f in facts):
         return unavailable("Not recorded for every barcode")
@@ -19,14 +23,21 @@ def sum_complete(barcodes, key, population):
 
 def motif_comparison(run):
     """Count exported hits in an explicit population; no new motif calling."""
+    # Build two explicitly different match-count populations: whole reads and matches
+    # fully contained in exact telomere intervals, both limited to post-filtered reads.
+    # Counts are search hits, not covered bases, unique regions or percentages of reads.
     result = []
     for barcode in run.barcodes:
         lengths = barcode.metrics.get("filtered_length_records")
         entry = {"id": barcode.id, "label": barcode.label, "available": False,
                  "reason": "Complete post-filtered motif exports are required", "telomere": {}, "whole_read": {}}
+        # Keep an unavailable entry too, allowing the chart to explain omitted
+        # barcodes instead of silently removing them from the comparison.
         result.append(entry)
         if not lengths or lengths.status != A.AVAILABLE:
             continue
+        # Safe report IDs link filtered rows to reads without depending on display
+        # names, which may contain metadata or be duplicated in source exports.
         ids = {item["read_id"] for item in lengths.value}
         reads = [read for read in barcode.reads if read.id in ids]
         if not reads or len(reads) != len(lengths.value):
@@ -35,15 +46,21 @@ def motif_comparison(run):
                "tvr_inclusive" not in read.tracks["motifs"].value["methods"] or
                read.calls["exact"]["interval"].status != A.AVAILABLE for read in reads):
             continue
+        # All required reads passed the completeness checks. Only now may zero
+        # matches be interpreted as an observed empty result rather than missing data.
         entry["available"] = True
         entry["evidence"] = [asdict(e) for read in reads for e in read.tracks["motifs"].evidence]
         for read in reads:
             interval = read.calls["exact"]["interval"].value
             for hit in read.tracks["motifs"].value["matches"]:
+                # Use one search method, avoiding triple-counting the same motif
+                # across exact, mismatch and TVR-inclusive exports.
                 if hit["method"] != "tvr_inclusive":
                     continue
                 label = hit["motif"] + (" (canonical)" if hit["role"] == "canonical" else "")
                 entry["whole_read"][label] = entry["whole_read"].get(label, 0) + 1
+                # Endpoints share normalized half-open coordinates. Require full
+                # containment; do not clip or reclassify a boundary-crossing hit.
                 if hit["start"] >= interval["start"] and hit["end"] <= interval["end"]:
                     entry["telomere"][label] = entry["telomere"].get(label, 0) + 1
     return result
@@ -51,10 +68,16 @@ def motif_comparison(run):
 
 def dashboard_data(run):
     """Build chart payloads with explicit populations and complete-data checks."""
+    # Create serializable chart payloads from imported facts. Aggregate only supported
+    # populations and keep missing/invalid states available to the presentation layer.
+    # Whole-run totals require complete barcode coverage; summing only known
+    # barcodes would understate the run and give a misleading percentage.
     total = sum_complete(run.barcodes, "total_reads", "input_reads")
     filtered = sum_complete(run.barcodes, "amount_of_telomeres", "post_filtered_telomeres")
     detected = sum_complete(run.barcodes, "detected_telomeric_reads", "detected_telomeric_reads")
     pct = unavailable("Requires input counts and post-filtered counts for every barcode")
+    # Both operands must be available. Zero input has no defined percentage;
+    # a numerator above the input count signals inconsistent source statistics.
     if total.status == filtered.status == A.AVAILABLE:
         if total.value > 0 and filtered.value <= total.value:
             pct = aggregate(100 * filtered.value / total.value, total.evidence + filtered.evidence,
@@ -65,9 +88,13 @@ def dashboard_data(run):
             pct = unavailable("Filtered counts exceed the reported input count", A.INVALID)
     distributions = [{"id": b.id, "label": b.label, "lengths": asdict(b.metrics["filtered_length_records"])} for b in run.barcodes]
     complete = bool(distributions) and all(d["lengths"]["status"] == A.AVAILABLE for d in distributions)
+    # Pool individual exported lengths before taking the run median. Taking
+    # a median of barcode medians would weight small and large barcodes equally.
     all_lengths = [r["length_bp"] for d in distributions if d["lengths"]["status"] == A.AVAILABLE for r in d["lengths"]["value"]]
     evidence = [e for b in run.barcodes for e in b.metrics["filtered_length_records"].evidence]
     med = aggregate(median(all_lengths), evidence, "bp", "post_filtered_telomeres") if complete and all_lengths else unavailable("Complete filtered per-read lengths are required; barcode medians are not averaged")
+    # Build reference-by-barcode cells from mapped post-filtered read lengths.
+    # These labels are references, not inferred chromosomes or chromosome arms.
     cells = []; references = set(); mapped_evidence = []
     for b in run.barcodes:
         lengths = b.metrics["filtered_length_records"]
@@ -78,16 +105,22 @@ def dashboard_data(run):
             read = by_id.get(item["read_id"])
             if not read or read.alignments.status != A.AVAILABLE:
                 continue
+            # A read may have several alignments to one reference. Count that
+            # reference once per read, while retaining distinct reference labels.
             refs = {a["reference"].value for a in read.alignments.value
                     if a["reference"].status == A.AVAILABLE and a["reference"].value != "*"}
             for reference in refs:
                 groups.setdefault(reference, []).append(item["length_bp"])
                 references.add(reference)
             mapped_evidence.extend(read.alignments.evidence)
+        # A read aligning to distinct references can contribute to multiple cells.
+        # Consequently, cell counts are not additive unique-read totals.
         for reference, values in groups.items():
             cells.append({"barcode_id": b.id, "barcode": b.label, "reference": reference,
                           "median_bp": median(values), "read_count": len(values)})
     reference_count = aggregate(len(references), mapped_evidence, "references", "mapped post-filtered reads") if references else unavailable("No mapped post-filtered reference records available")
+    # Convert Facts to plain dictionaries at the presentation boundary. Keep the
+    # legacy unavailable TVR-coverage fact separate from motif match-count payloads.
     return {"metrics": {"barcode_count": asdict(run.metrics["barcode_count"]), "total_reads": asdict(total),
              "telomeric_reads": asdict(filtered), "telomeric_percentage": asdict(pct),
              "median_telomere_length": asdict(med), "mapped_references": asdict(reference_count),

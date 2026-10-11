@@ -10,9 +10,10 @@ from PySide6.QtCore import (
     QThread,
     QStandardPaths,
     QTimer,
+    QUrl,
 )
 
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QDesktopServices
 
 from gui.ui_styles import apply_global_style
 from workers.worker_thread import WorkerThread
@@ -569,6 +570,10 @@ class AppWindow(
 
         self.worker_thread.started.connect(self.worker.run)
         self.worker.log.connect(self._append_log)
+        # Reset between runs; a failed or basecalling-only run must not offer
+        # an HTML file left over from a previous successful run.
+        self._completed_report_path = None
+        self.worker.report_ready.connect(self._on_report_ready)
         self.worker.done.connect(self._on_workflow_done)
 
         # cleanup
@@ -578,6 +583,10 @@ class AppWindow(
         self.worker_thread.finished.connect(self._cleanup_worker)
 
         self.worker_thread.start()
+
+    def _on_report_ready(self, path):
+        """Receive the generated path on the GUI thread before completion."""
+        self._completed_report_path = path
 
     def _on_workflow_done(self, success, message):
         """
@@ -600,6 +609,30 @@ class AppWindow(
         )
         if message and not success:
             self._append_log(message)
+        if success:
+            # Browser launching belongs on the UI thread and requires a click.
+            dialog = QMessageBox(self)
+            # Native message-box sizing can clip custom labels after GUI scaling.
+            # Let Qt measure the actual styled buttons before sizing this dialog.
+            dialog.setOption(QMessageBox.Option.DontUseNativeDialog, True)
+            dialog.setFont(self.font())
+            dialog.setWindowTitle("Run complete")
+            dialog.setIcon(QMessageBox.Information)
+            dialog.setText(message or "The run has finished successfully.")
+            dialog.setStandardButtons(QMessageBox.Close)
+            report = getattr(self, "_completed_report_path", None)
+            open_button = None
+            if report and Path(report).is_file():
+                open_button = dialog.addButton("Open HTML Report", QMessageBox.ActionRole)
+            dialog.ensurePolished()
+            for button in dialog.buttons():
+                button.ensurePolished()
+                button.setMinimumSize(button.sizeHint())
+            dialog.adjustSize()
+            dialog.exec()
+            if open_button is not None and dialog.clickedButton() == open_button:
+                if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(report).resolve()))):
+                    QMessageBox.warning(self, "Could not open report", f"Open this file in your browser:\n{report}")
 
     def _cleanup_worker(self):
         """

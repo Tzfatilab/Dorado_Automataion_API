@@ -16,6 +16,7 @@ class WorkerThread(QObject):
 
     log = Signal(str)
     done = Signal(bool, str)
+    report_ready = Signal(str)
 
     def __init__(
             self,
@@ -113,6 +114,7 @@ class WorkerThread(QObject):
                 short_telomere_threshold=self.short_telomere_threshold,
                 log_cb=self.log.emit,
                 stop_cb=lambda: self._stop_requested,
+                report_cb=self.report_ready.emit,
             )
 
             if self._stop_requested:

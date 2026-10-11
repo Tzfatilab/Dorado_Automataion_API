@@ -1,0 +1,220 @@
+/* All Barcodes presentation styles. Embedded by all_barcodes.py so the
+   generated report has no stylesheet dependency when moved or opened offline. */
+/* Shared sizing keeps padding inside cards and responsive grid columns. */
+* {
+    box-sizing:border-box
+}
+
+/* Light report canvas and desktop-GUI typography. */
+body {
+    margin:0;
+    padding:12px;
+    background:#f7f9fc;
+    color:#101f3b;
+    font-family:Segoe UI,Arial,sans-serif
+}
+
+/* Navy title banner; compact metadata stays on the right on wide screens. */
+header {
+    background:linear-gradient(110deg,#082e48,#142b49);
+    color:white;
+    border-radius:12px;
+    padding:17px 24px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:24px
+}
+
+h1 {
+    font-size:clamp(22px,2.2vw,38px);
+    line-height:1.15;
+    margin:0;
+    font-weight:750;
+    letter-spacing:-.6px
+}
+
+header span {
+    white-space:nowrap;
+    font-size:16px;
+    color:#e2eaf5
+}
+
+/* Rounded white containers for the numbered statistics/chart sections. */
+section {
+    background:white;
+    border:1px solid #dce4ed;
+    border-radius:16px;
+    margin-top:12px;
+    padding:12px 14px 14px;
+    min-width:0
+}
+
+h2 {
+    display:flex;
+    align-items:center;
+    gap:14px;
+    margin:0 0 12px;
+    font-size:23px;
+    color:#0c1934
+}
+
+/* Circular section markers match the approved reference design. */
+.number {
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    background:#0b304c;
+    color:white;
+    border-radius:50%;
+    width:40px;
+    height:40px;
+    font-size:27px;
+    font-weight:600;
+    flex-shrink:0
+}
+
+/* Six equal cards on wide screens; media queries below prevent overflow. */
+.stats {
+    display:grid;
+    grid-template-columns:repeat(6,minmax(0,1fr));
+    gap:12px
+}
+
+.stat {
+    border-radius:10px;
+    min-height:135px;
+    padding:18px 15px;
+    display:flex;
+    gap:14px;
+    align-items:center
+}
+
+/* Local line icons inherit each card palette; no icon font is required. */
+.stat svg {
+    width:40px;
+    height:48px;
+    flex-shrink:0;
+    fill:none;
+    stroke:currentColor;
+    stroke-width:2.5;
+    stroke-linejoin:round;
+    stroke-linecap:round
+}
+
+.stat h3 {
+    font-size:16px;
+    font-weight:500;
+    line-height:1.25;
+    margin:0 0 5px;
+    color:#12203c
+}
+
+.stat strong {
+    font-size:29px;
+    line-height:1.2;
+    color:#08172f;
+    display:block
+}
+
+.stat p,.note {
+    font-size:13px;
+    color:#607087;
+    line-height:1.3;
+    margin:5px 0 0
+}
+
+/* Missing metrics remain readable without suggesting a numerical zero. */
+.stat .missing {
+    font-size:22px;
+    color:#607087
+}
+
+/* Fixed semantic palette: blue counts, green reads, purple fraction, amber length. */
+.stat-0,.stat-5 {
+    background:#f0f7ff;
+    color:#2456a6
+}
+
+.stat-1,.stat-2 {
+    background:#f1faf3;
+    color:#387a49
+}
+
+.stat-3 {
+    background:#f5f2ff;
+    color:#6245a1
+}
+
+.stat-4 {
+    background:#fdf6ed;
+    color:#ae6a27
+}
+
+/* Two comparison plots side by side until the viewport becomes narrow. */
+.charts {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:12px
+}
+
+/* Medium screens: preserve readable card widths in two rows of three. */
+@media(max-width:1250px) {
+    .stats {
+    grid-template-columns:repeat(3,minmax(0,1fr))
+}
+
+header span {
+    font-size:13px
+}
+
+
+}
+
+/* Stack plots so labels and hover targets retain adequate space. */
+@media(max-width:850px) {
+    .charts {
+    grid-template-columns:1fr
+}
+
+
+}
+
+/* Small screens: wrap the header and show two compact cards per row. */
+@media(max-width:650px) {
+    header {
+    align-items:flex-start;
+    flex-direction:column;
+    gap:10px
+}
+
+.stats {
+    grid-template-columns:repeat(2,minmax(0,1fr))
+}
+
+.stat {
+    padding:12px;
+    gap:8px
+}
+
+.stat svg {
+    width:28px
+}
+
+.stat strong {
+    font-size:24px
+}
+
+h2 {
+    font-size:19px
+}
+
+
+}
+
+
+
+/* Keep the requested metric title intact; compact icon spacing provides room. */
+.stat-2 h3 { white-space: nowrap; font-size: clamp(12px, 1vw, 16px); }
+.stat-2 { gap: 8px; }
+.stat-2 svg { width: 32px; }
