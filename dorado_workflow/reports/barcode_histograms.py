@@ -31,7 +31,7 @@ class _FigureParser(HTMLParser):
 
 def histogram_sections(run, results_root=None):
     """Section 2 uses the original histogram and its unit controls."""
-    return _saved_plot_sections(run, results_root, 'histogram', 2,
+    return _saved_plot_sections(run, results_root, 'histogram', 3,
         'Telomere Length Distribution',
         'Saved NanoTel histogram; original count/percentage controls and population are preserved. '
         'NanoTel final-filtered reads may differ from the R post-analysis population in the cards above.')
@@ -39,7 +39,7 @@ def histogram_sections(run, results_root=None):
 
 def telomere_plot_sections(run, results_root=None):
     """Section 3 preserves the original per-read plot, including its axes."""
-    return _saved_plot_sections(run, results_root, 'plot', 3,
+    return _saved_plot_sections(run, results_root, 'plot', 4,
         'Telomere and Read Length per Read',
         'Saved NanoTel per-read plot. Original traces, running median, axes and pre-final-filter population are preserved.')
 

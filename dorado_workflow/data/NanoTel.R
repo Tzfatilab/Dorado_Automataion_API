@@ -826,7 +826,7 @@ report_repeat_coverage <- function(read_id, boundary, hits) {
   canonical_bp <- sum(width(canonical)); tvr_bp <- sum(width(tvr))
   overlap_bp <- sum(width(IRanges::intersect(canonical, tvr)))
   denominator <- as.integer(width(boundary))
-  list(schema_version=1L, definition="union_coverage_exact_interval_v1",
+  list(schema_version=2L, definition="union_coverage_tvr_interval_v2",
     read_id=read_id, method="tvr_inclusive", convention="one_based_inclusive",
     space="nanotel_analyzed_read", start=as.integer(start(boundary)),
     end=as.integer(end(boundary)), denominator_bp=denominator,
@@ -838,10 +838,78 @@ report_repeat_coverage <- function(read_id, boundary, hits) {
       end=as.integer(end(tvr)[i]))))
 }
 
+# Each parallel search group owns two buffered connections in the local temp
+# directory. Workers never append concurrently to a shared barcode file.
+open_report_batch <- function(folder) {
+  sink <- new.env(parent=emptyenv())
+  sink$connections <- list(); sink$written <- list()
+  for (kind in c("density", "motifs", "index")) {
+    sink$connections[[kind]] <- file(tempfile(paste0(kind, "_"), tmpdir=folder, fileext=".csv"), "wt")
+    sink$written[[kind]] <- FALSE
+  }
+  sink
+}
+
+# Losslessly collapse identical method rows; method names are expanded by the
+# report adapter. Coverage/search results themselves are never changed.
+compact_report_rows <- function(rows, serial) {
+  rows$read_id <- as.character(serial)
+  rows$schema_version <- 2L
+  fields <- setdiff(names(rows), "method")
+  key <- do.call(paste, c(rows[fields], sep="\034"))
+  # Preserve repeated identical observations within a method. Only corresponding
+  # occurrences across different methods are shared, never dropped.
+  occurrence <- ave(seq_along(key), paste(rows$method,key,sep="|"), FUN=seq_along)
+  key <- paste(key, occurrence, sep="|")
+  groups <- split(seq_len(nrow(rows)), factor(key, levels=unique(key)))
+  first <- vapply(groups, function(ids) ids[1], integer(1))
+  result <- rows[first, , drop=FALSE]
+  result$method <- vapply(groups, function(ids) paste(unique(rows$method[ids]), collapse="|"), character(1))
+  result
+}
+
+write_report_batch <- function(sink, kind, rows) {
+  write.table(rows, sink$connections[[kind]], sep=",", row.names=FALSE,
+              col.names=!sink$written[[kind]], na="", qmethod="double")
+  sink$written[[kind]] <- TRUE
+}
+
+# Merge without loading barcode-sized tables into memory. Header-only/empty
+# workers contribute no extra headers; all read IDs and completion rows survive.
+merge_report_batches <- function(folder, output_dir, barcode) {
+  details <- file.path(output_dir, "report_details")
+  dir.create(details, recursive=TRUE, showWarnings=FALSE)
+  for (kind in c("density", "motifs", "index")) {
+    destination <- file.path(details, paste0(barcode, "_reads_", kind, ".csv.gz"))
+    temporary <- paste0(destination, ".partial")
+    out <- gzfile(temporary, "wt", compression=6); header <- NULL
+    tryCatch({
+      for (path in sort(list.files(folder, pattern=paste0("^", kind, "_.*\\.csv$"), full.names=TRUE))) {
+        input <- file(path, "rt")
+        tryCatch({
+          first <- readLines(input, n=1, warn=FALSE)
+          if (length(first)) {
+            if (is.null(header)) { header <- first; writeLines(header, out) }
+            else if (!identical(header, first)) stop("Inconsistent report batch columns")
+            repeat {
+              lines <- readLines(input, n=10000, warn=FALSE)
+              if (!length(lines)) break
+              writeLines(lines, out)
+            }
+          }
+        }, finally=close(input))
+      }
+    }, finally=close(out))
+    if (is.null(header)) { unlink(temporary); next }
+    if (file.exists(destination) && !file.remove(destination)) stop("Cannot replace report export")
+    if (!file.rename(temporary, destination)) stop("Cannot publish report export")
+  }
+}
+
 # Export only already-computed windows and hits, in the analyzed read's native
 # 1-based inclusive coordinates. A completion row distinguishes zero hits from
 # a missing search. Summary-only runs intentionally omit these detailed files.
-export_report_density <- function(read_id, serial, analyses, output_dir, exact_boundary=NULL) {
+export_report_density <- function(read_id, serial, analyses, output_dir, tvr_boundary=NULL) {
   folder <- file.path(output_dir, "report_details")
   dir.create(folder, recursive=TRUE, showWarnings=FALSE)
   densities <- list(); motifs <- list()
@@ -861,15 +929,23 @@ export_report_density <- function(read_id, serial, analyses, output_dir, exact_b
       convention="one_based_inclusive", space="nanotel_analyzed_read"), rows)
   }
   stem <- make_barcode_read_stem(serial)
-  if (!is.null(exact_boundary) && !is.null(analyses$tvr_inclusive)) {
-    coverage <- report_repeat_coverage(read_id, exact_boundary,
+  if (!is.null(tvr_boundary) && !is.null(analyses$tvr_inclusive)) {
+    coverage <- report_repeat_coverage(read_id, tvr_boundary,
       analyses$tvr_inclusive[[2]]$motif_matches)
     if (!is.null(coverage)) jsonlite::write_json(coverage,
       file.path(folder, paste0(stem, "_coverage.json")), auto_unbox=TRUE,
       pretty=TRUE, digits=NA)
   }
-  write.csv(do.call(rbind, densities), file.path(folder, paste0(stem, "_density.csv")), row.names=FALSE)
-  write.csv(do.call(rbind, motifs), file.path(folder, paste0(stem, "_motifs.csv")), row.names=FALSE, na="")
+  sink <- getOption("nanotel.report_batch")
+  if (!is.null(sink)) {
+    write_report_batch(sink, "index", data.frame(read_key=as.character(serial), read_id=read_id, schema_version=2L))
+    write_report_batch(sink, "density", compact_report_rows(do.call(rbind, densities), serial))
+    write_report_batch(sink, "motifs", compact_report_rows(do.call(rbind, motifs), serial))
+  } else {
+    # Compatibility for standalone callers outside the batched pipeline.
+    write.csv(do.call(rbind, densities), file.path(folder, paste0(stem, "_density.csv")), row.names=FALSE)
+    write.csv(do.call(rbind, motifs), file.path(folder, paste0(stem, "_motifs.csv")), row.names=FALSE, na="")
+  }
 }
 
 
@@ -2418,7 +2494,7 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
 
   if(!summary_only) {
     export_report_density(current_fastq_name, current_serial,
-      list(exact=analyze_list, mismatch=analyze_list2, tvr_inclusive=analyze_list3), dirname(output_dir), telo_position)
+      list(exact=analyze_list, mismatch=analyze_list2, tvr_inclusive=analyze_list3), dirname(output_dir), if (is.null(tvr_patterns)) NULL else telo_position3)
     # changed to compressed file: 2026-01-29
     output_telo_fasta <- file.path(output_dir, paste0(make_barcode_read_stem(current_serial),
                                                       ".fasta.gz"))
@@ -2596,7 +2672,12 @@ make_barcode_read_stem <- function(serial_num) {
 
 search_patterns <- function(sample_telomeres, pattern_list, max_length = 1e5,
      output_dir, serial_start = 1, min_density,  title = "Telomeric repeat density", tvr_patterns, right_edge = FALSE,
-     summary_only = FALSE) {
+     summary_only = FALSE, report_batch_dir = NULL) {
+  if (!summary_only && !is.null(report_batch_dir)) {
+    sink <- open_report_batch(report_batch_dir)
+    previous <- options(nanotel.report_batch=sink)
+    on.exit({ lapply(sink$connections, close); options(previous) }, add=TRUE)
+  }
   #'@title Search given Patterns over a DNA sequences.
   #'@param sample_telomeres: the DNAString Set of the reads.
   #'@param pattern_list: a list of patterns or a string of 1 pattern.
@@ -2839,6 +2920,12 @@ run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta
                                       patterns, do_rc, use_filter = FALSE, right_edge = TRUE, tvr_patterns,
                                       summary_only = FALSE) {
 
+  report_batch_dir <- NULL
+  if (!summary_only) {
+    report_batch_dir <- tempfile("nanotel-report-batches-")
+    dir.create(report_batch_dir)
+    on.exit(unlink(report_batch_dir, recursive=TRUE), add=TRUE)
+  }
   filepath <- list_sequence_files(input_path, format)
 
   files <- open_input_files(filepath)
@@ -2898,21 +2985,21 @@ run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta
     seq_over_length <- seq.int(from = 1, by = 1, length.out = length(dna_reads))
     if( length(seq_over_length) < groups_length) {
       plan(sequential)
-      curr_df <- search_patterns(sample_telomeres = dna_reads, pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = serial_start , tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only)
+      curr_df <- search_patterns(sample_telomeres = dna_reads, pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = serial_start , tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
       df_summary <- union_all(df_summary, curr_df)
     } else {
 
       groups <- 1:groups_length
       split_seq <- suppressWarnings(split(x = seq_over_length, f = groups))
 
-      df1 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`1`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only )
-      df2 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`2`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(split_seq$`1`) + serial_start , tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only)
-      df3 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`3`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:2])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only)
-      df4 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`4`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:3])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only)
-      df5 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`5`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:4])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only)
-      df6 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`6`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:5])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only)
-      df7 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`7`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:6])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only)
-      df8 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`8`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:7])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only)
+      df1 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`1`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir )
+      df2 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`2`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(split_seq$`1`) + serial_start , tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
+      df3 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`3`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:2])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
+      df4 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`4`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:3])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
+      df5 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`5`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:4])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
+      df6 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`6`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:5])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
+      df7 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`7`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:6])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
+      df8 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`8`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:7])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
 
       df_summary <- Reduce(union_all , list(df_summary, df1,df2,df3, df4, df5, df6, df7, df8))
       # end of parallel try
@@ -2923,6 +3010,7 @@ run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta
   }
 
   plan(sequential)
+  if (!summary_only) merge_report_batches(report_batch_dir, output_path, get_barcode_file_prefix(input_path))
   ans_list <- list(df_summary, dna_length)
   names(ans_list) <- c("df_summary", "all_reads_length_vec")
 

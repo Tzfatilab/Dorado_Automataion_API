@@ -5,7 +5,7 @@ import hashlib
 
 def chromosome_section(cells):
     """Render existing group medians and presentation quartiles, without remapping."""
-    heading = '<section><h2><span class="number">6</span>Chromosome Comparison</h2>'
+    heading = '<section><h2><span class="number">7</span>Chromosome Comparison</h2>'
     if not cells:
         return heading + '<p class="note">Unavailable: no unambiguous chromosome mappings for post-filtered reads.</p></section>'
     import plotly.graph_objects as go

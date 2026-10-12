@@ -150,10 +150,17 @@ def validate(run: Run) -> None:
             for key in value.__dataclass_fields__:
                 walk(getattr(value, key))
         elif isinstance(value, dict):
-            for item in value.values():
+            for key, item in value.items():
+                if key is not None and not isinstance(key, (str, int, float, bool)):
+                    raise TypeError('Non-JSON dictionary key')
+                if isinstance(key, float) and not math.isfinite(key):
+                    raise ValueError('Nonfinite dictionary key')
                 walk(item)
         elif isinstance(value, (tuple, list)):
             for item in value:
                 walk(item)
+        elif value is not None and not isinstance(value, (str, int, float, bool)):
+            raise TypeError('Non-JSON value: ' + type(value).__name__)
+    # Validate JSON types during the existing traversal instead of duplicating
+    # millions of motif/evidence records with asdict and a discarded JSON string.
     walk(run)
-    json.dumps(asdict(run), allow_nan=False)

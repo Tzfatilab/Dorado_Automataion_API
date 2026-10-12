@@ -24,7 +24,7 @@ def sum_complete(barcodes, key, population):
 def motif_comparison(run):
     """Count exported hits in an explicit population; no new motif calling."""
     # Build two explicitly different match-count populations: whole reads and matches
-    # fully contained in exact telomere intervals, both limited to post-filtered reads.
+    # overlapping TVR-inclusive telomere intervals, both limited to post-filtered reads.
     # Counts are search hits, not covered bases, unique regions or percentages of reads.
     result = []
     for barcode in run.barcodes:
@@ -44,14 +44,14 @@ def motif_comparison(run):
             continue
         if any(not read.tracks.get("motifs") or read.tracks["motifs"].status != A.AVAILABLE or
                "tvr_inclusive" not in read.tracks["motifs"].value["methods"] or
-               read.calls["exact"]["interval"].status != A.AVAILABLE for read in reads):
+               read.calls["tvr_inclusive"]["interval"].status != A.AVAILABLE for read in reads):
             continue
         # All required reads passed the completeness checks. Only now may zero
         # matches be interpreted as an observed empty result rather than missing data.
         entry["available"] = True
         entry["evidence"] = [asdict(e) for read in reads for e in read.tracks["motifs"].evidence]
         for read in reads:
-            interval = read.calls["exact"]["interval"].value
+            interval = read.calls["tvr_inclusive"]["interval"].value
             for hit in read.tracks["motifs"].value["matches"]:
                 # Use one search method, avoiding triple-counting the same motif
                 # across exact, mismatch and TVR-inclusive exports.
@@ -59,9 +59,9 @@ def motif_comparison(run):
                     continue
                 label = hit["motif"] + (" (canonical)" if hit["role"] == "canonical" else "")
                 entry["whole_read"][label] = entry["whole_read"].get(label, 0) + 1
-                # Endpoints share normalized half-open coordinates. Require full
-                # containment; do not clip or reclassify a boundary-crossing hit.
-                if hit["start"] >= interval["start"] and hit["end"] <= interval["end"]:
+                # Half-open intervals overlap only when they share at least one base.
+                # Include crossing hits consistently with source coverage exports.
+                if hit["end"] > interval["start"] and hit["start"] < interval["end"]:
                     entry["telomere"][label] = entry["telomere"].get(label, 0) + 1
     return result
 

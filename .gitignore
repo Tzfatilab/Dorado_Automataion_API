@@ -26,3 +26,6 @@ tests/integration_output/
 
 dorado_workflow/data/references/ZebraFish/
 dorado_workflow/r_analysis/.Rproj.user/
+
+# Generated local analysis runs (keep results out of source control).
+Telomere Analyzer_*/

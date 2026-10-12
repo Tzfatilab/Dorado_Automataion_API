@@ -3,12 +3,14 @@ from collections import Counter, defaultdict
 from html import escape
 from statistics import median, quantiles
 import re
+from .motif_colors import motif_color
 
 
 def comparison_data(run):
     """Return read-based TVR percentages and chromosome medians with missing states.
 
-    TVR matches must lie completely inside the exported exact telomere call.
+    TVR matches must overlap the exported TVR-inclusive telomere call.
+    Boundary-crossing matches count once; position markers clip to the call.
     Read prevalence counts each motif once per read. The composition chart instead
     counts individual exported matches, retaining overlaps and source motif roles.
     Chromosome names come from annotations or explicit chrN[_Head/_Tail] labels;
@@ -31,7 +33,7 @@ def comparison_data(run):
             if read is None:
                 continue
             track = read.tracks.get("motifs")
-            interval = read.calls.get("exact", {}).get("interval")
+            interval = read.calls.get("tvr_inclusive", {}).get("interval")
             if (track and interval and track.status == "available" and interval.status == "available"
                     and "tvr_inclusive" in track.value["methods"]):
                 covered += 1
@@ -39,24 +41,24 @@ def comparison_data(run):
                 # method enters this denominator, avoiding duplicate methods.
                 for hit in track.value["matches"]:
                     if (hit["method"] == "tvr_inclusive"
-                            and hit["start"] >= interval.value["start"]
-                            and hit["end"] <= interval.value["end"]):
+                            and hit["end"] > interval.value["start"]
+                            and hit["start"] < interval.value["end"]):
                         label = hit["motif"] + (" (canonical)" if hit["role"] == "canonical" else "")
                         match_counts[label] += 1
-                        # Normalize exported match starts within the exact call.
+                        # Normalize exported match starts within the TVR-inclusive call.
                         # This is a presentation axis, not inferred biological polarity.
                         span = interval.value['end'] - interval.value['start']
                         serial = read.metrics.get('read_number')
                         read_label = (f'Read {int(serial.value)}' if serial and serial.status == 'available'
                                       else read.original_id.split()[0])
-                        positions.append(dict(motif=label, percent=100*(hit['start']-interval.value['start'])/span,
+                        positions.append(dict(motif=label, percent=100*(max(hit['start'],interval.value['start'])-interval.value['start'])/span,
                             start=hit['start']+1, end=hit['end'], read=read_label))
                 # Count each motif at most once per read; a multi-motif read may
                 # contribute to several motif percentages but only one stack class.
                 found = {hit["motif"] for hit in track.value["matches"]
                          if hit["method"] == "tvr_inclusive" and hit["role"] == "tvr"
-                         and hit["start"] >= interval.value["start"]
-                         and hit["end"] <= interval.value["end"]}
+                         and hit["end"] > interval.value["start"]
+                         and hit["start"] < interval.value["end"]}
                 with_tvr += bool(found)
                 motifs.update(found)
             if read.alignments.status != "available":
@@ -108,12 +110,11 @@ def comparison_figures(run):
     rows = [r for r in data["composition"] if sum(r["match_counts"].values()) > 0]
     labels = sorted({label for r in rows for label in r["match_counts"]},
                     key=lambda label: (not label.endswith(" (canonical)"), label))
-    palette = ["#5996E8", "#EFA44D", "#57A76D", "#E45E5D", "#A180D4", "#4BA6B5", "#987451"]
     for index, label in enumerate(labels):
         composition.add_trace(go.Bar(name=escape(label),
             x=[r["barcode"].replace("barcode", "BC") for r in rows],
             y=[100*r["match_counts"].get(label,0)/sum(r["match_counts"].values()) for r in rows],
-            marker_color=palette[index % len(palette)], width=0.65,
+            marker_color=motif_color(label), width=0.65,
             customdata=[[r["match_counts"].get(label,0),sum(r["match_counts"].values())] for r in rows],
             hovertemplate="%{x}<br>%{y:.2f}% of motif matches<br>%{customdata[0]} of %{customdata[1]} matches<extra>%{fullData.name}</extra>"))
     composition.update_layout(barmode="stack",xaxis_title="Barcode",yaxis_title="Motif matches (%)",
@@ -131,7 +132,7 @@ def comparison_figures(run):
             colorbar=dict(title="Median<br>length (kb)"),
             hovertemplate="%{y} / %{x}<br>Median: %{z:.3f} kb<br>%{customdata} reads<extra></extra>"))
     heatmap.update_layout(xaxis_title="Chromosome",yaxis_title="Barcode",yaxis_autorange="reversed")
-    note = "Share of exported motif matches inside exact telomeres of post-filtered reads. Overlaps retained; percentages describe matches, not reads or base coverage."
+    note = "Share of exported motif matches overlapping TVR-inclusive telomeres of post-filtered reads. Overlaps retained; percentages describe matches, not reads or base coverage."
     if data["omitted"]:
         note += " Incomplete motif data: " + ", ".join(data["omitted"]) + "."
     return [(4,"TVR Composition Across Barcodes",composition,note),

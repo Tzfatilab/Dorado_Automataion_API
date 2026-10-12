@@ -1,2 +1,0 @@
-barcode,km_status,km_median_bp,km_ci_lower_bp,km_ci_upper_bp,km_whole_relative_ci_width_pct,km_input_read_count,km_complete_read_count,km_censored_read_count,km_censoring_rate_pct,km_reporting_reason
-barcode19,non_estimable,,,,,5,2,3,60,A complete KM median confidence interval could not be estimated. Consider additional sequencing.

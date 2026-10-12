@@ -4,6 +4,7 @@
     absent records as failed. Ambiguous joins remain visible as warnings.
 """
 import csv
+import gzip
 import fnmatch
 import hashlib
 import json
@@ -89,7 +90,8 @@ class ResultImporter:
         # Read a header-based table with UTF-8 BOM support. Evidence row numbers
         # start at 2 because row 1 is the CSV header; malformed tables raise errors.
         source = self.source(path, "csv")
-        with path.open(encoding="utf-8-sig", newline="") as handle:
+        opener = gzip.open if path.name.endswith(".gz") else open
+        with opener(path, "rt", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             headers = reader.fieldnames or []
             if len(headers) != len(set(headers)) or not headers:
@@ -100,6 +102,32 @@ class ResultImporter:
                     raise ValueError(f"Extra CSV columns: {path.name}:{number}")
                 rows.append((row, Evidence(source.id, number)))
             return headers, rows, source
+
+    def detail_table(self, path):
+        """Expand version-2 identities/method aliases without recalculating hits."""
+        headers, rows, source = self.csv_table(path)
+        if "schema_version" not in headers:
+            return headers, rows, source
+        # Index lives beside the batch and stores each full FASTQ header once.
+        stem = path.name.rsplit("_", 1)[0]
+        index_path = path.with_name(stem + "_index.csv.gz")
+        _, identities, _ = self.csv_table(index_path)
+        lookup = {}
+        for entry, ev in identities:
+            key = entry.get("read_key")
+            if entry.get("schema_version") != "2" or not key or not entry.get("read_id") or key in lookup:
+                raise ValueError(f"Invalid/duplicate compact read index: {index_path.name}")
+            lookup[key] = entry["read_id"]
+        expanded = []
+        for row, ev in rows:
+            if row.get("schema_version") != "2" or row.get("read_id") not in lookup:
+                raise ValueError(f"Unsupported compact detail identity/schema: {path.name}")
+            methods = row.get("method", "").split("|")
+            if len(set(methods)) != len(methods) or not set(methods) <= {"exact", "mismatch", "tvr_inclusive"}:
+                raise ValueError(f"Invalid compact method aliases: {path.name}")
+            for method in methods:
+                expanded.append((dict(row, read_id=lookup[row["read_id"]], method=method), ev))
+        return headers, expanded, source
 
     def workbook_tables(self, path):
         # Read only recognized summary sheets, using stored cell values rather than
@@ -134,17 +162,23 @@ class ResultImporter:
         # Join preserved search hits to one unambiguous full read ID within a barcode.
         # Completion markers distinguish a valid zero-match search from absent data.
         # Invalid or incomplete exports invalidate the track rather than showing partial hits.
-        paths = [p for p in self.files("*read*_motifs.csv")
+        paths = [p for p in self.files("*read*_motifs.csv") + self.files("*read*_motifs.csv.gz")
                  if p.parent.name == "report_details" and
                  (p.name.startswith(f"{barcode.label}_read") or
                   (re.fullmatch(r"read\d+_motifs\.csv", p.name) and
                    p.parent.parent.name.lower() == barcode.label.lower()))]
+        # Completed barcode batches supersede legacy per-read exports. Importing
+        # both would duplicate every source observation after a resumed run.
+        compact = [p for p in paths if p.name == f"{barcode.label}_reads_motifs.csv.gz"]
+        batched = compact or [p for p in paths if p.name == f"{barcode.label}_reads_motifs.csv"]
+        if batched:
+            paths = batched
         index = {}
         for read in barcode.reads:
             index.setdefault(read.original_id, []).append(read)
         records, completed, invalid, evidence = {}, {}, set(), {}
         for path in paths:
-            _, rows, source = self.csv_table(path)
+            _, rows, source = self.detail_table(path)
             recovery_path = path.parent / "motif_recovery.json"
             recovery = Evidence(self.source(recovery_path, "json").id) if recovery_path.is_file() else None
             for row, ev in rows:
@@ -202,17 +236,23 @@ class ResultImporter:
         # window starts invalidate the entire affected read track.
         # Parallel R workers may not inherit the global barcode filename prefix.
         # In that case the enclosing barcode directory supplies the identity.
-        paths = [p for p in self.files("*read*_density.csv")
+        paths = [p for p in self.files("*read*_density.csv") + self.files("*read*_density.csv.gz")
                  if p.parent.name == "report_details" and
                  (p.name.startswith(f"{barcode.label}_read") or
                   (re.fullmatch(r"read\d+_density\.csv", p.name) and
                    p.parent.parent.name.lower() == barcode.label.lower()))]
+        # Completed barcode batches supersede legacy per-read exports. Importing
+        # both would duplicate every source observation after a resumed run.
+        compact = [p for p in paths if p.name == f"{barcode.label}_reads_density.csv.gz"]
+        batched = compact or [p for p in paths if p.name == f"{barcode.label}_reads_density.csv"]
+        if batched:
+            paths = batched
         index = {}
         for read in barcode.reads:
             index.setdefault(read.original_id, []).append(read)
         collected, invalid = {}, set()
         for path in paths:
-            _, rows, source = self.csv_table(path)
+            _, rows, source = self.detail_table(path)
             for row, ev in rows:
                 targets = index.get(row.get("read_id"), [])
                 if len(targets) != 1:
@@ -599,4 +639,6 @@ def import_results(root, metadata_path=None) -> Run:
     """Read one results directory without modifying any scientific artifact."""
     # Public read-only entry point: create fresh importer state for each run so
     # source registries and warnings cannot leak between report builds.
-    return ResultImporter(root, metadata_path).run()
+    from ..detail_archive import available_details
+    with available_details(root):
+        return ResultImporter(root, metadata_path).run()

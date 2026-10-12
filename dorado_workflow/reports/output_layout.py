@@ -3,6 +3,7 @@ from html import escape
 from pathlib import Path
 from urllib.parse import quote
 import json
+from dataclasses import asdict
 import os
 import tempfile
 import re
@@ -34,14 +35,14 @@ def organize_barcode_reports(root):
     for folder in sorted(root.glob('barcode*')):
         if not folder.is_dir() or not re.fullmatch(r'barcode\d+', folder.name, re.I):
             continue
-        for source in [*folder.iterdir(), *folder.glob('plots/*.plotly.json')]:
+        for source in [*folder.iterdir(), *folder.glob('plots/*.plotly.json'), *folder.glob('summaries/*_results.txt')]:
             if not source.is_file():
                 continue
             name = source.name
             category = ('report_details' if name.startswith(folder.name + '_telomere_') and name.endswith('.plotly.json') else 'plots' if name.startswith(folder.name + '_telomere_') and
                         (source.suffix.lower() in ('.html', '.png') or name.endswith('.plotly.json'))
-                        else 'summaries' if name == folder.name + '_results.txt' else None)
-            if category is None:
+                        else '' if name == folder.name + '_results.txt' else None)
+            if category is None or (category == '' and source.parent == folder):
                 continue
             target = folder / category / name
             if not source.resolve().is_relative_to(root) or not target.resolve().is_relative_to(root):
@@ -84,7 +85,12 @@ def write_run_reports(root, run, page):
     """Write one self-contained dashboard, with embedded source provenance."""
     root = Path(root).resolve()
     destination = root/'dashboard.html'
-    snapshot = json.dumps(run.to_dict(), ensure_ascii=True).replace('<', '\\u003c')
+    # Raw per-window/per-hit tracks already live in scientific exports. Duplicating
+    # them here can make the HTML gigabytes large, even though charts use aggregates.
+    manifest = dict(schema_version=run.schema_version, run_id=run.id,
+                    sources=[asdict(source) for source in run.sources],
+                    barcodes=[dict(id=b.id, label=b.label) for b in run.barcodes])
+    snapshot = json.dumps(manifest, ensure_ascii=True).replace('<', '\\u003c')
     page = page.replace('</main>', report_index(root) + '</main>')
     page = page.replace('</body>', '<script type="application/json" id="source-data">' + snapshot + '</script></body>')
     atomic_text(destination, page)

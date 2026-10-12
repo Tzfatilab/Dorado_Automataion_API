@@ -142,6 +142,10 @@ def run_pipeline(
         except Exception as exc:
             report_warning = f"\nHTML report could not be generated: {exc}"
             log(report_warning.strip())
+            # Preserve the location and exception type, not only its message.
+            # This makes intermittent report failures diagnosable after the GUI closes.
+            import traceback
+            log(traceback.format_exc())
     status, message = _finish_pipeline_run(result, run_started_at, context, log)
     return status, message + report_warning
 

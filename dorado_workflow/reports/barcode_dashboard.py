@@ -4,10 +4,11 @@ from .barcode_comparisons import comparison_data
 from .barcode_composition import composition_section
 from .barcode_positions import positions_section
 from .barcode_chromosomes import chromosome_section
+from .barcode_results import results_section
 from .barcode_reads import reads_section, READ_SCRIPT
 
 
-def barcode_views(run, icons, histograms=None):
+def barcode_views(run, icons, histograms=None, results_root=None):
     """Render six cards per barcode from exported facts and existing aggregates.
 
     TVR counts require complete motif coverage of the post-filtered population.
@@ -38,7 +39,7 @@ def barcode_views(run, icons, histograms=None):
             ('Reads with TVRs', motifs['with_tvr'] if motifs else None, tvr_note,
              '<path d="M8 40V23M19 40V8M30 40V17M41 40V4"/>'),
             ('Distinct TVR motifs', len(motifs['motifs']) if motifs else None,
-             'Noncanonical motifs inside exact telomeres',
+             'Noncanonical motifs overlapping TVR-inclusive telomeres',
              '<circle cx="24" cy="10" r="6"/><circle cx="10" cy="36" r="6"/><circle cx="38" cy="36" r="6"/><path d="m21 16-8 14m14-14 8 14M16 36h16"/>'),
             ('Chromosomes detected', len(chromosomes) if chromosomes else None,
              'Unambiguous mapped post-filtered reads', icons[5]),
@@ -51,8 +52,8 @@ def barcode_views(run, icons, histograms=None):
         pages.append(f'<div class="barcode-page" id="{barcode.id}" data-label="{escape(label, quote=True)}" data-chart-label="{escape(barcode.label.replace("barcode", "BC"), quote=True)}" hidden>'
             f'<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#/">All Barcodes</a> <span>› {escape(label)}</span></nav>'
             f'<section><h2><span class="number">1</span>Key Statistics ({escape(label)})</h2><div class="stats">{"".join(cards)}</div></section>'
-            '<p class="note">TVR counts use exported noncanonical matches inside exact telomere intervals of post-filtered reads. Missing details remain unavailable.</p>'
-            + histograms.get(barcode.id, '') + '<div class="charts">' + composition_section(motifs)
+            '<p class="note">TVR counts use exported noncanonical matches overlapping TVR-inclusive telomere intervals of post-filtered reads. Missing details remain unavailable.</p>'
+            + results_section(barcode, results_root) + histograms.get(barcode.id, '') + '<div class="charts">' + composition_section(motifs)
             + positions_section(motifs) + '</div>'
             + chromosome_section([c for c in comparisons['cells'] if c['barcode'] == barcode.label])
             + reads_section(barcode) + '</div>')
@@ -85,6 +86,33 @@ ROUTER = READ_SCRIPT + """<script>
       let figure;
       try { figure = JSON.parse(plot.nextElementSibling.textContent); }
       catch (_) { plot.textContent = 'Saved chart data is invalid.'; return; }
+      // Display source serial numbers while keeping stable read IDs separately
+      // for navigation. Do not infer identity from point rank or measured length.
+      const readIndex = new Map();
+      (window.reportReadRows ? window.reportReadRows(page.id) : []).forEach(read => {
+        [read.header, read.header.split(/\s+/)[0]].forEach(key => {
+          if (!readIndex.has(key)) readIndex.set(key, read);
+          else if (readIndex.get(key)?.id !== read.id) readIndex.set(key, null);
+        });
+      });
+      (figure.data || []).forEach(trace => {
+        if (!Array.isArray(trace.text) || trace.meta === 'read-links') return;
+        const links = [];
+        let matched = false;
+        trace.text = trace.text.map(text => {
+          const match = /^Read: (.*?)<br>/.exec(text);
+          const read = readIndex.get(match ? match[1] : text);
+          links.push(read ? [page.id, read.id] : null);
+          if (!read) return text;
+          matched = true;
+          return match ? read.label + text.slice(match[0].length - 4) : read.label;
+        });
+        // Smoothed/median curves represent statistics, not individual reads.
+        if (matched && !/median|smoothed/i.test(trace.name || '')) {
+          trace.meta = 'read-links';
+          trace.customdata = links;
+        }
+      });
       // Move only the existing count/percentage menu into the section header.
       // Its saved update arguments supply every value: no binning or conversion.
       const menu = (figure.layout.updatemenus || []).find(m =>
@@ -96,6 +124,21 @@ ROUTER = READ_SCRIPT + """<script>
         .then(() => {
           plot.on('plotly_click', event => {
             const point = event.points[0];
+            // Saved NanoTel traces retain read identities in hover text. Resolve
+            // against this barcode's actual read pages, never rank or length alone.
+            const payload = page.querySelector('.read-data');
+            const reads = window.reportReadRows ? window.reportReadRows(page.id) : (payload ? (JSON.parse(payload.textContent) || []) : []);
+            const goRead = read => { location.hash = '#/barcode/' + page.id + '/read/' + read.id; };
+            const resolve = identity => {
+              const matches = reads.filter(r => r.header === identity || r.header.split(/\s+/)[0] === identity);
+              return matches.length === 1 ? matches[0] : null;
+            };
+            if (point && point.data.meta !== 'read-links' && !/median|smoothed/i.test(point.data.name || '')) {
+              const text = typeof point.text === 'string' ? point.text : '';
+              const match = /^Read: (.*?)<br>/.exec(text);
+              const read = resolve(match ? match[1] : text);
+              if (read) { goRead(read); return; }
+            }
             if (point && point.data.meta === 'read-links' && point.customdata) {
               location.hash = '#/barcode/' + point.customdata[0] + '/read/' + point.customdata[1];
             }

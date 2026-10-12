@@ -137,7 +137,7 @@ def render_screen(run, results_root=None):
     # Sections 2 and 3 share a row on desktop and stack on smaller screens.
     barcode_plots = {b.id: '<div class="charts">' + histograms[b.id] + read_plots[b.id] + '</div>'
                      for b in run.barcodes}
-    navigation, barcode_pages = barcode_views(run, ICONS, barcode_plots)
+    navigation, barcode_pages = barcode_views(run, ICONS, barcode_plots, results_root=results_root)
     css = Path(__file__).with_name("all_barcodes.css").read_text(encoding="utf-8")
     # Combine the complete page in memory. Cards appear before the two panels;
     # CSS controls wrapping while figure scripts attach hover/zoom behavior.
@@ -169,7 +169,9 @@ def generate_report(results, output):
     # Finish importing and rendering before creating the output folder, so
     # calculation/import errors do not leave an empty report destination.
     print(f"Rendering five sections for {len(run.barcodes)} barcodes...", flush=True)
-    page = render_screen(run, results_root=results)
+    from .detail_archive import available_details
+    with available_details(results):
+        page = render_screen(run, results_root=results)
     destination = Path(output)
     # Refuse overwrites, including an existing empty destination directory.
     destination.mkdir(parents=True, exist_ok=False)
@@ -186,10 +188,18 @@ def generate_run_report(results, nanotel_directory):
     Scientific exports stay at their original paths for downstream consumers.
     """
     from .output_layout import write_run_reports, organize_barcode_reports
+    from .detail_archive import available_details, pack_details
     organize_barcode_reports(nanotel_directory)
-    run = import_results(results)
-    page = render_screen(run, results_root=results)
-    return write_run_reports(nanotel_directory, run, page)
+    # Import and embed saved plots while the archive contents are available.
+    with available_details(results):
+        run = import_results(results)
+        page = render_screen(run, results_root=results)
+        destination = write_run_reports(nanotel_directory, run, page)
+    # Archive only after a complete dashboard has been saved successfully.
+    for barcode in Path(nanotel_directory).glob('barcode*'):
+        if barcode.is_dir():
+            pack_details(barcode)
+    return destination
 
 
 
