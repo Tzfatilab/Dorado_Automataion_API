@@ -441,6 +441,10 @@ make_telomere_histogram_plot <- function(histogram, barcode, mismatch_allowance)
                "yaxis.tickformat" = ".1f", "yaxis.autorange" = TRUE), trace_indices))
       ))))
   }
+  # Export explicit per-read completeness; absence from the censored rug alone
+  # must never be interpreted as proof of completeness by the dashboard.
+  p <- plotly::layout(p, meta = list(read_completeness = lapply(seq_len(nrow(reads)), function(i)
+    list(read_id = as.character(reads$read_id[i]), event = as.integer(reads$event[i])))))
   censored <- reads[which(reads$event == 0L), , drop = FALSE]
   if (nrow(censored)) p <- plotly::add_trace(p,
     x = censored$telomere_length_bp, y = rep(0.5, nrow(censored)), yaxis = "y2",
@@ -3277,6 +3281,29 @@ if (isTRUE(opt$analysis)) {
   # --- Step 4: max edge distance < sequence length - running median ---
   df_filtered <- df_filtered %>%
     dplyr::filter(SeqLen_minus_RunMed > opt$max_edge_distance)
+
+  # Preserve source filter decisions for reporting; do not change membership.
+  filter_audit <- ans_list$df_summary
+  density_values <- filter_audit[[analysis_columns[["density"]]]]
+  start_values <- filter_audit[[analysis_columns[["start"]]]]
+  edge_values <- df_for_plot$SeqLen_minus_RunMed[match(filter_audit$Serial, df_for_plot$Serial)]
+  filter_reasons <- vapply(seq_len(nrow(filter_audit)), function(i) {
+    reasons <- character()
+    if (!is.finite(density_values[i])) reasons <- c(reasons, "Telomere density unavailable")
+    else if (density_values[i] < opt$min_density)
+      reasons <- c(reasons, sprintf("Telomere density %.4f below minimum %.4f", density_values[i], opt$min_density))
+    if (!is.finite(start_values[i])) reasons <- c(reasons, "Telomere start unavailable")
+    else if (start_values[i] > opt$max_telomere_start)
+      reasons <- c(reasons, sprintf("Telomere start %s bp exceeds maximum %s bp", start_values[i], opt$max_telomere_start))
+    if (!length(reasons) && (!is.finite(edge_values[i]) || edge_values[i] <= opt$max_edge_distance))
+      reasons <- c(reasons, if (!is.finite(edge_values[i])) "Edge-filter measurement unavailable" else
+        sprintf("Edge filter: read length minus running median telomere length (%s bp) is not greater than %s bp", edge_values[i], opt$max_edge_distance))
+    if (!length(reasons)) "Passed NanoTel filters" else paste(reasons, collapse="; ")
+  }, character(1))
+  audit_dir <- file.path(opt$save_path, "report_details")
+  dir.create(audit_dir, recursive=TRUE, showWarnings=FALSE)
+  write_csv(data.frame(sequence_ID=filter_audit$sequence_ID, Serial=filter_audit$Serial,
+    reason=filter_reasons), file.path(audit_dir, paste0(barcode_name, "_filter_reasons.csv")))
 
   # Write filtered sorted summary
   write_csv(x = df_filtered,

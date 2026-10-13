@@ -10,7 +10,7 @@ from dataclasses import asdict
 from pathlib import Path
 from statistics import median
 
-from .all_barcodes import render_screen
+from dorado_workflow.reports.overview.dashboard import render_screen
 from .interactive.models import Availability as A, Barcode, Fact, Read, Run, safe_id, unavailable
 
 

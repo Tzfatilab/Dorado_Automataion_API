@@ -15,7 +15,7 @@ from .base import ProcessorBase, ProcessorResult, WorkflowContext
 from ..utils.cancellation import WorkflowCancelled
 from ..utils.analysis_constants import NANOTEL_RECORDS_PER_CHUNK, FASTQ_LINES_PER_RECORD
 from ..utils.shell_commands import format_command
-from ..reports.km_statistics import write_km_run_statistics
+from dorado_workflow.reports.exports.kaplan_meier import write_km_run_statistics
 
 
 class NanoTelProcessor(ProcessorBase):

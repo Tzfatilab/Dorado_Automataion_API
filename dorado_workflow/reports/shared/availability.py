@@ -1,6 +1,6 @@
 """Presentation audit of imported coverage, warnings and source provenance."""
 from html import escape
-from .interactive.models import unavailable
+from dorado_workflow.reports.interactive.models import unavailable
 
 
 def availability_html(run):

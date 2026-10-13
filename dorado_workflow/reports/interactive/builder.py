@@ -1,64 +1,26 @@
-"""Write a portable file:// report, without changing source artifacts."""
-from dataclasses import asdict
-import json
+"""Compatibility builder using the shared dashboard renderer."""
 from pathlib import Path
-import shutil
-import tempfile
-
-from .models import Run, validate
-from .dashboard import dashboard_data
+from contextlib import nullcontext
+from .models import validate
+from ..storage.layout import atomic_text
 
 
-def payload(value):
-    """Serialize data as a script-safe JSON literal, never executable source input."""
-    return (json.dumps(value, ensure_ascii=True, allow_nan=False, separators=(",", ":"))
-            .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026"))
+def build_report(run, destination, results_root=None):
+    """Write the current dashboard into a new/empty output directory.
 
-
-def build_report(run: Run, destination) -> Path:
-    """Build atomically into a new/empty directory; never delete an existing report.
-
-    One local script per barcode avoids loading every molecule on the run page.
-    Scripts use fixed hash filenames; scientific names are data, never paths.
+    Both entry points use one renderer. The obsolete milestone UI and its
+    duplicate browser assets are no longer shipped or maintained.
     """
-    # Reject inconsistent IDs, facts or evidence before producing browser files.
+    from ..overview.dashboard import render_screen
     validate(run)
-    from plotly.offline import get_plotlyjs
     destination = Path(destination).resolve()
-    if destination.exists():
-        if not destination.is_dir() or any(destination.iterdir()):
-            raise FileExistsError("Report destination must be new or empty")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".nanotel-report-", dir=destination.parent) as temp:
-        staged = Path(temp) / "report"
-        assets = staged / "assets"
-        data_dir = assets / "data"
-        data_dir.mkdir(parents=True)
-        templates = Path(__file__).parent / "assets"
-        shutil.copyfile(templates / "index.html", staged / "index.html")
-        for name in ("report.css", "report.js"):
-            shutil.copyfile(templates / name, assets / name)
-        (assets / "plotly.min.js").write_text(get_plotlyjs(), encoding="utf-8")
-        # Work on a serialized copy: removing read details from the lightweight
-        # index must never remove reads from the caller's scientific model.
-        index = asdict(run)
-        index["dashboard"] = dashboard_data(run)
-        for barcode in index["barcodes"]:
-            full = dict(barcode)
-            # The index keeps barcode summaries; full reads load on navigation
-            # from a local script, avoiding file:// fetch restrictions.
-            barcode.pop("reads")
-            (data_dir / (barcode["id"] + ".js")).write_text(
-                "window.NanoTelData.barcodes[" + payload(barcode["id"]) + "]=" + payload(full) + ";\n",
-                encoding="utf-8")
-        (data_dir / "run.js").write_text(
-            "window.NanoTelData={run:" + payload(index) + ",barcodes:Object.create(null)};\n", encoding="utf-8")
-        # A complete machine-readable copy supports inspection and downstream validation.
-        full_document = asdict(run)
-        full_document["dashboard"] = index["dashboard"]
-        (staged / "report-data.json").write_text(json.dumps(full_document, ensure_ascii=True, allow_nan=False, indent=2), encoding="utf-8")
-        if destination.exists():
-            destination.rmdir()  # Only the previously verified empty directory.
-        # Publish the completed folder only after all staged files were written.
-        staged.rename(destination)
-    return destination / "index.html"
+    if destination.exists() and (not destination.is_dir() or any(destination.iterdir())):
+        raise FileExistsError('Report destination must be new or empty')
+    from ..storage.archive import available_details
+    # Archived barcode figure specifications are needed while rendering only.
+    with available_details(results_root) if results_root is not None else nullcontext():
+        page = render_screen(run, results_root=results_root)
+    destination.mkdir(parents=True, exist_ok=True)
+    target = destination / 'index.html'
+    atomic_text(target, page)
+    return target

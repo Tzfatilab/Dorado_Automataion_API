@@ -3,7 +3,8 @@ from collections import Counter, defaultdict
 from html import escape
 from statistics import median, quantiles
 import re
-from .motif_colors import motif_color
+from dorado_workflow.reports.shared.colors import motif_color
+from dorado_workflow.reports.barcode.composition import motif_base_counts, composition_section
 
 
 def comparison_data(run):
@@ -27,6 +28,7 @@ def comparison_data(run):
         rows = lengths.value
         with_tvr, covered, motifs = 0, 0, Counter()
         match_counts = Counter()
+        base_counts = Counter()
         positions = []
         for item in rows:
             read = by_id.get(item["read_id"])
@@ -37,6 +39,9 @@ def comparison_data(run):
             if (track and interval and track.status == "available" and interval.status == "available"
                     and "tvr_inclusive" in track.value["methods"]):
                 covered += 1
+                base_counts.update(motif_base_counts(interval.value['start'], interval.value['end'],
+                    ((hit['motif'] + (' (canonical)' if hit['role'] == 'canonical' else ''), hit['start'], hit['end'])
+                     for hit in track.value['matches'] if hit['method'] == 'tvr_inclusive')))
                 # Count source hits, not covered bases. Only the TVR-inclusive
                 # method enters this denominator, avoiding duplicate methods.
                 for hit in track.value["matches"]:
@@ -88,7 +93,7 @@ def comparison_data(run):
                     label=label, length_kb=item['length_bp']/1000))
         if rows and covered == len(rows):
             composition.append(dict(barcode=barcode.label, total=len(rows), with_tvr=with_tvr,
-                                    without_tvr=len(rows)-with_tvr, motifs=dict(motifs), match_counts=dict(match_counts), positions=positions))
+                                    without_tvr=len(rows)-with_tvr, motifs=dict(motifs), match_counts=dict(match_counts), base_counts=dict(base_counts), positions=positions))
         else:
             omitted.append(barcode.label)
     # Presentation quartiles use linear interpolation (inclusive/type 7).
@@ -101,24 +106,34 @@ def comparison_data(run):
     return dict(composition=composition, cells=cells, omitted=omitted)
 
 
+def overview_composition_section(data):
+    """Pool bases, never average barcode percentages or include incomplete exports."""
+    rows = data['composition']
+    pooled = None
+    if rows and not data['omitted']:
+        bases = Counter()
+        for row in rows:
+            bases.update(row['base_counts'])
+        pooled = dict(base_counts=dict(bases), total=sum(row['total'] for row in rows),
+                      with_tvr=sum(row['with_tvr'] for row in rows))
+    section = composition_section(pooled, number=4, title='TVR Composition - All Barcodes')
+    if pooled and 'class="histogram-figure"' in section:
+        section = section.replace('class="saved-histogram composition-plot"',
+            'id="overview-composition" class="saved-histogram composition-plot"')
+        section = section.replace('</section>',
+            '<script>(()=>{const plot=document.getElementById("overview-composition");'
+            'const figure=JSON.parse(plot.nextElementSibling.textContent);'
+            'Plotly.newPlot(plot,figure.data,figure.layout,{responsive:true,displaylogo:false});})();</script></section>')
+    if data['omitted']:
+        section = section.replace('</section>', '<p class="note">Incomplete motif data: ' +
+            escape(', '.join(data['omitted'])) + '. No partial all-barcode total is shown.</p></section>')
+    return section
+
+
 def comparison_figures(run):
     """Build charts 4/5; missing cells remain gaps, never zero-length telomeres."""
     import plotly.graph_objects as go
     data = comparison_data(run)
-    composition = go.Figure()
-    # Empty or incomplete exports do not become a fabricated 100% canonical bar.
-    rows = [r for r in data["composition"] if sum(r["match_counts"].values()) > 0]
-    labels = sorted({label for r in rows for label in r["match_counts"]},
-                    key=lambda label: (not label.endswith(" (canonical)"), label))
-    for index, label in enumerate(labels):
-        composition.add_trace(go.Bar(name=escape(label),
-            x=[r["barcode"].replace("barcode", "BC") for r in rows],
-            y=[100*r["match_counts"].get(label,0)/sum(r["match_counts"].values()) for r in rows],
-            marker_color=motif_color(label), width=0.65,
-            customdata=[[r["match_counts"].get(label,0),sum(r["match_counts"].values())] for r in rows],
-            hovertemplate="%{x}<br>%{y:.2f}% of motif matches<br>%{customdata[0]} of %{customdata[1]} matches<extra>%{fullData.name}</extra>"))
-    composition.update_layout(barmode="stack",xaxis_title="Barcode",yaxis_title="Motif matches (%)",
-        yaxis_range=[0,100],legend=dict(orientation="v",x=1.02,xanchor="left",y=1,yanchor="top",font=dict(size=11)))
     heatmap = go.Figure()
     cells = data["cells"]
     if cells:
@@ -132,9 +147,6 @@ def comparison_figures(run):
             colorbar=dict(title="Median<br>length (kb)"),
             hovertemplate="%{y} / %{x}<br>Median: %{z:.3f} kb<br>%{customdata} reads<extra></extra>"))
     heatmap.update_layout(xaxis_title="Chromosome",yaxis_title="Barcode",yaxis_autorange="reversed")
-    note = "Share of exported motif matches overlapping TVR-inclusive telomeres of post-filtered reads. Overlaps retained; percentages describe matches, not reads or base coverage."
-    if data["omitted"]:
-        note += " Incomplete motif data: " + ", ".join(data["omitted"]) + "."
-    return [(4,"TVR Composition Across Barcodes",composition,note),
+    return [(4,"TVR Composition - All Barcodes",None,overview_composition_section(data)),
             (5,"Median Telomere Length by Chromosome and Barcode",heatmap,
              "Post-filtered lengths; explicit chromosome annotations or chrN/chrN_Head/chrN_Tail labels. Cross-chromosome ambiguous reads excluded; gaps mean unavailable.")]

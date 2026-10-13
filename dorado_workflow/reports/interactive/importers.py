@@ -14,7 +14,7 @@ import re
 
 from openpyxl import load_workbook
 
-from ..nanotel_workbook import barcode_from_summary_filename
+from dorado_workflow.reports.exports.workbook import barcode_from_summary_filename
 from .coordinates import normalize_interval
 from .supplementary import import_statistics, chromosome_fact, detected_chromosomes
 from .models import (Availability as A, Barcode, Evidence, Fact, Read, Run,
@@ -639,6 +639,6 @@ def import_results(root, metadata_path=None) -> Run:
     """Read one results directory without modifying any scientific artifact."""
     # Public read-only entry point: create fresh importer state for each run so
     # source registries and warnings cannot leak between report builds.
-    from ..detail_archive import available_details
+    from dorado_workflow.reports.storage.archive import available_details
     with available_details(root):
         return ResultImporter(root, metadata_path).run()

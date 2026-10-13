@@ -1,6 +1,6 @@
 ﻿"""Barcode rug plot of source-exported motif positions overlapping TVR-inclusive telomeres."""
 from html import escape
-from .motif_colors import motif_color
+from dorado_workflow.reports.shared.colors import motif_color
 
 
 def positions_section(row):

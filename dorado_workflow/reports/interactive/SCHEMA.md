@@ -2,8 +2,7 @@
 
 This is a presentation adapter, not an analysis implementation. It never scans
 sequences, selects calls, reruns filters, calls TVRs, or derives chromosome arms.
-All source files remain untouched. The report is a standalone builder; no GUI,
-pipeline completion or R code is modified.
+All source files remain untouched. The same renderer is used by the standalone commands and workflow completion.
 
 ## Build and open
 
@@ -11,16 +10,12 @@ pipeline completion or R code is modified.
 python -m dorado_workflow.reports.interactive "C:\path\to\run\results"
 # Optional explicit metadata and alternative NEW/EMPTY destination:
 python -m dorado_workflow.reports.interactive "C:\path\to\results" --metadata run-metadata.json --output report-preview
-python -m unittest discover -s tests -p test_interactive_report.py -v
 ```
 
-Open the resulting `report/index.html` directly in a browser. Move/copy the
-**whole report directory**, including assets, when sharing. No HTTP server,
-internet, CDN, remote fonts, fetch or ES modules are used. Plotly is bundled locally in assets/plotly.min.js. A restrictive
-content security policy prohibits network connections. Generation refuses to
-overwrite a nonempty directory. Source records are rendered with `textContent`,
-never interpreted as markup. Report files contain scientific read identifiers
-and provenance; sharing the directory shares those contents.
+Open the resulting `report/index.html` directly in a browser. The shared
+renderer embeds Plotly and read-track payloads in the HTML; it does not need a
+server, external assets folder, or network access. Generation refuses to
+replace a nonempty destination. Scientific labels are inserted as text.
 
 ## Inputs and precedence
 
@@ -152,12 +147,10 @@ records source ID, 1-based row (header is row 1), and relevant source columns.
 Source-reported statistics retain their source evidence. Presentation counts
 cite the source table. Source files need not remain present to explore a report.
 
-`assets/data/run.js` contains the run index without read arrays. Each barcode's
-read data is in `assets/data/b-<hash>.js`, loaded by a classic local script tag.
-Only known hash IDs can request these files. Missing chunks show an error and
-link back to overview. The read table renders 50 records at a time. Generation
-still loads imported records in memory; very large runs need a later streaming
-adapter rather than silently truncating records.
+Read coordinates and densities are embedded as separate inert JSON payloads.
+Only the selected read's tracks are parsed. The table is paginated and sortable.
+The original NanoTel image files stay in their barcode directories; the dashboard
+renders exported density samples directly instead of embedding thousands of JPEGs.
 
 ## Validation boundaries
 

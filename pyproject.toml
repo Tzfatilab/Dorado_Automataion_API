@@ -69,7 +69,10 @@ namespaces = true
 [tool.setuptools.package-data]
 dorado_workflow = [
     "configs/default_config.json",
-    "reports/all_barcodes.css",
+    "reports/assets/dashboard.css",
+    "reports/assets/read_density.js",
+    "reports/assets/read_browser.js",
+    "reports/assets/read_repeats.js",
     "data/NanoTel.R",
     "r_analysis/main_analysis_pipeline.R",
     "r_analysis/batch_mapping_analysis.R",

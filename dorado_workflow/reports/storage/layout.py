@@ -77,7 +77,7 @@ def report_index(root):
             url = quote(path.relative_to(root).as_posix(), safe='/')
             links.append(f'<li><a href="{url}">{escape(path.relative_to(folder).as_posix())}</a></li>')
         sections.append(f'<section><h2>{escape(folder.name)}</h2><ul>{"".join(links)}</ul></section>')
-    return ('<details class="note"><summary>Saved barcode reports</summary>'
+    return ('<details class="note saved-barcode-reports"><summary>Saved barcode reports</summary>'
             + ''.join(sections) + '</details>')
 
 

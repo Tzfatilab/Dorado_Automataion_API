@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, Optional
 import subprocess
 import json
-from ..reports.nanotel_workbook import NanoTelWorkbookWriter, barcode_from_summary_filename
+from dorado_workflow.reports.exports.workbook import NanoTelWorkbookWriter, barcode_from_summary_filename
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
 from ..utils.cancellation import WorkflowCancelled
 from ..utils.shell_commands import format_command

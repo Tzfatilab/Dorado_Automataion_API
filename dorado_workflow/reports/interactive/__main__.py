@@ -1,4 +1,4 @@
-"""Standalone milestone-1 builder; not connected to GUI/workflow execution yet."""
+"""Compatibility CLI for the shared offline NanoTel dashboard."""
 import argparse
 from pathlib import Path
 
@@ -14,7 +14,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         run = import_results(args.results, args.metadata)
-        output = build_report(run, args.output or args.results / "report")
+        output = build_report(run, args.output or args.results / "report", results_root=args.results)
     except (OSError, ValueError) as exc:
         parser.exit(1, f"Could not build report: {exc}\n")
     print(output.as_uri())

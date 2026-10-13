@@ -10,7 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from .output_layout import atomic_text
+from dorado_workflow.reports.storage.layout import atomic_text
 
 
 def union(ranges):
@@ -125,7 +125,7 @@ def _recover_barcode(folder):
 
 def recover_barcode(folder):
     """Support both legacy loose exports and the compact barcode archive."""
-    from .detail_archive import available_details, pack_details
+    from dorado_workflow.reports.storage.archive import available_details, pack_details
     folder = Path(folder)
     archived = (folder / 'report_details.zip').exists()
     with available_details(folder):
