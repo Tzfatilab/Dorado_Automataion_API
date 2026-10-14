@@ -3009,7 +3009,9 @@ run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta
       # end of parallel try
     }
 
-    serial_start <- max(df_summary$Serial) + 1
+    if (nrow(df_summary) > 0L) {
+      serial_start <- max(df_summary$Serial) + 1
+    }
 
   }
 
@@ -3265,11 +3267,13 @@ if (isTRUE(opt$analysis)) {
 
     # --- Step 3: Add running median and difference columns ---
     dplyr::mutate(
-      TelLenMM_RunningMed = sapply(
+      # vapply preserves numeric(0) when no reads pass the filters.
+      TelLenMM_RunningMed = vapply(
         seq_len(dplyr::n()),
         function(i) median(
           .data[[analysis_columns[["length"]]]][seq_len(i)]
-        )
+        ),
+        numeric(1)
       ),
       SeqLen_minus_RunMed = sequence_length - TelLenMM_RunningMed
     )
@@ -3323,16 +3327,16 @@ if (isTRUE(opt$analysis)) {
   n_reads        <- nrow(df_filtered)
   n_complete     <- sum(df_filtered$event == 1)
   n_censored     <- sum(df_filtered$event == 0)
-  censoring_rate <- n_censored / n_reads
+  censoring_rate <- if (n_reads > 0L) n_censored / n_reads else NA_real_
 
   med_telo <- median(df_filtered[[analysis_columns[["length"]]]])
   # This is NanoTel.R's FINAL-filter population. r_analysis computes its own
   # percentage with the same threshold but may add a minimum-read-length filter;
   # the two percentages can differ and must not be treated as interchangeable.
-  pct_short <- round(100 * mean(
+  pct_short <- if (n_reads > 0L) round(100 * mean(
     df_filtered[[analysis_columns[["length"]]]] < opt$short_telomere_threshold_bp,
     na.rm = TRUE
-  ), 1)
+  ), 1) else NA_real_
 
 
   fmt <- function(x) format(round(x), big.mark = ",", scientific = FALSE)
@@ -3351,6 +3355,11 @@ if (isTRUE(opt$analysis)) {
   )
 
   results_lines <- c(results_lines, "", format_km_report(km_result))
+  if (n_reads == 0L) {
+    empty_message <- "No reads passed the NanoTel analysis filters; length and percentage statistics are unavailable."
+    results_lines <- c(results_lines, "", empty_message)
+    log_print(empty_message, hide_notes = TRUE, console = FALSE)
+  }
 
   write_lines(results_lines,
               file.path(opt$save_path, paste0(barcode_name, "_results.txt")))
