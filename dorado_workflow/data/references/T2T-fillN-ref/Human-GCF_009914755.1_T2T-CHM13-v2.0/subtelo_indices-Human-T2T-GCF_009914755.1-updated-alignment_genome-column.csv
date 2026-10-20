@@ -1,0 +1,25 @@
+chrom,chrom_length,subtelo_Head_start_index,subtelo_Tail_end_index,alignment_genome
+"NC_060925.1 Homo sapiens isolate CHM13 chromosome 1, alternate assembly T2T-CHM13v2.0",248387328,2702,248384124,Chrom-01
+"NC_060926.1 Homo sapiens isolate CHM13 chromosome 2, alternate assembly T2T-CHM13v2.0",242696752,3630,242694130,Chrom-02
+"NC_060927.1 Homo sapiens isolate CHM13 chromosome 3, alternate assembly T2T-CHM13v2.0",201105948,2637,201101318,Chrom-03
+"NC_060928.1 Homo sapiens isolate CHM13 chromosome 4, alternate assembly T2T-CHM13v2.0",193574945,3272,193572630,Chrom-04
+"NC_060929.1 Homo sapiens isolate CHM13 chromosome 5, alternate assembly T2T-CHM13v2.0",182045439,2297,182043878,Chrom-05
+"NC_060930.1 Homo sapiens isolate CHM13 chromosome 6, alternate assembly T2T-CHM13v2.0",172126628,2900,172123849,Chrom-06
+"NC_060931.1 Homo sapiens isolate CHM13 chromosome 7, alternate assembly T2T-CHM13v2.0",160567428,3414,160565208,Chrom-07
+"NC_060932.1 Homo sapiens isolate CHM13 chromosome 8, alternate assembly T2T-CHM13v2.0",146259331,2514,146256709,Chrom-08
+"NC_060933.1 Homo sapiens isolate CHM13 chromosome 9, alternate assembly T2T-CHM13v2.0",150617247,3692,150614269,Chrom-09
+"NC_060934.1 Homo sapiens isolate CHM13 chromosome 10, alternate assembly T2T-CHM13v2.0",134758134,2638,134754930,Chrom-10
+"NC_060935.1 Homo sapiens isolate CHM13 chromosome 11, alternate assembly T2T-CHM13v2.0",135127769,2002,135125162,Chrom-11
+"NC_060936.1 Homo sapiens isolate CHM13 chromosome 12, alternate assembly T2T-CHM13v2.0",133324548,3103,133322210,Chrom-12
+"NC_060937.1 Homo sapiens isolate CHM13 chromosome 13, alternate assembly T2T-CHM13v2.0",113566686,2543,113563179,Chrom-13
+"NC_060938.1 Homo sapiens isolate CHM13 chromosome 14, alternate assembly T2T-CHM13v2.0",101161492,2075,101159839,Chrom-14
+"NC_060939.1 Homo sapiens isolate CHM13 chromosome 15, alternate assembly T2T-CHM13v2.0",99753195,3267,99750265,Chrom-15
+"NC_060940.1 Homo sapiens isolate CHM13 chromosome 16, alternate assembly T2T-CHM13v2.0",96330374,2330,96327688,Chrom-16
+"NC_060941.1 Homo sapiens isolate CHM13 chromosome 17, alternate assembly T2T-CHM13v2.0",84276897,2207,84273875,Chrom-17
+"NC_060942.1 Homo sapiens isolate CHM13 chromosome 18, alternate assembly T2T-CHM13v2.0",80542538,2017,80539048,Chrom-18
+"NC_060943.1 Homo sapiens isolate CHM13 chromosome 19, alternate assembly T2T-CHM13v2.0",61707364,2283,61704429,Chrom-19
+"NC_060944.1 Homo sapiens isolate CHM13 chromosome 20, alternate assembly T2T-CHM13v2.0",66210255,2725,66207101,Chrom-20
+"NC_060945.1 Homo sapiens isolate CHM13 chromosome 21, alternate assembly T2T-CHM13v2.0",45090682,2710,45086108,Chrom-21
+"NC_060946.1 Homo sapiens isolate CHM13 chromosome 22, alternate assembly T2T-CHM13v2.0",51324926,4330,51321951,Chrom-22
+"NC_060947.1 Homo sapiens isolate CHM13 chromosome X, alternate assembly T2T-CHM13v2.0",154259566,1824,154256622,Chrom-X
+"NC_060948.1 Homo sapiens isolate NA24385 chromosome Y, alternate assembly T2T-CHM13v2.0",62460029,5660,62453640,Chrom-Y
