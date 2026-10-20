@@ -100,9 +100,8 @@ def render_screen(run, results_root=None):
     for item in data["distributions"]:
         if item["lengths"]["status"] != "available":
             continue
-        # Positive values only on the log axis; this is a display restriction,
-        # not a new analysis filter. The panel caption discloses it.
-        records = [r for r in item["lengths"]["value"] if r["length_bp"] > 0]
+        # A linear axis displays all exported lengths, including zero.
+        records = item["lengths"]["value"]
         values = [r["length_bp"] / 1000 for r in records]
         # Keep identity attached to each plotted observation, including duplicate
         # lengths. Matching by a y value would route equal-length reads incorrectly.
@@ -113,11 +112,12 @@ def render_screen(run, results_root=None):
         boxes.add_trace(go.Box(name=item["label"].replace("barcode", "BC"), y=values,
             customdata=customdata, boxpoints="all", jitter=0.16, pointpos=0, fillcolor="#a6d0f5", line_color="#214e78",
             marker=dict(color="#3d83c9", size=5), hovertemplate="%{y:.3f} kb<extra>%{fullData.name}</extra>"))
-    boxes.update_layout(xaxis_title="Barcode", yaxis_title="Telomere length (kb)", yaxis_type="log")
+    boxes.update_layout(xaxis_title="Barcode", yaxis_title="Telomere length (kb)",
+                        yaxis_type="linear", yaxis_rangemode="tozero")
     # Both panels share typography, dimensions and offline Plotly settings.
     panels = []
     for index, title, fig, note in [(2, "Telomeric Reads by Barcode", bars, "Post-filtered telomeric reads."),
-                                    (3, "Telomere Length by Barcode", boxes, "Post-filtered reads. Logarithmic scale; a single read appears as a point. Zero lengths cannot appear on a logarithmic axis.")] + comparison_figures(run):
+                                    (3, "Telomere Length by Barcode", boxes, "Post-filtered reads. Linear scale; a single read appears as a point.")] + comparison_figures(run):
         if fig is None:
             panels.append(note)
             continue
