@@ -7,6 +7,7 @@ from dorado_workflow.reports.barcode.chromosomes import chromosome_section
 from dorado_workflow.reports.barcode.completeness import results_section
 from dorado_workflow.reports.reads.browser import reads_section, READ_SCRIPT
 from dorado_workflow.reports.reads.density import mismatch_enabled
+from dorado_workflow.reports.shared.organism import show_km
 
 
 def barcode_views(run, icons, histograms=None, results_root=None):
@@ -17,6 +18,7 @@ def barcode_views(run, icons, histograms=None, results_root=None):
     Missing coverage remains unavailable, never zero or 100% canonical.
     """
     comparisons = comparison_data(run)
+    km_enabled = show_km(run)
     mismatch = mismatch_enabled(run.settings)
     mismatch_attribute = 'unknown' if mismatch is None else str(mismatch).lower()
     histograms = histograms or {}
@@ -52,14 +54,14 @@ def barcode_views(run, icons, histograms=None, results_root=None):
             display = 'Unavailable' if number is None else f'{number/1000:,.2f} kb' if index == 2 else f'{number:,}'
             cards.append(f'<article class="stat stat-{index}"><svg aria-hidden="true" viewBox="0 0 48 48">{icon}</svg>'
                 f'<div><h3>{title}</h3><strong class="{"missing" if number is None else ""}">{display}</strong><p>{escape(note)}</p></div></article>')
-        pages.append(f'<div class="barcode-page" id="{barcode.id}" data-mismatch-enabled="{mismatch_attribute}" data-label="{escape(label, quote=True)}" data-chart-label="{escape(barcode.label.replace("barcode", "BC"), quote=True)}" hidden>'
+        pages.append(f'<div class="barcode-page" id="{barcode.id}" data-km-enabled="{str(km_enabled).lower()}" data-mismatch-enabled="{mismatch_attribute}" data-label="{escape(label, quote=True)}" data-chart-label="{escape(barcode.label.replace("barcode", "BC"), quote=True)}" hidden>'
             f'<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#/">All Barcodes</a> <span>› {escape(label)}</span></nav>'
             f'<section><h2><span class="number">1</span>Key Statistics ({escape(label)})</h2><div class="stats">{"".join(cards)}</div></section>'
             '<p class="note">TVR counts use exported noncanonical matches overlapping TVR-inclusive telomere intervals of post-filtered reads. Missing details remain unavailable.</p>'
-            + results_section(barcode, results_root) + histograms.get(barcode.id, '') + '<div class="charts">' + composition_section(motifs)
+            + (results_section(barcode, results_root) if km_enabled else '') + histograms.get(barcode.id, '') + '<div class="charts">' + composition_section(motifs)
             + positions_section(motifs) + '</div>'
             + chromosome_section([c for c in comparisons['cells'] if c['barcode'] == barcode.label])
-            + reads_section(barcode, results_root) + '</div>')
+            + reads_section(barcode, results_root, show_completeness=km_enabled) + '</div>')
     navigation = '<nav class="barcode-navigation" aria-label="Choose a barcode"><strong>Explore a barcode</strong>' + ''.join(links) + '</nav>'
     return navigation, ''.join(pages)
 

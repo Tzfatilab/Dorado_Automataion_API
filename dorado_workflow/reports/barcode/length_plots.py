@@ -5,6 +5,27 @@ from html.parser import HTMLParser
 import json
 import hashlib
 import re
+from dorado_workflow.reports.shared.organism import show_km
+
+
+def _hide_completeness(figure):
+    """Hide completeness overlays in the embedded copy, retaining menu indexes."""
+    for trace in figure['data']:
+        if 'censored' in str(trace.get('name', '')).casefold():
+            # The rug repeats observations already counted in the histogram.
+            # Retain its slot so saved count/percentage updates keep their targets.
+            trace.clear()
+            trace.update(type='scatter', x=[], y=[], visible=False, showlegend=False)
+    layout = figure['layout']
+    if isinstance(layout.get('meta'), dict):
+        layout['meta'].pop('read_completeness', None)
+    for annotation in layout.get('annotations', []):
+        if isinstance(annotation.get('text'), str):
+            annotation['text'] = re.sub(
+                r'\s*\|\s*(?:complete|censored|unknown):\s*\d+', '',
+                annotation['text'], flags=re.IGNORECASE)
+    layout['annotations'] = [a for a in layout.get('annotations', [])
+                             if 'censor' not in str(a.get('text', '')).casefold()]
 
 
 class _FigureParser(HTMLParser):
@@ -95,6 +116,8 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
                 # Hide the duplicate title only in this embedded copy. Keep
                 # annotations/subtitles, scientific data and source HTML intact.
                 layout['title'] = {'text': ''}
+                if not show_km(run):
+                    _hide_completeness(figure)
                 # The dashboard supplies the title and unit buttons, so the
                 # saved plot's large title/menu margin is no longer needed.
                 if not isinstance(layout.get('margin', {}), dict):

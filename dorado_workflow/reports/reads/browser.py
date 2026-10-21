@@ -127,7 +127,7 @@ def saved_filter_reasons(folder):
     return reasons
 
 
-def reads_section(barcode, results_root=None):
+def reads_section(barcode, results_root=None, show_completeness=True):
     """Embed JSON safely; the browser inserts all source text with textContent."""
     folder = None
     if results_root is not None:
@@ -145,7 +145,7 @@ def reads_section(barcode, results_root=None):
         row['track_data'] = read_track_data(by_id.get(row['id']), folder)
     # Keep images/coordinates out of the searchable table payload. Only the
     # selected read's track JSON is parsed, rather than every image at startup.
-    completeness = saved_completeness(folder)
+    completeness = saved_completeness(folder) if show_completeness else {}
     filter_reasons = saved_filter_reasons(folder)
     track_scripts = []
     for row in (rows or []) + extra_rows:

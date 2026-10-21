@@ -12,8 +12,12 @@
   function formatCount(value) { return value == null ? 'Unavailable' : value.toLocaleString(); }
   document.querySelectorAll('.read-browser').forEach(section => {
     const page = section.closest('.barcode-page');
+    const showCompleteness = page.dataset.kmEnabled !== 'false';
     const tableHead=section.querySelector('.reads-table thead tr');
-    if (tableHead && ![...tableHead.children].some(th=>th.textContent==='Status')) {
+    if (!showCompleteness && tableHead) {
+      [...tableHead.children].find(th=>th.textContent==='Status')?.remove();
+    }
+    if (showCompleteness && tableHead && ![...tableHead.children].some(th=>th.textContent==='Status')) {
       const th=node('th','Status');tableHead.insertBefore(th,tableHead.children[1]);
     }
     const rows = JSON.parse(section.querySelector('.read-data').textContent);
@@ -59,11 +63,13 @@
     });
     detailRows.forEach(read => {
       const keys=[read.header,read.header.split(/\s+/)[0]];
-      read.censored = read.completeness === 'censored' || keys.some(key=>censoredHeaders.has(key));
+      read.censored = showCompleteness && (read.completeness === 'censored' || keys.some(key=>censoredHeaders.has(key)));
       const complete=read.completeness === 'complete' || keys.some(key=>completeHeaders.has(key));
       read.completeness_label = read.censored ? 'Censored (incomplete)' : complete ? 'Complete' : 'Completeness unknown';
       read.excluded = !!read.source_note || !!read.plot_only;
-      read.read_status = (read.excluded ? 'Excluded by filtering; ' : '') + read.completeness_label;
+      read.read_status = showCompleteness
+        ? (read.excluded ? 'Excluded by filtering; ' : '') + read.completeness_label
+        : (read.excluded ? 'Excluded by filtering' : 'Included in filtered reads');
       read.filter_reason = keys.some(key=>edgeRemoved.has(key)) ? 'Removed by the NanoTel edge filter: read length minus running median telomere length did not exceed the configured edge-distance threshold.' :
         read.excluded ? (read.nanotel_filter_reason && read.nanotel_filter_reason!=='Passed NanoTel filters' ? read.nanotel_filter_reason : 'Outside the displayed filtered population; specific filter reason unavailable.') : 'Included in the filtered read table.';
     });
@@ -86,8 +92,8 @@
     const sort={value:'original'},direction={value:'desc'};
     const originalOrder=new Map(rows.map((r,index)=>[r,index]));
     const columnFilters=new Map();
-    const columnKeys=['label','read_status','telomere','tvr_length','length','canonical','tvr','blocks','chromosomes','arms'];
-    const columnValues=r=>[r.label,r.read_status,kb(r.telomere),kb(r.tvr_length),kb(r.length),pct(r.canonical),pct(r.tvr),formatCount(r.blocks),r.chromosomes.join(', ')||'Unavailable',r.arms.join(', ')||'Unavailable'];
+    const columnKeys=['label',...(showCompleteness?['read_status']:[]),'telomere','tvr_length','length','canonical','tvr','blocks','chromosomes','arms'];
+    const columnValues=r=>[r.label,...(showCompleteness?[r.read_status]:[]),kb(r.telomere),kb(r.tvr_length),kb(r.length),pct(r.canonical),pct(r.tvr),formatCount(r.blocks),r.chromosomes.join(', ')||'Unavailable',r.arms.join(', ')||'Unavailable'];
     let openMenu=null;
     section.querySelectorAll('.reads-table thead th').forEach((th,index)=>{
       const title=th.textContent;th.textContent='';
@@ -95,8 +101,9 @@
       trigger.onclick=()=>{
         if(openMenu){openMenu();}
         const menu=node('div','',document.body);menu.className='read-filter-menu';menu.setAttribute('role','dialog');menu.setAttribute('aria-label','Filter '+title);trigger.setAttribute('aria-expanded','true');
-        const sortActions=node('div','',menu);sortActions.className='read-column-sort';if(index===1)sortActions.hidden=true;
-        const numeric=index===0 || (index>=2 && index<=7);
+        const isStatus=columnKeys[index]==='read_status';
+        const sortActions=node('div','',menu);sortActions.className='read-column-sort';if(isStatus)sortActions.hidden=true;
+        const numeric=['label','telomere','tvr_length','length','canonical','tvr','blocks'].includes(columnKeys[index]);
         [['asc',numeric?'Sort smallest to largest':'Sort A to Z'],['desc',numeric?'Sort largest to smallest':'Sort Z to A']].forEach(([order,label])=>{
           const button=node('button',label,sortActions);button.type='button';
           button.setAttribute('aria-pressed',String(sort.value===columnKeys[index]&&direction.value===order));
@@ -105,7 +112,7 @@
         const values=[...new Set(rows.map(r=>columnValues(r)[index]))].sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true}));
         const chosen=new Set(columnFilters.has(index)?columnFilters.get(index):values);
         const searchInput=node('input','',menu);searchInput.type='search';searchInput.placeholder='Search values';searchInput.setAttribute('aria-label','Search '+title);
-        if (index===1) searchInput.hidden=true;
+        if (isStatus) searchInput.hidden=true;
         const actions=node('div','',menu),list=node('div','',menu);list.className='read-filter-values';
         const draw=()=>{list.replaceChildren();values.filter(v=>String(v).toLowerCase().includes(searchInput.value.toLowerCase())).forEach(value=>{
           const label=node('label','',list),box=node('input','',label);box.type='checkbox';box.checked=chosen.has(value);node('span',value,label);
@@ -121,7 +128,7 @@
         const anchor=trigger.getBoundingClientRect();
         menu.style.left=Math.max(8,Math.min(anchor.left,window.innerWidth-menu.offsetWidth-8))+'px';
         menu.style.top=Math.max(8,Math.min(anchor.bottom+4,window.innerHeight-menu.offsetHeight-8))+'px';
-        if(index===1) list.querySelector('input')?.focus();else searchInput.focus();
+        if(isStatus) list.querySelector('input')?.focus();else searchInput.focus();
       };
     });
     let current = 1;

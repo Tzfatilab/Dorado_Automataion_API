@@ -2502,7 +2502,7 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
     # changed to compressed file: 2026-01-29
     output_telo_fasta <- file.path(output_dir, paste0(make_barcode_read_stem(current_serial),
                                                       ".fasta.gz"))
-    writeXStringSet(current_seq, output_telo_fasta, compress = TRUE)
+    write_read_fasta(current_seq, output_telo_fasta)
 
 
    if(global_max_mismatch == 0) {
@@ -2621,31 +2621,62 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
 } # End of analyze_read
 
 
-create_dirs <- function(output_dir, summary_only = FALSE, log_path = NULL) {
-  if (!dir.exists(output_dir)) { # update  did it
-    dir.create(output_dir, recursive = TRUE)
+open_nanotel_log <- function(path) {
+  logfile <- logr::log_open(path, logdir=FALSE)
+  # logr installs recursive error/warning logging hooks. If logging itself
+  # fails, these can obscure the original worker error and prevent clean exit.
+  # Explicit log_print calls remain enabled; Rscript reports conditions to
+  # stderr and exits nonzero on an unhandled error for the workflow to detect.
+  options(error=NULL, warning.expression=NULL, warn=1)
+  logfile
+}
+
+ensure_output_directory <- function(path) {
+  # Another worker may create the same directory between the two checks.
+  if (!dir.exists(path)) dir.create(path, recursive=TRUE, showWarnings=FALSE)
+  if (!dir.exists(path)) stop("Cannot create NanoTel output directory: ", path, call.=FALSE)
+  if (file.access(path, 2L) != 0L) {
+    stop("NanoTel output directory is not writable: ", path, call.=FALSE)
   }
+  invisible(path)
+}
+
+write_read_fasta <- function(sequence, path, writer=Biostrings::writeXStringSet) {
+  # Check in the worker that actually saves the read, not only in the parent.
+  # Preserve the low-level warning (disk full, quota, permissions, etc.) that
+  # would otherwise be hidden behind future's Reduce/value error wrapper.
+  warnings <- character()
+  tryCatch({
+    ensure_output_directory(dirname(path))
+    withCallingHandlers(
+      writer(sequence, path, compress=TRUE),
+      warning=function(w) {
+        warnings <<- c(warnings, conditionMessage(w))
+      })
+  }, error=function(e) {
+    detail <- paste(unique(c(conditionMessage(e), warnings)), collapse="; ")
+    stop("Cannot save NanoTel read FASTA: ", path, "\n", detail,
+         "\nCheck output-directory permissions, free disk space and disk quota on the analysis machine.",
+         call.=FALSE)
+  })
+  invisible(path)
+}
+
+create_dirs <- function(output_dir, summary_only = FALSE, log_path = NULL) {
+  ensure_output_directory(output_dir)
 
   if (!summary_only) {
     output_jpegs <- paste(output_dir, "single_read_plots", sep = "/")
-    if (!dir.exists(output_jpegs)) {
-      dir.create(output_jpegs)
-    }
+    ensure_output_directory(output_jpegs)
     output_jpegs_1 <- paste(output_dir, "single_read_plots_adj", sep = "/")
-    if (!dir.exists(output_jpegs_1)) {
-      dir.create(output_jpegs_1)
-    }
+    ensure_output_directory(output_jpegs_1)
 
     reads_dir <- paste(output_dir, "reads", sep = "/")
-    if (!dir.exists(reads_dir)) {
-      dir.create(reads_dir)
-    }
+    ensure_output_directory(reads_dir)
   }
 
   log_dir <- if (is.null(log_path)) file.path(output_dir, "log") else dirname(log_path)
-  if (!dir.exists(log_dir)) {
-    dir.create(log_dir, recursive = TRUE)
-  }
+  ensure_output_directory(log_dir)
 }
 
 get_barcode_file_prefix <- function(input_path) {
@@ -3117,7 +3148,7 @@ tmp <- if (is.null(opt$log_path)) {
 
 # Open log
 # The log path already includes its directory; logr must not add another /log.
-lf <- log_open(tmp, logdir = FALSE)
+lf <- open_nanotel_log(tmp)
 log_print('Telomere Analyzer  version v1.1.9-beta 2026-02-19', hide_notes = TRUE, console = FALSE) # Send message to log
 t1 <- Sys.time()
 log_print(base::paste("Work started at:", toString(t1)), hide_notes = TRUE, console = FALSE) # Send message to log
