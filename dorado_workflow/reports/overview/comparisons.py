@@ -107,16 +107,17 @@ def comparison_data(run):
 
 
 def overview_composition_section(data):
-    """Pool bases, never average barcode percentages or include incomplete exports."""
+    """Pool available complete barcodes and disclose any excluded barcodes."""
     rows = data['composition']
     pooled = None
-    if rows and not data['omitted']:
+    if rows:
         bases = Counter()
         for row in rows:
             bases.update(row['base_counts'])
         pooled = dict(base_counts=dict(bases), total=sum(row['total'] for row in rows),
                       with_tvr=sum(row['with_tvr'] for row in rows))
-    section = composition_section(pooled, number=4, title='TVR Composition - All Barcodes')
+    title = 'TVR Composition - Available Barcodes' if data['omitted'] else 'TVR Composition - All Barcodes'
+    section = composition_section(pooled, number=4, title=title)
     if pooled and 'class="histogram-figure"' in section:
         section = section.replace('class="saved-histogram composition-plot"',
             'id="overview-composition" class="saved-histogram composition-plot"')
@@ -125,8 +126,12 @@ def overview_composition_section(data):
             'const figure=JSON.parse(plot.nextElementSibling.textContent);'
             'Plotly.newPlot(plot,figure.data,figure.layout,{responsive:true,displaylogo:false});})();</script></section>')
     if data['omitted']:
-        section = section.replace('</section>', '<p class="note">Incomplete motif data: ' +
-            escape(', '.join(data['omitted'])) + '. No partial all-barcode total is shown.</p></section>')
+        coverage = (f"Showing {len(rows)} barcodes and {pooled['total']:,} post-filtered reads with complete motif exports. "
+                    if pooled else "No barcodes have complete motif exports. ")
+        section = section.replace('</section>', '<p class="note">' + coverage +
+            'Excluded because motif data is incomplete or unavailable: ' +
+            escape(', '.join(data['omitted'])) +
+            '. Missing data is not counted as zero.</p></section>')
     return section
 
 
