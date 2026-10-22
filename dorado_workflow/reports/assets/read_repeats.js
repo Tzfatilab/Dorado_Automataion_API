@@ -124,6 +124,10 @@ window.renderReadRepeats = (parent, read) => {
       return (ascending?1:-1)*comparison;
     });
     heading.querySelectorAll('th').forEach(th=>th.setAttribute('aria-sort',th.dataset.sortKey===sortKey?(ascending?'ascending':'descending'):'none'));
+    table.reportExportData=()=>({name:'TVR and unassigned regions',
+      headers:columns.map(([label],index)=>index===6?label+' (%)':label),
+      rows:sorted.map(region=>[region.motif,'Region '+region.number,region.start+1,region.end,
+        region.end-region.start,region.matches??'Not applicable',100*(region.start-summary.start)/span])});
     if(!sorted.length){const row=add('tr','',body);add('td','No regions match the selected motifs / categories.',row).colSpan=columns.length;}
     const visible = sorted.slice(page * 25, (page + 1) * 25);
     visible.forEach((region, i) => {

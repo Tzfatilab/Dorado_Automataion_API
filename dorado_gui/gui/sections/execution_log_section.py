@@ -199,12 +199,22 @@ class ExecutionLogSection:
             self._nanotel_actual_tvr_enabled = True
         return line
 
+    def _nanotel_km_log_enabled(self):
+        organism = getattr(self, "_nanotel_log_organism", None)
+        if organism is None:
+            selector = getattr(self, "organism", None)
+            organism = selector.currentText() if selector is not None else ""
+        name = str(organism).strip().casefold()
+        return bool(name) and name not in {"human", "homo sapiens"}
+
     def _handle_nanotel_analysis_result(self, analysis_line):
         """Present assessed KM output; do not refit or reapply reporting policy."""
         prefix = "NanoTel analysis JSON saved to:"
         if not analysis_line.startswith(prefix):
             return False
         self._flush_pending_nanotel_stats_table()
+        if not self._nanotel_km_log_enabled():
+            return True
         try:
             path = Path(analysis_line[len(prefix):].strip())
             result = json.loads(path.read_text(encoding="utf-8"))

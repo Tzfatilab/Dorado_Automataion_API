@@ -53,7 +53,7 @@ def composition_section(row, number=5, title="TVR Composition"):
         return '&lt;0.1%' if 0 < 100*value/total < .1 else f'{100*value/total:.1f}%'
     legend = ''.join(f'<li><span class="motif-swatch" style="background:{color}"></span><span>{escape(label)}</span><strong>{percent(value)}</strong></li>' for label,color,value in zip(labels,colors,values))
     return (heading + '<p class="note">Base composition within TVR-inclusive telomeres of post-filtered reads</p>'
-        '<div class="read-composition-layout"><div><div class="saved-histogram composition-plot"></div>'
+        '<div class="read-composition-layout"><div><div class="saved-histogram composition-plot" style="height:350px"></div>'
         f'<script type="application/json" class="histogram-figure">{payload}</script></div>'
         f'<ul class="read-composition-legend">{legend}</ul></div>'
         '<p class="note">Slices and legend: percentage of pooled telomere bases, counted once. '

@@ -565,6 +565,8 @@ class AppWindow(
 
         self.worker_thread = QThread(self)
         self.worker = self._build_worker(inputs, flags)
+        # Keep log presentation tied to this run, even if UI selection changes.
+        self._nanotel_log_organism = self.worker.organism
 
         self.worker.moveToThread(self.worker_thread)
 

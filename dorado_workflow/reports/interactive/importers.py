@@ -408,6 +408,19 @@ class ResultImporter:
             from .coverage import import_coverage
             import_coverage(self, b)
             import_statistics(self, b, number)
+            # R omits empty barcodes from its statistics table. An explicit
+            # NanoTel zero plus an empty imported population establishes zero
+            # here too: downstream filtering cannot add telomeric reads.
+            # Do not infer zero from absent files or mix positive populations.
+            empty_count = b.metrics.get('nanotel_final_number_of_telomeric_reads_post_filtration')
+            if (stat_rows and label not in stat_rows and not b.reads and empty_count
+                    and empty_count.status == A.AVAILABLE and empty_count.value == 0):
+                b.metrics['amount_of_telomeres'] = Fact(
+                    A.AVAILABLE, 0, unit='reads', population='post_filtered_telomeres',
+                    origin='presentation_aggregate', evidence=empty_count.evidence.copy())
+                b.metrics['filtered_length_records'] = Fact(
+                    A.AVAILABLE, [], unit='bp', population='post_filtered_telomeres',
+                    origin='presentation_aggregate', evidence=empty_count.evidence.copy())
             barcodes.append(b)
 
         # A standalone/partially completed run may have NanoTel analysis exports
@@ -568,6 +581,20 @@ class ResultImporter:
         for read in barcode.reads:
             index.setdefault(read.original_id.split()[0], []).append(read)
         matches = {}
+        reversed_read = None
+        orientation_evidence = []
+        analysis_paths = self.files(barcode.label + '_analysis.json')
+        if len(analysis_paths) == 1:
+            try:
+                analysis = json.loads(analysis_paths[0].read_text(encoding='utf-8-sig'))
+                if analysis.get('barcode') == barcode.label:
+                    flag = analysis.get('analyzed_read_reverse_complemented')
+                    if type(flag) is bool:
+                        reversed_read = flag
+                        orientation_evidence = [Evidence(self.source(analysis_paths[0], 'json').id,
+                            fields=['analyzed_read_reverse_complemented'])]
+            except (OSError, ValueError, TypeError, AttributeError):
+                barcode.warnings.append('Analyzed-read orientation metadata could not be read')
         for path in paths:
             _, rows, source = self.csv_table(path)
             barcode.evidence.append(Evidence(source.id))
@@ -580,7 +607,7 @@ class ResultImporter:
                         target.alignments = unavailable("Cleaned read ID matches multiple source records; mapping join is ambiguous", A.INVALID)
                     continue
                 interval = normalize_interval(row.get("alignment_genome_start"), row.get("alignment_genome_end"),
-                    convention=self.metadata.get("mapping_coordinate_convention", "unknown"),
+                    convention=row.get('alignment_coordinate_convention') or self.metadata.get("mapping_coordinate_convention", "unknown"),
                     space="reference", evidence=[ev])
                 alignment = {"reference": text_fact(row, "alignment_genome", ev),
                     "strand": text_fact(row, "alignment_direction", ev),
@@ -590,6 +617,9 @@ class ResultImporter:
                     **interval}
                 from .reference_annotations import reference_annotation
                 alignment.update(reference_annotation(self, row.get("alignment_genome")))
+                from .query_alignment import query_alignment
+                alignment.update(query_alignment(row, targets[0].metrics['read_length'].value,
+                    reversed_read, [ev] + orientation_evidence))
                 # SAM reserves 255 for unavailable MAPQ; it is not a high-quality
                 # score and must not be plotted or displayed as one.
                 if alignment["mapq"].value == 255:

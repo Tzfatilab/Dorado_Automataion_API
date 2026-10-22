@@ -60,12 +60,12 @@ def render_screen(run, results_root=None):
         metrics["detected_chromosomes"] = asdict(run.metrics["detected_chromosomes"])
     cards = []
     # Card order mirrors the approved design; notes identify each population.
-    specs = [("barcode_count", "Total barcodes", ", ".join(b.label.replace("barcode", "BC") for b in run.barcodes)),
+    specs = [("barcode_count", "Total barcodes", ""),
              ("total_reads", "Total reads", "Input reads"),
              ("telomeric_reads", "Total telomeric reads", "Post-filtered reads"),
              ("telomeric_percentage", "% telomeric reads", "Of total input reads"),
-             ("median_telomere_length", "Overall median telomere length", "Pooled post-filtered reads"),
-             ("detected_chromosomes", "Detected chromosomes", "Chromosome annotations unavailable")]
+             ("median_telomere_length", "Median length", "Pooled post-filtered reads"),
+             ("detected_chromosomes", "Chromosomes", "Chromosome annotations unavailable")]
     # Reference labels are not chromosome annotations; never substitute their count.
     for index, (key, label, note) in enumerate(specs):
         # A missing metric key is handled like an unavailable fact. This also
@@ -82,7 +82,8 @@ def render_screen(run, results_root=None):
             # multiply them by 100 a second time.
             display = f"{value / 1000:,.2f} kb" if key == "median_telomere_length" else f"{value:.2f}%" if key == "telomeric_percentage" else f"{value:,}"
         # Escape source-derived captions/tooltips before inserting them into HTML.
-        cards.append(f'<article class="stat stat-{index}" title="{escape(fact.get("reason") or note, quote=True)}"><svg viewBox="0 0 48 48" aria-hidden="true">{ICONS[index]}</svg><div><h3>{label}</h3><strong class="{"missing" if value is None else ""}">{display}</strong><p>{escape(note)}</p></div></article>')
+        caption = f'<p>{escape(note)}</p>' if note else ''
+        cards.append(f'<article class="stat stat-{index}" title="{escape(fact.get("reason") or note, quote=True)}"><svg viewBox="0 0 48 48" aria-hidden="true">{ICONS[index]}</svg><div><h3>{label}</h3><strong class="{"missing" if value is None else ""}">{display}</strong>{caption}</div></article>')
     # Only source-reported post-filtered counts enter the bars. An unavailable
     # barcode count is omitted rather than fabricated as a zero-height bar.
     counts = [(b.label.replace("barcode", "BC"), b.metrics["amount_of_telomeres"].value)
@@ -144,6 +145,11 @@ def render_screen(run, results_root=None):
     # Combine the complete page in memory. Cards appear before the two panels;
     # CSS controls wrapping while figure scripts attach hover/zoom behavior.
     html = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{TITLE}</title><style>{css}</style><script>{get_plotlyjs()}</script></head><body><header><h1>{TITLE}</h1><span>Project overview &nbsp; | &nbsp; NanoTel summary</span></header><main><div id="run-overview">{navigation}<section><h2><span class="number">1</span>Key Statistics (All Barcodes)</h2><div class="stats">{"".join(cards)}</div></section><div class="charts">{"".join(panels)}</div>{availability_html(run)}</div>{barcode_pages}<section id="unknown-barcode" hidden><h2>Barcode or read not found</h2><a href="#/">Back to All Barcodes</a></section></main>{ROUTER}</body></html>'
+    export_script = (Path(__file__).parents[1] / 'assets' / 'graph_export.js').read_text(encoding='utf-8')
+    table_export_script = (Path(__file__).parents[1] / 'assets' / 'table_export.js').read_text(encoding='utf-8')
+    spacing_script = (Path(__file__).parents[1] / 'assets' / 'chromosome_spacing.js').read_text(encoding='utf-8')
+    spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'barcode_navigation.js').read_text(encoding='utf-8')
+    html = html.removesuffix('</body></html>') + '<script>' + export_script + '</script><script>' + table_export_script + '</script><script>' + spacing_script + '</script></body></html>'
     if nanotel_population:
         html = html.replace('Post-filtered', 'NanoTel final-filtered').replace('post-filtered', 'NanoTel final-filtered')
     return html

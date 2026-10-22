@@ -32,26 +32,31 @@ def barcode_views(run, icons, histograms=None, results_root=None):
             fact = barcode.metrics.get(key)
             return fact.value if fact and fact.status == 'available' else None
         total, telomeric = value('total_reads'), value('amount_of_telomeres')
+        empty = telomeric == 0
         med = value('median_telomere_length')
         motifs = composition.get(barcode.label)
         chromosomes = {c['chromosome'] for c in comparisons['cells'] if c['barcode'] == barcode.label}
         percent = f'{100*telomeric/total:.1f}% of input reads' if total and telomeric is not None and telomeric <= total else 'Post-filtered reads'
-        tvr_note = (f"{100*motifs['with_tvr']/motifs['total']:.1f}% of post-filtered reads" if motifs else 'Complete motif exports required')
+        tvr_note = ('No post-filtered telomeric reads' if empty else
+                    f"{100*motifs['with_tvr']/motifs['total']:.1f}% of post-filtered reads" if motifs else 'Complete motif exports required')
         specs = [
             ('Total reads', total, 'Input reads', icons[0]),
             ('Telomeric reads', telomeric, percent, icons[2]),
-            ('Median telomere length', med, 'Post-filtered reads', icons[4]),
-            ('Reads with TVRs', motifs['with_tvr'] if motifs else None, tvr_note,
+            ('Median length', med, 'Post-filtered reads', icons[4]),
+            ('Reads with TVRs', 0 if empty else motifs['with_tvr'] if motifs else None, tvr_note,
              '<path d="M8 40V23M19 40V8M30 40V17M41 40V4"/>'),
-            ('Distinct TVR motifs', len(motifs['motifs']) if motifs else None,
+            ('TVR motifs', 0 if empty else len(motifs['motifs']) if motifs else None,
              'Noncanonical motifs overlapping TVR-inclusive telomeres',
              '<circle cx="24" cy="10" r="6"/><circle cx="10" cy="36" r="6"/><circle cx="38" cy="36" r="6"/><path d="m21 16-8 14m14-14 8 14M16 36h16"/>'),
-            ('Chromosomes detected', len(chromosomes) if chromosomes else None,
+            ('Chromosomes', 0 if empty else len(chromosomes) if chromosomes else None,
              'Unambiguous mapped post-filtered reads', icons[5]),
         ]
         cards = []
         for index, (title, number, note, icon) in enumerate(specs):
             display = 'Unavailable' if number is None else f'{number/1000:,.2f} kb' if index == 2 else f'{number:,}'
+            if empty and index == 2:
+                display = 'No reads'
+                note = 'No post-filtered telomeric reads'
             cards.append(f'<article class="stat stat-{index}"><svg aria-hidden="true" viewBox="0 0 48 48">{icon}</svg>'
                 f'<div><h3>{title}</h3><strong class="{"missing" if number is None else ""}">{display}</strong><p>{escape(note)}</p></div></article>')
         pages.append(f'<div class="barcode-page" id="{barcode.id}" data-km-enabled="{str(km_enabled).lower()}" data-mismatch-enabled="{mismatch_attribute}" data-label="{escape(label, quote=True)}" data-chart-label="{escape(barcode.label.replace("barcode", "BC"), quote=True)}" hidden>'

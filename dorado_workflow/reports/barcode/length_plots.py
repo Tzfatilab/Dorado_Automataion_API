@@ -26,6 +26,21 @@ def _hide_completeness(figure):
                 annotation['text'], flags=re.IGNORECASE)
     layout['annotations'] = [a for a in layout.get('annotations', [])
                              if 'censor' not in str(a.get('text', '')).casefold()]
+    # No rug remains: attach the x axis to the main plot, without a blank lane.
+    layout.setdefault('xaxis', {})['anchor'] = 'y'
+    layout.setdefault('yaxis', {})['domain'] = [0, 1]
+    layout.pop('yaxis2', None)
+
+
+def _style_length_plot(layout):
+    """Remove the decorative rug box and align paired saved plot baselines."""
+    layout['shapes'] = [shape for shape in layout.get('shapes', []) if not (
+        shape.get('type') == 'rect' and shape.get('xref') == 'paper'
+        and shape.get('yref') == 'paper' and shape.get('y0') == 0
+        and shape.get('y1') == .07
+        and str(shape.get('fillcolor', '')).upper() == '#FFF8FA')]
+    layout['height'] = 620
+    layout['margin'] = dict(l=80, r=30, t=24, b=140, autoexpand=False)
 
 
 class _FigureParser(HTMLParser):
@@ -123,6 +138,7 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
                 if not isinstance(layout.get('margin', {}), dict):
                     raise ValueError('Invalid plot margins')
                 layout.setdefault('margin', {})['t'] = 24
+                _style_length_plot(layout)
                 for key, axis in layout.items():
                     if re.fullmatch(r'[xy]axis\d*', key) and isinstance(axis, dict) and isinstance(axis.get('title'), str):
                         axis['title'] = {'text': axis['title']}

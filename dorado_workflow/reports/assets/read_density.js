@@ -1,4 +1,25 @@
 /* Read density presentation. Source calls and exported samples are not recomputed. */
+window.readMappingSummary = (read, data) => {
+  const escape = value => String(value).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const alignments = (data.alignments || []).filter(a => a.reference && a.reference !== '*');
+  const descriptions = alignments.map(a => {
+    const interval = a.normalized || a.raw;
+    const start = a.normalized ? a.normalized.start + 1 : interval?.start;
+    const end = interval?.end;
+    const coordinates = start != null && end != null
+      ? ' | reference: ' + escape(start) + '–' + escape(end) + ' bp' : '';
+    return escape(a.reference) + coordinates + (a.strand ? ' | strand: ' + escape(a.strand) : '');
+  });
+  const spans = alignments.filter(a => {
+    const q = a.query_interval;
+    return q?.space === 'nanotel_analyzed_read' && q.convention === 'zero_based_half_open' &&
+      Number.isInteger(q.start) && Number.isInteger(q.end) && q.start >= 0 && q.end > q.start && q.end <= read.length;
+  });
+  const assigned = descriptions.length ? descriptions.join('<br>') :
+    (read.chromosomes || []).length ? 'Assigned: ' + read.chromosomes.map(escape).join(', ') : 'No chromosome assignment exported';
+  return {spans, text: assigned + (spans.length ? '' : '<br>Aligned span within read not exported')};
+};
+
 window.renderReadTracks = (parent, read, options = {}) => {
   const add = (tag, text, target) => {
     const element = document.createElement(tag);
@@ -19,11 +40,13 @@ window.renderReadTracks = (parent, read, options = {}) => {
     return;
   }
   const chart = add('div', '', panel);
+  chart.reportInteractiveRead={...read,track_data:data};
   chart.className = 'read-density-chart';
   const traces = [], shapes = [], annotations = [];
   const extent = read.length / 1000;
   const exact = data.intervals.exact, inclusive = data.intervals.tvr_inclusive;
-  const motifs = [...(data.motifs || [])].sort((a, b) =>
+  // Configured motifs with no exported hits do not belong in this read's legend.
+  const motifs = (data.motifs || []).filter(m => Array.isArray(m.positions) && m.positions.length > 0).sort((a, b) =>
     Number(a.role !== 'canonical') - Number(b.role !== 'canonical') || a.label.localeCompare(b.label));
   const canonicalName = motifs.filter(m => m.role === 'canonical').map(m => m.label.replace(' (canonical)', '')).join(', ');
 
@@ -108,10 +131,56 @@ window.renderReadTracks = (parent, read, options = {}) => {
   [[2, 'Motif type'], [1, 'Sequence'], [0, 'Mapping to genome']].forEach(([y, text]) =>
     annotations.push({xref: 'paper', yref: 'y2', x: 0, y, text, showarrow: false,
       xanchor: 'right', xshift: -12, font: {size: 12, color: '#243750'}}));
-  // A full-read arrow would imply query alignment/orientation we do not have.
-  const mapping = read.chromosomes.length ? 'Assigned: ' + read.chromosomes.join(', ') +
-    (read.arms.length ? ' | Arm: ' + read.arms.join(', ') : '') + ' (aligned read span unavailable)' : 'Mapping unavailable';
-  annotations.push({xref: 'x2', yref: 'y2', x: extent / 2, y: 0, text: mapping,
+  const mapping = window.readMappingSummary(read, data);
+  const mappingPixels = Math.max(100, parent.clientWidth - (parent.clientWidth < 850 ? 155 : 400));
+  if (mapping.spans.length) {
+    traces.push({type:'scatter',mode:'lines',xaxis:'x2',yaxis:'y2',
+      x:[0,extent,extent,0,0],y:[-.6,-.6,.6,.6,-.6],
+      fill:'toself',fillcolor:'#e0e5ed',line:{width:0},showlegend:false,
+      hoverinfo:'skip',name:'Outside mapped region'});
+    let covered = 0;
+    const gapLabel = (start,end) => {
+      if ((end-start)/extent*mappingPixels > 170) annotations.push({xref:'x2',yref:'y2',
+        x:(start+end)/2,y:0,text:'Outside mapped region',showarrow:false,font:{size:14,color:'#64748b'}});
+    };
+    [...mapping.spans].sort((a,b)=>a.query_interval.start-b.query_interval.start).forEach(a=>{
+      const start=a.query_interval.start/1000,end=a.query_interval.end/1000;
+      gapLabel(covered,start); covered=Math.max(covered,end);
+    });
+    gapLabel(covered,extent);
+  }
+  mapping.spans.forEach(alignment => {
+    const q = alignment.query_interval;
+    const reference = String(alignment.reference).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    const start = q.start / 1000, end = q.end / 1000;
+    traces.push({type:'scatter', mode:'lines', xaxis:'x2', yaxis:'y2',
+      x:[start,end,end,start,start], y:[-.6,-.6,.6,.6,-.6],
+      fill:'toself', fillcolor:'#276bd1',
+      line:{color:'#276bd1',width:0}, hoverinfo:'skip',
+      showlegend:false, name:'Aligned read span'});
+    const strand = alignment.query_strand;
+    const mapq = Number.isFinite(alignment.mapq) && alignment.mapq >= 0 && alignment.mapq < 255
+      ? ' | MAPQ '+alignment.mapq : '';
+    const label = reference + (strand === '+' || strand === '-'
+      ? ' | strand '+(strand === '-' ? '−' : '+') : '') + mapq +
+      (strand === '+' ? ' →' : strand === '-' ? ' ←' : '');
+    const availablePixels=(end-start)/extent*mappingPixels;
+    const strandLabel=strand === '+' || strand === '-'
+      ? 'strand '+(strand === '-' ? '− ←' : '+ →') : '';
+    const wrappedLabel=reference+mapq+(strandLabel ? '<br>'+strandLabel : '');
+    const visibleLabel=availablePixels > label.length*8+12 ? label : wrappedLabel;
+    annotations.push({xref:'x2',yref:'y2',x:(start+end)/2,y:0,
+      text:visibleLabel,showarrow:false,font:{size:14,color:'#ffffff'}});
+    // Put endpoint coordinates below the track, keeping labels inside the frame.
+    const coordinateLabel=(position,anchor)=>annotations.push({xref:'x2',yref:'y2',
+      x:position,y:-.72,yanchor:'top',xanchor:anchor,
+      text:position.toFixed(2)+' kb',showarrow:false,font:{size:12,color:'#243750'}});
+    if (availablePixels > 120) { coordinateLabel(start,'left'); coordinateLabel(end,'right'); }
+    else annotations.push({xref:'x2',yref:'y2',x:(start+end)/2,y:-.72,yanchor:'top',
+      xanchor:start > extent*.75 ? 'right' : 'left',text:start.toFixed(2)+'–'+end.toFixed(2)+' kb',
+      showarrow:false,font:{size:12,color:'#243750'}});
+  });
+  if (!mapping.spans.length) annotations.push({xref: 'x2', yref: 'y2', x: extent / 2, y: 0, text: mapping.text,
     showarrow: false, font: {size: 12, color: '#738292'}});
   if (!(data.density || {}).exact?.length && !(data.density || {}).tvr_inclusive?.length) {
     annotations.push({xref: 'paper', yref: 'y', x: 0.5, y: 0.5,
@@ -120,7 +189,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
   if (!motifs.length) annotations.push({xref: 'x2', yref: 'y2', x: extent / 2, y: 2,
     text: data.motifs === null ? 'Motif positions unavailable' : 'No exported motif matches', showarrow: false});
   const narrow = parent.clientWidth < 850;
-  const height = narrow ? 770 : 530;
+  const height = narrow ? 820 : 580;
   // Plotly's inner container uses height:100%; give it a definite parent height
   // to prevent a large empty area beneath the SVG in the reusable read shell.
   chart.style.height = height + 'px';
@@ -189,9 +258,9 @@ window.renderReadTracks = (parent, read, options = {}) => {
     margin: {l: 130, r: narrow ? 25 : 270, t: 55, b: narrow ? 220 : 55},
     font: {family: 'Segoe UI, Arial', color: '#14263c'},
     xaxis: {domain: [0, 1], range: [0, extent], anchor: 'y', showticklabels: false, matches: 'x2'},
-    yaxis: {domain: [0.33, 1], range: [-0.035, 1.18], title: {text: 'Density'}, dtick: 0.2},
+    yaxis: {domain: [0.4, 1], range: [-0.035, 1.18], title: {text: 'Density'}, dtick: 0.2},
     xaxis2: {domain: [0, 1], range: [0, extent], anchor: 'y2', title: {text: 'Position (kb)'}, zeroline: false},
-    yaxis2: {domain: [0, 0.24], range: [-0.5, 2.5], showticklabels: false, showgrid: false, zeroline: false, fixedrange: true},
+    yaxis2: {domain: [0, 0.32], range: [-1.5, 2.5], showticklabels: false, showgrid: false, zeroline: false, fixedrange: true},
     legend: narrow ? {orientation: 'h', x: 0, y: -0.18, font: {size: 11}} :
       {x: 1.02, y: 1, font: {size: 12}, bgcolor: 'rgba(255,255,255,0.9)'},
     // Keep motif colors next to the motif strip, separate from density curves.
@@ -210,15 +279,14 @@ window.renderReadTracks = (parent, read, options = {}) => {
     chart.style.position = 'relative';
     Object.assign(canvas.style, {position:'absolute', pointerEvents:'none', zIndex:'2'});
     const colors = {A:'#35a56f', C:'#387bd4', G:'#c89820', T:'#d85365'};
-    const drawSequence = () => {
+    const paintSequence = (target, scale, layout = chart._fullLayout) => {
       if (!chart.isConnected || !chart._fullLayout) return;
-      const x = chart._fullLayout.xaxis2, y = chart._fullLayout.yaxis2;
+      const x = layout.xaxis2, y = layout.yaxis2;
       const width = Math.max(1, Math.round(x._length)), height = 23;
-      const scale = window.devicePixelRatio || 1;
-      canvas.width = width * scale; canvas.height = height * scale;
-      Object.assign(canvas.style, {left:x._offset+'px', top:(y._offset+y.l2p(1)-height/2)+'px',
+      target.width = Math.ceil(width * scale); target.height = Math.ceil(height * scale);
+      Object.assign(target.style, {left:x._offset+'px', top:(y._offset+y.l2p(1)-height/2)+'px',
         width:width+'px', height:height+'px'});
-      const ctx = canvas.getContext('2d');ctx.scale(scale,scale);
+      const ctx = target.getContext('2d');ctx.scale(scale,scale);
       const lo = Math.max(0, Math.floor(Math.min(...x.range)*1000));
       const hi = Math.min(sequence.length, Math.ceil(Math.max(...x.range)*1000));
       const baseWidth = Math.abs(x.l2p(.001)-x.l2p(0));
@@ -229,6 +297,13 @@ window.renderReadTracks = (parent, read, options = {}) => {
         ctx.fillRect(Math.min(left,right),0,Math.max(1,Math.abs(right-left)),height);
         if (baseWidth >= 10) {ctx.fillStyle='#fff';ctx.fillText(sequence[i],(left+right)/2,height/2);}
       }
+      return {x:x._offset,y:y._offset+y.l2p(1)-height/2,width,height};
+    };
+    const drawSequence = () => paintSequence(canvas, window.devicePixelRatio || 1);
+    chart.reportExportOverlay = (scale, layout) => {
+      const exported=document.createElement('canvas');
+      const bounds=paintSequence(exported,scale,layout);
+      return bounds ? {...bounds,href:exported.toDataURL('image/png')} : null;
     };
     chart.on('plotly_afterplot', drawSequence);
     chart.on('plotly_relayout', drawSequence);

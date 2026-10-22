@@ -29,7 +29,8 @@ def positions_section(row):
             counts[hit['motif']][min(bins-1, int(hit['percent']*bins/100))] += 1
         figure.add_trace(go.Heatmap(x=[(i+.5)*100/bins for i in range(bins)],
             y=[escape(label) for label in labels],z=[counts[label] for label in labels],
-            colorscale='Blues',colorbar=dict(title='Matches'),
+            colorscale='Blues',colorbar=dict(title=dict(text='Matches',side='top'),
+                x=1.02,xanchor='left',thickness=16,len=.9,tickfont=dict(size=12)),
             hovertemplate='%{y}<br>Position bin centered at %{x:.2f}% (width 0.5%)<br>%{z} exported matches<extra></extra>'))
     else:
         for label in labels:
@@ -42,9 +43,9 @@ def positions_section(row):
                 customdata=[[escape(p['read']),p['start'],p['end']] for p in hits],
                 hovertemplate='%{y}<br>%{customdata[0]}<br>Match start: %{x:.2f}% of telomere<br>Read positions: %{customdata[1]}–%{customdata[2]} bp (1-based inclusive)<extra></extra>'))
     figure.update_layout(template='plotly_white',height=max(320,55*len(labels)+110),showlegend=False,
-        margin=dict(l=130,r=25,t=15,b=65),font=dict(family='Segoe UI, Arial',color='#12203c'),
+        margin=dict(l=180,r=120 if dense else 30,t=45 if dense else 20,b=80,autoexpand=True),font=dict(family='Segoe UI, Arial',color='#12203c'),
         xaxis=dict(title='Relative position within TVR-inclusive telomere (analyzed sequence start → end)',range=[0,100],dtick=20,ticksuffix='%'),
-        yaxis=dict(categoryorder='array',categoryarray=[escape(label) for label in labels],autorange='reversed'))
+        yaxis=dict(categoryorder='array',categoryarray=[escape(label) for label in labels],autorange='reversed',automargin=True))
     payload=figure.to_json().replace('<','\\u003c')
     display_note = ('Dense view: all matches grouped into 0.5% position bins; color shows match count. ' if dense else 'Each tick marks one exported match start, clipped to the telomere boundary when the match crosses it. ')
     return (heading + '<div class="saved-histogram composition-plot"></div>'

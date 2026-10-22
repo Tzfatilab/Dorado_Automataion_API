@@ -14,6 +14,12 @@
     const page = section.closest('.barcode-page');
     const showCompleteness = page.dataset.kmEnabled !== 'false';
     const tableHead=section.querySelector('.reads-table thead tr');
+    // Saved dashboards can initialize again after a renderer update. Restore
+    // plain headers before rebuilding controls, rather than nesting buttons.
+    tableHead?.querySelectorAll('th').forEach(th=>{
+      th.textContent=th.textContent.replace(/[\s\u25be\u2195]+$/g,'');
+    });
+    [...(tableHead?.children||[])].find(th=>th.textContent.trim()==='Arm')?.remove();
     if (!showCompleteness && tableHead) {
       [...tableHead.children].find(th=>th.textContent==='Status')?.remove();
     }
@@ -92,8 +98,9 @@
     const sort={value:'original'},direction={value:'desc'};
     const originalOrder=new Map(rows.map((r,index)=>[r,index]));
     const columnFilters=new Map();
-    const columnKeys=['label',...(showCompleteness?['read_status']:[]),'telomere','tvr_length','length','canonical','tvr','blocks','chromosomes','arms'];
-    const columnValues=r=>[r.label,...(showCompleteness?[r.read_status]:[]),kb(r.telomere),kb(r.tvr_length),kb(r.length),pct(r.canonical),pct(r.tvr),formatCount(r.blocks),r.chromosomes.join(', ')||'Unavailable',r.arms.join(', ')||'Unavailable'];
+    const columnKeys=['label',...(showCompleteness?['read_status']:[]),'telomere','tvr_length','length','canonical','tvr','blocks','chromosomes'];
+    const exportHeaders=[...section.querySelectorAll('.reads-table thead th')].map(th=>th.textContent.replace(/\s*[▾↕]$/,'').trim());
+    const columnValues=r=>[r.label,...(showCompleteness?[r.read_status]:[]),kb(r.telomere),kb(r.tvr_length),kb(r.length),pct(r.canonical),pct(r.tvr),formatCount(r.blocks),r.chromosomes.join(', ')||'Unavailable'];
     let openMenu=null;
     section.querySelectorAll('.reads-table thead th').forEach((th,index)=>{
       const title=th.textContent;th.textContent='';
@@ -151,6 +158,11 @@
         });
       }
       browsers.get(page.id).orderedRows=filtered;
+      section.querySelector('.reads-table').reportExportData=()=>({name:page.dataset.label+' Reads',
+        headers:exportHeaders,rows:filtered.map(r=>[r.label,...(showCompleteness?[r.read_status]:[]),
+          ...[r.telomere,r.tvr_length,r.length].map(value=>value==null?'Unavailable':value/1000),
+          ...[r.canonical,r.tvr,r.blocks].map(value=>value??'Unavailable'),
+          r.chromosomes.join(', ')||'Unavailable'])});
       const size = Number(limit.value), count = Math.max(1,Math.ceil(filtered.length/size));
       current = Math.min(current,count);
       const body = section.querySelector('tbody'); body.replaceChildren();
@@ -195,13 +207,19 @@
     // Release the previous read's interactive chart before reusing this shell.
     detail.querySelectorAll('.js-plotly-plot').forEach(plot=>window.Plotly?.purge(plot));
     detail.replaceChildren(); detail.hidden=false;
+    detail.dataset.barcodeLabel=source.page.dataset.label;detail.dataset.readLabel=read.label;
     const nav=node('nav','',detail); nav.className='breadcrumbs';
     node('a','All Barcodes',nav).href='#/'; node('span','›',nav);
     node('a',source.page.dataset.label,nav).href='#/barcode/'+match[1]; node('span','› '+read.label,nav);
     const ordered=source.orderedRows||[];
     const position=ordered.findIndex(row=>row.id===read.id);
+    const controls=node('div','',nav);controls.className='read-navigation';
+    const previous=position>0?ordered[position-1]:null;
+    const previousButton=node('button','Previous read',controls);previousButton.type='button';previousButton.className='read-next';previousButton.disabled=!previous;
+    previousButton.title=previous?'Open '+previous.label+' in the current table order':position<0?'This read is outside the current table selection':'First read in the current table selection';
+    previousButton.onclick=()=>{if(previous)location.hash='#/barcode/'+match[1]+'/read/'+previous.id;};
     const next=position>=0?ordered[position+1]:null;
-    const nextButton=node('button','Next read',nav);nextButton.type='button';nextButton.className='read-next';nextButton.disabled=!next;
+    const nextButton=node('button','Next read',controls);nextButton.type='button';nextButton.className='read-next';nextButton.disabled=!next;
     nextButton.title=next?'Open '+next.label+' in the current table order':position<0?'This read is outside the current table selection':'Last read in the current table selection';
     nextButton.onclick=()=>{if(next)location.hash='#/barcode/'+match[1]+'/read/'+next.id;};
     // Keep the source read number independent of table sorting and plot rank.
@@ -226,18 +244,19 @@
     const tvrBases=Array.isArray(read.regions) ? read.regions.reduce((sum,b)=>sum+b.end-b.start,0) : null;
     const bp=value=>value == null ? 'Unavailable' : formatCount(value)+' bp';
     const exactNote=read.telomere == null ? 'Exact call; filtered length unavailable' :
-      read.telomere === read.exact_length ? 'Filtered / exact' : 'Filtered: '+bp(read.telomere);
+      read.telomere === read.exact_length ? 'Before final filtering' : 'Filtered: '+bp(read.telomere);
     summaryCard('Exact telomere length',read.exact_length == null ? 'Unavailable' : kb(read.exact_length)+' kb',exactNote,'read-summary-pink');
-    summaryCard('Telomere length with TVRs',read.tvr_length == null ? 'Unavailable' : kb(read.tvr_length)+' kb','','read-summary-pink');
-    summaryCard('TVR content',pct(read.tvr),bp(tvrBases),'read-summary-blue');
-    summaryCard('Canonical content',pct(read.canonical),'','read-summary-green');
-    summaryCard('TVR blocks',formatCount(read.blocks),'','read-summary-purple');
+    summaryCard('Telomere length with TVRs',read.tvr_length == null ? 'Unavailable' : kb(read.tvr_length)+' kb','Includes detected variant repeats','read-summary-pink');
+    summaryCard('TVR content',pct(read.tvr),bp(tvrBases)+' · Share of telomere bases','read-summary-blue');
+    summaryCard('Canonical content',pct(read.canonical),'Share matching the standard repeat','read-summary-green');
+    summaryCard('TVR blocks',formatCount(read.blocks),'Adjacent variant matches grouped together','read-summary-purple');
     // Keep separate assignments separate rather than invent chromosome-arm pairs.
     const chromosome=read.chromosomes.join(', ')||'Unavailable';
-    const arm=read.arms.length ? 'Arm: '+read.arms.join(', ') : 'Arm: Unavailable';
-    summaryCard('Mapping',chromosome,arm,'read-summary-green');
-    const statusLabel=node('p',read.read_status,identity);statusLabel.className='read-state-label';
-    statusLabel.title=read.filter_reason;
+    summaryCard('Mapping',chromosome,'Chromosome assigned by alignment','read-summary-green');
+    if (read.read_status !== 'Included in filtered reads') {
+      const statusLabel=node('p',read.read_status,identity);statusLabel.className='read-state-label';
+      statusLabel.title=read.filter_reason;
+    }
 
     if(read.source_note) node('p',read.source_note,detail).className='note';
     if(read.censored) {
@@ -276,9 +295,17 @@
     if(tracks?.mean_read_quality!=null)entry('Mean read quality',String(tracks.mean_read_quality));
     const alignments=tracks?.alignments||[];
     alignments.forEach((alignment,index)=>{
-      if(!alignment.strand)return;
       const prefix=alignments.length>1?'Alignment '+(index+1)+(alignment.reference?' ('+alignment.reference+')':'')+' - ':'';
-      entry(prefix+'Mapping strand',alignment.strand);
+      if(alignment.reference)entry(prefix+'Reference',alignment.reference);
+      if(alignment.strand)entry(prefix+'Mapping strand',alignment.strand);
+      const reference=alignment.normalized||alignment.raw;
+      if(reference && reference.start!=null && reference.end!=null) {
+        const start=alignment.normalized?reference.start+1:reference.start;
+        entry(prefix+'Reference interval',formatCount(Number(start))+'–'+formatCount(Number(reference.end))+' bp'+
+          (alignment.normalized?' (1-based inclusive)':' (source coordinates)'));
+      }
+      if(alignment.query_interval)entry(prefix+'Aligned span within read',
+        formatCount(alignment.query_interval.start+1)+'–'+formatCount(alignment.query_interval.end)+' bp (1-based inclusive)');
     });
 
     node('p',read.plot_only ? 'Lengths shown here come from the saved pre-final-filter plot. This read is not added to the filtered table or summary statistics.' : 'Lengths use exported post-filtered telomere records and source read lengths. Repeat percentages use the source-exported TVR-inclusive interval, which may differ from the filtered telomere length above. Overlapping categories are reported explicitly. Unavailable values are not inferred.',detail).className='note';

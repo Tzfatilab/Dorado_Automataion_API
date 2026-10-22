@@ -172,6 +172,24 @@ class AlignmentProcessor(ProcessorBase):
             self.log_complete(result)
             return result
 
+    def _export_reference_annotations(self, reference: Path) -> None:
+        """Carry verified arms into results only for the exact checked FASTA."""
+        import hashlib
+        verified_hash = '291f041630a339cb9c185956adb70e630ff5ad947aacdb351c8702abf9d8e042'
+        if reference.name != 'T2T-CHM13-150KchrHeadTail-Yincluded-telo-trimmed.fasta':
+            return
+        digest = hashlib.sha256()
+        with reference.open('rb') as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b''):
+                digest.update(chunk)
+        if digest.hexdigest() != verified_hash:
+            return
+        annotations = Path(__file__).parents[1] / 'data/references/Human/reference_annotations.csv'
+        destination = self.context.path_manager.get_results_dir_path() / 'reference_annotations.csv'
+        if annotations.is_file() and not destination.exists():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(annotations, destination)
+
     def _run_minimap2_alignment(self, input_dir: Path, organism: str, input_type: str) -> list[Path]:
         """
         Align all input files with minimap2 and return sorted BAM paths.
@@ -179,6 +197,7 @@ class AlignmentProcessor(ProcessorBase):
         config = self.context.config_manager
         alignment_params = config.get_alignment_params()
         reference = Path(config.get_reference_path(organism))
+        self._export_reference_annotations(reference)
         preset = alignment_params.get("minimap_preset", "map-ont")
 
         input_files = self._find_alignment_inputs(input_dir, input_type)
@@ -270,6 +289,13 @@ class AlignmentProcessor(ProcessorBase):
             "alignment_genome_start",
             "alignment_genome_end",
             "alignment_mapq",
+            "alignment_cigar",
+            "alignment_coordinate_convention",
+            "alignment_query_start",
+            "alignment_query_end",
+            "alignment_query_length",
+            "alignment_query_convention",
+            "alignment_query_space",
         ]
 
         with summary_path.open("w", encoding="utf-8", newline="\n") as handle:
@@ -294,6 +320,7 @@ class AlignmentProcessor(ProcessorBase):
                     start = fields[3]
                     mapq = fields[4]
                     cigar = fields[5]
+                    query = None
 
                     if flag & 4 or reference == "*":
                         direction = "*"
@@ -301,6 +328,7 @@ class AlignmentProcessor(ProcessorBase):
                     else:
                         direction = "-" if flag & 16 else "+"
                         end = str(int(start) + self._cigar_reference_length(cigar) - 1)
+                        query = self._cigar_query_interval(cigar, reverse=bool(flag & 16))
 
                     handle.write("\t".join([
                         read_id,
@@ -309,6 +337,11 @@ class AlignmentProcessor(ProcessorBase):
                         start,
                         end,
                         mapq,
+                        cigar,
+                        "one_based_inclusive",
+                        *([str(value) for value in query] if query else ["", "", ""]),
+                        "zero_based_half_open" if query else "",
+                        "original_read" if query else "",
                     ]) + "\n")
                 stderr = process.stderr.read() if process.stderr else ""
                 returncode = process.wait()
@@ -326,6 +359,30 @@ class AlignmentProcessor(ProcessorBase):
 
         self.context.logger.info(f"Alignment summary: {summary_path}")
         return summary_path
+
+    @staticmethod
+    def _cigar_query_interval(cigar: str, reverse: bool = False):
+        """Aligned bounding span on the original read, including hard-clip offsets.
+
+        SAM stores reverse-strand CIGAR in reference-facing orientation. Return
+        original-read coordinates so NanoTel's own orientation can be applied
+        explicitly later. Insertions consume query bases; deletions do not.
+        """
+        if not cigar or not re.fullmatch(r'(?:[1-9]\d*[MIDNSHP=X])+', cigar):
+            return None
+        ops = [(int(n), op) for n, op in re.findall(r'(\d+)([MIDNSHP=X])', cigar)]
+        core = [i for i, (_, op) in enumerate(ops) if op not in {'S', 'H'}]
+        if not core or any(op in {'S', 'H'} for _, op in ops[core[0]:core[-1]+1]):
+            return None
+        leading = sum(n for n, _ in ops[:core[0]])
+        aligned = sum(n for n, op in ops[core[0]:core[-1]+1] if op in {'M', 'I', '=', 'X'})
+        length = sum(n for n, op in ops if op in {'M', 'I', 'S', 'H', '=', 'X'})
+        if not aligned:
+            return None
+        start, end = leading, leading + aligned
+        if reverse:
+            start, end = length-end, length-start
+        return start, end, length
 
     @staticmethod
     def _cigar_reference_length(cigar: str) -> int:
