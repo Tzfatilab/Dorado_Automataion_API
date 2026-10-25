@@ -1,0 +1,22 @@
+chrom,chrom_length,subtelo_Head_start_index,subtelo_Tail_end_index,alignment_genome
+"OZ077242.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 1",206839990,16695,206823553,chr_1
+"OZ077243.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 2",192283381,9284,192272161,chr_2
+"OZ077244.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 3",174412035,5866,174402194,chr_3
+"OZ077245.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 4",171597972,16554,171574779,chr_4
+"OZ077246.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 5",158035086,26099,158025336,chr_5
+"OZ077247.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 6",158292540,21147,158280062,chr_6
+"OZ077248.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 7",157682278,8397,157672008,chr_7
+"OZ077249.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 8",133128321,5820,133120035,chr_8
+"OZ077250.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 9",140591382,13983,140569427,chr_9
+"OZ077251.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 10",137126213,8491,137106074,chr_10
+"OZ077252.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 11",132708644,10594,132696511,chr_11
+"OZ077253.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 12",122193255,8654,122174298,chr_12
+"OZ077254.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 13",129280477,10857,129261194,chr_13
+"OZ077255.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 14",128273805,13376,128257537,chr_14
+"OZ077256.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 15",116793490,17592,116778766,chr_15
+"OZ077257.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 16",105498491,1693,105486351,chr_16
+"OZ077258.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 17",116046357,8461,116030521,chr_17
+"OZ077259.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 18",93040998,19173,93025180,chr_18
+"OZ077260.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 19",67670321,9557,67659851,chr_19
+"CM166267.1 Mus musculus domesticus strain C57BL/6 chromosome X, whole genome shotgun sequence",170983574,7047,170978164,chr_X
+"CM166268.1 Mus musculus domesticus strain C57BL/6 chromosome Y, whole genome shotgun sequence",95210109,42908,95193283,chr_Y
