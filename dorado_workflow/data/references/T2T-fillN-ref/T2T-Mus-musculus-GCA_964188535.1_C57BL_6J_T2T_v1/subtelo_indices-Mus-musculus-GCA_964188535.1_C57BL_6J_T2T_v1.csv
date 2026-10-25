@@ -1,0 +1,20 @@
+chrom,chrom_short,chrom_length,subtelo_Head_start_index,subtelo_Tail_end_index
+"OZ077242.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 1",chr_1,206839990,16695,206823553
+"OZ077243.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 2",chr_2,192283381,9284,192272161
+"OZ077244.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 3",chr_3,174412035,5866,174402194
+"OZ077245.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 4",chr_4,171597972,16554,171574779
+"OZ077246.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 5",chr_5,158035086,26099,158025336
+"OZ077247.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 6",chr_6,158292540,21147,158280062
+"OZ077248.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 7",chr_7,157682278,8397,157672008
+"OZ077249.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 8",chr_8,133128321,5820,133120035
+"OZ077250.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 9",chr_9,140591382,13983,140569427
+"OZ077251.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 10",chr_10,137126213,8491,137106074
+"OZ077252.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 11",chr_11,132708644,10594,132696511
+"OZ077253.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 12",chr_12,122193255,8654,122174298
+"OZ077254.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 13",chr_13,129280477,10857,129261194
+"OZ077255.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 14",chr_14,128273805,13376,128257537
+"OZ077256.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 15",chr_15,116793490,17592,116778766
+"OZ077257.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 16",chr_16,105498491,1693,105486351
+"OZ077258.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 17",chr_17,116046357,8461,116030521
+"OZ077259.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 18",chr_18,93040998,19173,93025180
+"OZ077260.1 Mus musculus strain C57BL_6J genome assembly, chromosome: 19",chr_19,67670321,9557,67659851
