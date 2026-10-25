@@ -13,7 +13,7 @@ dist/
 .Rproj.user/
 
 test/
-tests/integration_output/
+/tests/
 
 # Local working draft for team email questions; never commit its contents.
 /packaging/TEAM_EMAIL_QUESTIONS.local.md
