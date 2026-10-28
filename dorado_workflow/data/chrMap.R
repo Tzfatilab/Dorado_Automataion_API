@@ -56,6 +56,10 @@ library(optparse)
 
 
 option_list = list(
+  # trial_name of the nanotel output (see trial_name at Path_manager)
+  make_option("--trial_name", , action = "store", type = "character",
+              default = "", 
+              help = "Name of the trial (e.g., 'Trial_99_Mouse') which all nanotel files have this name + '_' as the initial.", metavar = "Name of the trial"),
   
   # telo summary input_path
   make_option("--telo_summary_path", action = "store", type = "character" , 
@@ -215,8 +219,12 @@ create_dirs <- function(path, alignments, df)
 #' (vector od serial numbers)
 #'
 #' @return 0 if all files were copied 
-copy_reads <- function(df_merged, chrs, nanotel_path, chrs_path, file_extension = c(".fasta", ".fasta.gz") , unclassified_serial )
+copy_reads <- function(df_merged, chrs, nanotel_path, chrs_path, file_extension = c(".fasta", ".fasta.gz") , unclassified_serial, trial_name="" )
 {
+  
+  init_str = ""
+  if(trial_name != "") { init_str = str_c(trial_name, '_')}
+  
   file_extension <- match.arg(file_extension)
   
   res <- logical()
@@ -229,7 +237,7 @@ copy_reads <- function(df_merged, chrs, nanotel_path, chrs_path, file_extension 
     # make reads dir
     base::dir.create(path = str_c(chrs_path,chr, "+" ,'reads', sep = '/') , showWarnings = TRUE)
     
-    from_path <- str_c(nanotel_path, '/reads/',   as.character(serial), file_extension)
+    from_path <- str_c(nanotel_path, '/reads/', init_str  ,as.character(serial), file_extension)
     to_path <- str_replace_all(string = from_path, pattern = nanotel_path, replacement = str_c(chrs_path,chr,"+", sep = '/'))
     res <- c(res, file.copy(from = from_path  ,to = to_path, overwrite = TRUE) )
     
@@ -241,14 +249,14 @@ copy_reads <- function(df_merged, chrs, nanotel_path, chrs_path, file_extension 
     # make reads dir
     base::dir.create(path = str_c(chrs_path,chr, "-" ,'reads', sep = '/') , showWarnings = TRUE)
     
-    from_path <- str_c(nanotel_path, '/reads/',   as.character(serial), file_extension)
+    from_path <- str_c(nanotel_path, '/reads/', init_str, as.character(serial), file_extension)
     to_path <- str_replace_all(string = from_path, pattern = nanotel_path, replacement = str_c(chrs_path,chr,"-", sep = '/'))
     res <- c(res, file.copy(from = from_path  ,to = to_path, overwrite = TRUE) )
   }
   
   # unclassified
   base::dir.create(path = str_c(chrs_path,'unclassified' ,'reads', sep = '/') , showWarnings = TRUE)
-  from_path <- str_c(nanotel_path, '/reads/',   as.character(unclassified_serial), file_extension)
+  from_path <- str_c(nanotel_path, '/reads/', init_str,  as.character(unclassified_serial), file_extension)
   to_path <- str_replace_all(string = from_path, pattern = nanotel_path, replacement = str_c(chrs_path,'unclassified', sep = '/'))
   
   res <- c(res, file.copy(from = from_path  ,to = to_path, overwrite = TRUE) )
@@ -274,11 +282,14 @@ copy_reads <- function(df_merged, chrs, nanotel_path, chrs_path, file_extension 
 #' @return 0 if all files were copied 
 copy_plots <- function(df_merged, chrs, nanotel_path, chrs_path, 
                        file_extension =c('.jpeg', '.eps'), 
-                       dir_name = c('single_read_plots', 'single_read_plots_adj'), unclassified_serial )
+                       dir_name = c('single_read_plots', 'single_read_plots_adj'), unclassified_serial, trial_name="" )
 {
   file_extension<- match.arg(file_extension)
   dir_name <- match.arg(dir_name)
   res <- logical()
+  
+  init_str = ""
+  if(trial_name != "") { init_str = str_c(trial_name, '_')}
   
   
   for(chr in chrs) { ############################## todo: add pass_all column
@@ -291,8 +302,8 @@ copy_plots <- function(df_merged, chrs, nanotel_path, chrs_path,
     if(!dir.exists(paths = str_c(chrs_path,chr,"+", dir_name, sep = '/') )) {
       base::dir.create(path = str_c(chrs_path,chr,"+",  dir_name, sep = '/') , showWarnings = TRUE)  
     }
-    
-    from_path <- str_c(nanotel_path, '/',dir_name, '/read', as.character(serial), file_extension)
+    # 
+    from_path <- str_c(nanotel_path, '/',dir_name, '/',init_str, 'read',  as.character(serial), file_extension)
     to_path <- str_replace_all(string = from_path, pattern = nanotel_path, replacement = str_c(chrs_path,chr,"+", sep = '/'))
     
     res <- c(res, file.copy(from = from_path  ,to = to_path, overwrite = TRUE) )
@@ -307,7 +318,7 @@ copy_plots <- function(df_merged, chrs, nanotel_path, chrs_path,
       base::dir.create(path = str_c(chrs_path,chr,"-",  dir_name, sep = '/') , showWarnings = TRUE)  
     }
     
-    from_path <- str_c(nanotel_path, '/',dir_name, '/read', as.character(serial), file_extension)
+    from_path <- str_c(nanotel_path, '/',dir_name, '/',init_str, 'read', as.character(serial), file_extension)
     to_path <- str_replace_all(string = from_path, pattern = nanotel_path, replacement = str_c(chrs_path,chr,"-", sep = '/'))
     
     res <- c(res, file.copy(from = from_path  ,to = to_path, overwrite = TRUE) )
@@ -318,7 +329,7 @@ copy_plots <- function(df_merged, chrs, nanotel_path, chrs_path,
   if(!dir.exists(paths = str_c(chrs_path,'unclassified', dir_name, sep = '/'))) {
     base::dir.create(path = str_c(chrs_path,'unclassified', dir_name, sep = '/') , showWarnings = TRUE) 
   }
-  from_path <- str_c(nanotel_path, '/',dir_name, '/read', as.character(unclassified_serial), file_extension)
+  from_path <- str_c(nanotel_path, '/',dir_name, '/',init_str, 'read', as.character(unclassified_serial), file_extension)
   to_path <- str_replace_all(string = from_path, pattern = nanotel_path, replacement = str_c(chrs_path,'unclassified', sep = '/'))
   
   
@@ -726,14 +737,14 @@ unclassified_serial <- df_join %>%  dplyr::filter(! (Serial %in% df_pass$Serial)
 
 copy_reads(df_merged = df_join, chrs = unique(df_pass$alignment_genome), 
   nanotel_path = opt$nanotel_path, chrs_path = opt$save_path,file_extension = opt$file_extension, 
-  unclassified_serial = unclassified_serial)
+  unclassified_serial = unclassified_serial, opt$trial_name)
 
 
 
-copy_plots(df_merged = df_join, chrs = unique(df_pass$alignment_genome), nanotel_path = opt$nanotel_path, chrs_path = opt$save_path, file_extension = '.jpeg', dir_name =  'single_read_plots_adj', unclassified_serial = unclassified_serial)
+copy_plots(df_merged = df_join, chrs = unique(df_pass$alignment_genome), nanotel_path = opt$nanotel_path, chrs_path = opt$save_path, file_extension = '.jpeg', dir_name =  'single_read_plots_adj', unclassified_serial = unclassified_serial, opt$trial_name)
 
-copy_plots(df_merged = df_join, chrs = unique(df_pass$alignment_genome), nanotel_path = opt$nanotel_path, chrs_path = opt$save_path, file_extension = '.eps', dir_name =  'single_read_plots_adj',  unclassified_serial = unclassified_serial)
-copy_plots(df_merged = df_join, chrs = unique(df_pass$alignment_genome), nanotel_path = opt$nanotel_path, chrs_path = opt$save_path, file_extension = '.jpeg', dir_name =  'single_read_plots',  unclassified_serial = unclassified_serial)
+copy_plots(df_merged = df_join, chrs = unique(df_pass$alignment_genome), nanotel_path = opt$nanotel_path, chrs_path = opt$save_path, file_extension = '.eps', dir_name =  'single_read_plots_adj',  unclassified_serial = unclassified_serial, opt$trial_name)
+copy_plots(df_merged = df_join, chrs = unique(df_pass$alignment_genome), nanotel_path = opt$nanotel_path, chrs_path = opt$save_path, file_extension = '.jpeg', dir_name =  'single_read_plots',  unclassified_serial = unclassified_serial, opt$trial_name)
 
 
 
