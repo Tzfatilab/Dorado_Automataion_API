@@ -117,7 +117,7 @@ def overview_composition_section(data):
         pooled = dict(base_counts=dict(bases), total=sum(row['total'] for row in rows),
                       with_tvr=sum(row['with_tvr'] for row in rows))
     title = 'TVR Composition - Available Barcodes' if data['omitted'] else 'TVR Composition - All Barcodes'
-    section = composition_section(pooled, number=4, title=title)
+    section = composition_section(pooled, number=3, title=title)
     if pooled and 'class="histogram-figure"' in section:
         section = section.replace('class="saved-histogram composition-plot"',
             'id="overview-composition" class="saved-histogram composition-plot"')
@@ -152,6 +152,6 @@ def comparison_figures(run):
             colorbar=dict(title="Median<br>length (kb)"),
             hovertemplate="%{y} / %{x}<br>Median: %{z:.3f} kb<br>%{customdata} reads<extra></extra>"))
     heatmap.update_layout(xaxis_title="Chromosome",yaxis_title="Barcode",yaxis_autorange="reversed")
-    return [(4,"TVR Composition - All Barcodes",None,overview_composition_section(data)),
-            (5,"Median Telomere Length by Chromosome and Barcode",heatmap,
+    return [(3,"TVR Composition - All Barcodes",None,overview_composition_section(data)),
+            (4,"Median Telomere Length by Chromosome and Barcode",heatmap,
              "Post-filtered lengths; explicit chromosome annotations or chrN/chrN_Head/chrN_Tail labels. Cross-chromosome ambiguous reads excluded; gaps mean unavailable.")]

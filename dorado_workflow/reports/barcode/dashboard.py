@@ -40,8 +40,8 @@ def barcode_views(run, icons, histograms=None, results_root=None):
         tvr_note = ('No post-filtered telomeric reads' if empty else
                     f"{100*motifs['with_tvr']/motifs['total']:.1f}% of post-filtered reads" if motifs else 'Complete motif exports required')
         specs = [
-            ('Total reads', total, 'Input reads', icons[0]),
-            ('Telomeric reads', telomeric, percent, icons[2]),
+            ('Total barcode reads', total, 'Input reads', icons[0]),
+            ('Post-filtered telomeric reads', telomeric, percent, icons[2]),
             ('Median length', med, 'Post-filtered reads', icons[4]),
             ('Reads with TVRs', 0 if empty else motifs['with_tvr'] if motifs else None, tvr_note,
              '<path d="M8 40V23M19 40V8M30 40V17M41 40V4"/>'),
@@ -181,7 +181,7 @@ ROUTER = READ_SCRIPT + """<script>
       if (!point) return;
       // Box-summary clicks have no individual observation index. Only a dot
       // with a joined source read may navigate to the read dashboard.
-      if (point.data.type === 'box' && Number.isInteger(point.pointNumber)) {
+      if (['box','violin','scatter'].includes(point.data.type) && Number.isInteger(point.pointNumber)) {
         const identity = (point.data.customdata || [])[point.pointNumber];
         if (identity && identity[1]) {
           location.hash = '#/barcode/' + identity[0] + '/read/' + identity[1];

@@ -43,8 +43,9 @@
     "short_telomere_threshold_bp": 2000,
     "display_max_edge_distance": 50,
     "untrimmed_max_edge_distance": 134,
-    "max_telomere_start": 134,
-    "max_edge_distance": 134,
+    "untrimmed_max_telomere_start": 134,
+    "max_telomere_start": 50,
+    "max_edge_distance": 50,
     "tsq1_pattern": "AACCGC",
     "tvr_patterns": [
       "TCAGGG",

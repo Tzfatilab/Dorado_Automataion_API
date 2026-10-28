@@ -135,7 +135,8 @@ h2 {
     .stats>.stat p { margin:0;align-self:start; }
 }
 
-.stats>.stat h3 { white-space:nowrap; font-size:clamp(13px,1.05vw,16px); }
+.stats>.stat h3 { white-space:normal; overflow-wrap:break-word; min-width:0; font-size:clamp(13px,1.05vw,16px); }
+.stats>.stat>div { min-width:0; }
 .stats>.stat strong { white-space:nowrap; }
 
 /* Missing metrics remain readable without suggesting a numerical zero. */

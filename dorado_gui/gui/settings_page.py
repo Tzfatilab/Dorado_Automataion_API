@@ -255,9 +255,9 @@ class SettingsPage(QWidget):
         # -1 is a UI-only sentinel for optional minimum-length filtering (JSON null).
         specs = (
             ("min_read_length", "Minimum total read length (bp)", -1),
-            ("short_telomere_threshold_bp", "Short telomere threshold (bp)", 1),
+            ("short_telomere_threshold_bp", "Short telomere cutoff (bp)", 1),
             ("display_max_edge_distance", "Minimum read-length margin (bp)", 0),
-            ("max_telomere_start", "Latest allowed telomere start (bp)", 0),
+            ("max_telomere_start", "Latest telomere start (bp)", 0),
             ("min_density", "Minimum telomeric repeat density (%)", 0),
         )
         for row, (key, title, minimum) in enumerate(specs):

@@ -1,8 +1,8 @@
 /* Offline exports for existing and lazily rendered report figures. */
 (() => {
-  if (window.reportGraphExportInstalled === 'v14') return;
+  if (window.reportGraphExportInstalled === 'v20') return;
   window.reportGraphExportCleanup?.();
-  window.reportGraphExportInstalled = 'v14';
+  window.reportGraphExportInstalled = 'v20';
   const attached = new WeakSet();
   const NS = 'http://www.w3.org/2000/svg';
   const save = (blob, filename) => {
@@ -39,6 +39,15 @@
     const context=[barcode,read].filter(Boolean).join(' · ');
     return title+(context ? ' — '+context : '');
   };
+  const cleanStatistics=layout=>{
+    for(const annotation of layout.annotations||[]){
+      if(annotation.name!=='group-statistics')continue;
+      annotation.text=annotation.text.split(/<br\s*\/?\s*>/i).map(line=>{
+        const element=document.createElement('span');element.innerHTML=line;
+        return element.textContent.match(/[-+]?\d[\d,]*(?:\.\d+)?/g)?.at(-1)||'—';
+      }).join('<br>');
+    }
+  };
   const svgFromURL = url => {
     const payload=url.slice(url.indexOf(',')+1);
     const text=url.slice(0,url.indexOf(',')).includes(';base64') ? atob(payload) : decodeURIComponent(payload);
@@ -60,12 +69,17 @@
     if (!graph._fullLayout || !window.Plotly) throw Error('Wait for the graph to finish loading.');
     const figure=JSON.parse(JSON.stringify({data:graph.data,layout:graph.layout}));
     const layout=figure.layout;
+    cleanStatistics(layout);
     const tracks=graph.classList.contains('read-density-chart');
     const heatmap=figure.data.some(trace=>trace.type==='heatmap');
     let width=tracks?1100:900,height=tracks?650:heatmap?Math.max(420,Math.min(800,(figure.data[0].y?.length||6)*42+150)):560;
+    if(layout.meta?.barcodeLengthScale){width=Math.max(1100,figure.data.length*60);height=720;}
     layout.font={family:'Arial, Helvetica, sans-serif',size:12,color:'#222222'};
     layout.paper_bgcolor='white';layout.plot_bgcolor='white';layout.title={text:''};
     layout.margin={l:tracks?130:heatmap?180:80,r:tracks?240:heatmap?120:30,t:tracks?45:20,b:tracks?80:85,autoexpand:true};
+    if((layout.annotations||[]).some(a=>a.name==='group-statistics')){
+      layout.margin.t=(layout.updatemenus||[]).length?170:130;layout.margin.l=125;height+=110;
+    }
     Object.entries(layout).forEach(([key,axis])=>{
       if(!/^[xy]axis\d*$/.test(key)||!axis)return;
       axis.tickfont={family:'Arial, Helvetica, sans-serif',size:11,color:'#222222'};
@@ -139,6 +153,7 @@
         save(new Blob([html],{type:'text/html;charset=utf-8'}),filename+'.html');return;
       }
       const figure=JSON.parse(JSON.stringify({data:graph.data,layout:graph.layout}));
+      cleanStatistics(figure.layout);
       const composition=graph.closest('.read-composition-layout');
       if(composition&&figure.data.some(trace=>trace.type==='pie')) {
         const rows=[...composition.querySelectorAll('.read-composition-legend li')];
@@ -161,7 +176,9 @@
       figure.layout.margin={...figure.layout.margin,t:Math.max(90,figure.layout.margin?.t||0)};
       figure.layout.title={text:'<b>'+escape(title)+'</b>',x:.5,xanchor:'center',y:.97,yanchor:'top',pad:{t:18,b:16}};
       const payload=JSON.stringify(figure).replace(/</g,'\\u003c');
-      const html='<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+escape(title)+'</title><style>body{margin:0;font-family:Arial}#plot{width:100%;height:100vh;min-height:500px}</style></head><body><div id="plot"></div><script>'+bundle.replace(/<\/script/gi,'<\\/script')+'<\/script><script>const figure='+payload+';Plotly.newPlot("plot",figure.data,figure.layout,{responsive:true,displaylogo:false,scrollZoom:true});<\/script></body></html>';
+      const scaleRuntime=figure.layout.meta?.barcodeLengthScale&&window.reportBarcodeScaleUI
+        ? '('+window.reportBarcodeScaleUI.toString()+')(document.body,document.getElementById("plot"));' : '';
+      const html='<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+escape(title)+'</title><style>body{margin:0;font-family:Arial}#plot{width:100%;height:100vh;min-height:500px}</style></head><body><div id="plot"></div><script>'+bundle.replace(/<\/script/gi,'<\\/script')+'<\/script><script>const figure='+payload+';Plotly.newPlot("plot",figure.data,figure.layout,{responsive:true,displaylogo:false,scrollZoom:true}).then(()=>{'+scaleRuntime+'});<\/script></body></html>';
       const filename=title.replace(/[^a-zA-Z0-9_-]+/g,'-').replace(/^-|-$/g,'').slice(0,160)||'plot';
       save(new Blob([html],{type:'text/html;charset=utf-8'}),filename+'.html');return;
     }

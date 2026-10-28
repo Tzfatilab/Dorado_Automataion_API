@@ -93,11 +93,11 @@ class WorkflowSection:
             "not just its telomere. Shorter reads fail the read-length filter.<br>"
             "<b>Minimum read-length margin (bp):</b> read length must exceed the running "
             "median telomere length by more than this value.<br>"
-            "<b>Latest allowed telomere start (bp):</b> latest permitted start position "
+            "<b>Latest telomere start (bp):</b> latest permitted start position "
             "of the telomere in the analyzed sequence.<br>"
             "<b>Minimum telomeric repeat density (%):</b> minimum percentage of the "
             "telomeric region matching telomeric repeats; for example, 75 means 75%.<br>"
-            "<b>Short telomere threshold (bp):</b> telomeres shorter than this value "
+            "<b>Short telomere cutoff (bp):</b> telomeres shorter than this value "
             "count as short in the report. This threshold does not itself exclude reads.</p>",
             subtitle
         )

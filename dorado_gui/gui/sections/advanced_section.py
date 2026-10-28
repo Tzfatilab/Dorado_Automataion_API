@@ -447,11 +447,14 @@ class AdvancedSection:
         row = QHBoxLayout()
         row.setSpacing(5)
 
-        label = QLabel("Short telo. threshold (bp)")
+        label = QLabel("Short telomere cutoff (bp)")
+        label.setToolTip("Telomeres shorter than this value are counted as short.")
         label.setStyleSheet(
-            "color: #6b7280; font-family: Arial; font-size: 13px; "
+            "QLabel { color: #6b7280; font-family: Arial; font-size: 13px; "
             "font-weight: 400; "
-            "background: transparent; border: none; padding: 0; margin: 0;"
+            "background: transparent; border: none; padding: 0; margin: 0; }"
+            "QToolTip { background-color: white; color: #162238; "
+            "border: 1px solid #cbd5e1; font-size: 13px; padding: 5px 7px; }"
         )
         label.setWordWrap(False)
 
@@ -460,10 +463,13 @@ class AdvancedSection:
         )
         self.short_telomere_threshold.setValidator(QIntValidator(1, 1000000))
         self.short_telomere_threshold.setFixedSize(54, 28)
+        self.short_telomere_threshold.setToolTip("Telomeres shorter than this value are counted as short.")
         self.short_telomere_threshold.setAlignment(Qt.AlignCenter)
         self.short_telomere_threshold.setStyleSheet(
-            "font-family: Arial; font-size: 13px; font-weight: 400; "
-            "color: #6b7280; padding: 1px 4px;"
+            "QLineEdit { font-family: Arial; font-size: 13px; font-weight: 400; "
+            "color: #6b7280; background-color: white; padding: 1px 4px; }"
+            "QToolTip { background-color: white; color: #162238; "
+            "border: 1px solid #cbd5e1; font-size: 13px; padding: 5px 7px; }"
         )
         row.addWidget(label)
         row.addWidget(self.short_telomere_threshold)
@@ -479,12 +485,22 @@ class AdvancedSection:
             "Leave unselected to use no TVR patterns.",
         )
         tvr_label.setStyleSheet("""
-            font-family: sans-serif;
-            font-size: 14px;
-            font-weight: bold;
-            color: #374151;
-            border: none;
-            background: transparent;
+            HoverHelpLabel {
+                font-family: sans-serif;
+                font-size: 14px;
+                font-weight: bold;
+                color: #374151;
+                border: none;
+                background: transparent;
+            }
+            QToolTip {
+                font-size: 13px;
+                font-weight: normal;
+                color: #162238;
+                background-color: white;
+                border: 1px solid #cbd5e1;
+                padding: 5px 7px;
+            }
         """)
         tvr_label.setFixedWidth(140)
         tvr_label.setFixedHeight(30)
@@ -568,6 +584,8 @@ class AdvancedSection:
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(12)
         grid.setAlignment(Qt.AlignLeft)
+        # Separate the two label/input pairs without squeezing their captions.
+        grid.setColumnMinimumWidth(2, 20)
 
         self.read_length = QLineEdit(str(nanotel_defaults["min_read_length"]))
         self.max_distance_edge = QLineEdit(
@@ -617,35 +635,37 @@ class AdvancedSection:
                 font-weight: 400;
             }
         """
-        read_label = self._build_field_label("Min total read (bp)", 140, label_style)
-        edge_label = self._build_field_label("Min read margin (bp)", 140, label_style)
-        start_label = self._build_field_label("Latest telo. start (bp)", 140, label_style)
-        density_label = self._build_field_label("Min density (%)", 128, label_style)
+        read_label = self._build_field_label("Minimum read length (bp)", 140, label_style)
+        edge_label = self._build_field_label("Minimum read margin (bp)", 140, label_style)
+        start_label = self._build_field_label("Latest telomere start (bp)", 140, label_style)
+        density_label = self._build_field_label("Minimum density (%)", 128, label_style)
 
-        # Compact captions preserve the existing fixed-width layout; tooltips expand them.
+        # Tooltips explain the filters while captions remain fully visible.
         read_label.setToolTip("Minimum total read length (bp)")
         edge_label.setToolTip("Minimum read-length margin (bp): read length must exceed the running median telomere length by more than this value.")
         self.max_distance_edge.setToolTip(edge_label.toolTip())
-        start_label.setToolTip("Latest allowed telomere start (bp)")
+        start_label.setToolTip("The telomere must begin within this many bases of the read start.")
+        self.max_telomere_start.setToolTip("The telomere must begin within this many bases of the read start.")
         density_label.setToolTip("Minimum telomeric repeat density (%)")
 
         grid.addWidget(read_label, 0, 0)
         grid.addWidget(self.read_length, 0, 1)
-        grid.addWidget(edge_label, 0, 2)
-        grid.addWidget(self.max_distance_edge, 0, 3)
+        grid.addWidget(edge_label, 0, 3)
+        grid.addWidget(self.max_distance_edge, 0, 4)
         grid.addWidget(start_label, 1, 0)
         grid.addWidget(self.max_telomere_start, 1, 1)
-        grid.addWidget(density_label, 1, 2)
-        grid.addWidget(self.min_density_threshold, 1, 3)
+        grid.addWidget(density_label, 1, 3)
+        grid.addWidget(self.min_density_threshold, 1, 4)
         return grid
 
     @staticmethod
     def _build_field_label(text, width, style):
-        """Build a fixed-width label for a NanoTel field."""
+        """Size captions to their actual font metrics so they cannot be cut off."""
         label = QLabel(text)
         label.setStyleSheet(style)
         label.setWordWrap(False)
-        label.setFixedWidth(width)
+        label.ensurePolished()
+        label.setMinimumWidth(max(width, label.sizeHint().width() + 4))
         return label
 
     def _set_tvr_mode(

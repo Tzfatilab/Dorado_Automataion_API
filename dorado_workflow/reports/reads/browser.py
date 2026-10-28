@@ -169,7 +169,7 @@ def reads_section(barcode, results_root=None, show_completeness=True):
 <h2><span class="number">8</span>Reads <small class="read-total"></small></h2>
 <div class="read-controls"><label>Search <input class="read-search" type="search" placeholder="Search reads..."></label><label>Show <select class="read-limit"><option>10</option><option>25</option><option>50</option><option>100</option></select></label>
 </div></div><p class="note">Post-filtered telomeric reads. Canonical/TVR percentages use unique matched bases within the TVR-inclusive telomere interval. Categories may overlap; they need not sum to 100%. TVR blocks merge adjacent or overlapping TVR hits. Missing exports remain unavailable.</p>
-<div class="reads-scroll"><table class="reads-table"><thead><tr><th>Read number</th><th>Status</th><th>Filtered telomere (kb)</th><th>Including TVRs (kb)</th><th>Total read length (kb)</th><th>Canonical %</th><th>TVR %</th><th># TVR blocks</th><th>Chromosome</th></tr></thead><tbody></tbody></table></div>
+<div class="reads-scroll"><table class="reads-table"><thead><tr><th>Read number</th><th>Status</th><th>Telomere length (kb)</th><th>Including TVRs (kb)</th><th>Total read length (kb)</th><th>Canonical %</th><th>TVR %</th><th># TVR blocks</th><th>Chromosome</th></tr></thead><tbody></tbody></table></div>
 <p class="read-status" role="status"></p><nav class="read-pagination" aria-label="Read pages"></nav>
 <script type="application/json" class="read-data">''' + payload + '</script><script type="application/json" class="read-labels">' + label_payload + '</script><script type="application/json" class="read-details">' + extra_payload + '</script>' + ''.join(track_scripts) + '</section>'
 

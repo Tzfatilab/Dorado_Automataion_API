@@ -46,6 +46,20 @@ def remove_legacy_canonical(config):
             section["tvr_patterns"] = [p for p in section["tvr_patterns"] if p not in forbidden]
 
 
+def migrate_legacy_telomere_start(config, supplied):
+    """Separate the old untrimmed value from the displayed profile default."""
+    if 'untrimmed_max_telomere_start' in supplied.get('nanotel', {}):
+        return
+    sections = [config['nanotel']] + [
+        preset.get('nanotel', {}) for preset in config.get('organism_specific', {}).values()
+    ]
+    for section in sections:
+        if section.get('max_telomere_start') == 134:
+            section['max_telomere_start'] = 50
+    config['nanotel']['untrimmed_max_telomere_start'] = 134
+    config['nanotel']['untrimmed_max_edge_distance'] = 134
+
+
 def parse_patterns(text, canonical=None):
     patterns = list(dict.fromkeys(re.split(r"[\s,;]+", text.strip().upper())))
     patterns = [pattern for pattern in patterns if pattern]
@@ -167,6 +181,7 @@ class SettingsStore:
                 for name, data in document["profiles"].items():
                     self.validate_name(name)
                     config = merge_config(self.defaults, data)
+                    migrate_legacy_telomere_start(config, data)
                     remove_legacy_canonical(config)
                     config["paths"] = local_paths(config["paths"], self.defaults["paths"])
                     validate_config(config)

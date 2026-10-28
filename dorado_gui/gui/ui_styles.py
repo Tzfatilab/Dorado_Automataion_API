@@ -1,6 +1,7 @@
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QGroupBox, QMessageBox
-from PySide6.QtCore import QEvent, QObject, QPoint, Qt
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QGroupBox, QMessageBox, QWidget, QToolTip
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer
+from PySide6.QtGui import QColor, QPalette, QCursor
+from html import escape
 
 """Shared Qt style helpers for the Telomere Analyzer GUI."""
 
@@ -32,22 +33,63 @@ def ask_unsaved_settings(parent, title, message):
     return dialog.exec()
 
 
+class _ReadableTooltips(QObject):
+    """Show help once after a short hover, avoiding competing native popups."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.target = None
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self.show_help)
+
+    def show_help(self):
+        watched = self.target
+        try:
+            if watched is None or not watched.isVisible() or not watched.underMouse():
+                return
+            message = watched.toolTip()
+            if not message.lstrip().startswith('<'):
+                message = escape(message).replace('\n', '<br>')
+            QToolTip.showText(QCursor.pos() + QPoint(12, 8),
+                '<div style="max-width:340px;font-size:13px;color:#162238;">' + message + '</div>',
+                watched, watched.rect(), 15000)
+        except RuntimeError:
+            self.target = None
+
+    def eventFilter(self, watched, event):
+        if isinstance(watched, QWidget) and watched.toolTip():
+            if event.type() == QEvent.Enter:
+                self.target = watched
+                self.timer.start(250)
+            if event.type() == QEvent.ToolTip:
+                return True
+            if event.type() in (QEvent.Leave, QEvent.Hide) and self.target is watched:
+                self.timer.stop()
+                self.target = None
+                QToolTip.hideText()
+        return False
+
+
 def apply_global_style(widget):
     # Tooltips are top-level windows on some platforms, so style them on the
     # application rather than relying on the main window's stylesheet.
     app = QApplication.instance()
     if app is not None:
+        if not hasattr(app, '_readable_tooltips'):
+            app._readable_tooltips = _ReadableTooltips(app)
+            app.installEventFilter(app._readable_tooltips)
         tooltip_palette = app.palette()
         tooltip_palette.setColor(QPalette.ToolTipBase, QColor("#ffffff"))
-        tooltip_palette.setColor(QPalette.ToolTipText, QColor("#000000"))
+        tooltip_palette.setColor(QPalette.ToolTipText, QColor("#162238"))
         app.setPalette(tooltip_palette)
         app.setStyleSheet("""
             QToolTip {
-                color: #000000;
+                color: #162238;
                 background-color: #ffffff;
                 border: 1px solid #cbd5e1;
-                font-size: 11px;
-                padding: 3px 5px;
+                font-size: 13px;
+                padding: 5px 7px;
             }
         """)
 
@@ -70,11 +112,11 @@ def apply_global_style(widget):
         QLabel { color: #2c2c2c; }
 
         QToolTip {
-            color: #000000;
+            color: #162238;
             background-color: #ffffff;
             border: 1px solid #cbd5e1;
-            font-size: 11px;
-            padding: 3px 5px;
+            font-size: 13px;
+            padding: 5px 7px;
         }
 
         #content {

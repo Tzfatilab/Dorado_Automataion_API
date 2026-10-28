@@ -61,8 +61,8 @@ def render_screen(run, results_root=None):
     cards = []
     # Card order mirrors the approved design; notes identify each population.
     specs = [("barcode_count", "Total barcodes", ""),
-             ("total_reads", "Total reads", "Input reads"),
-             ("telomeric_reads", "Total telomeric reads", "Post-filtered reads"),
+             ("total_reads", "Total barcode reads", "Input reads"),
+             ("telomeric_reads", "Post-filtered telomeric reads", "Post-filtered reads"),
              ("telomeric_percentage", "% telomeric reads", "Of total input reads"),
              ("median_telomere_length", "Median length", "Pooled post-filtered reads"),
              ("detected_chromosomes", "Chromosomes", "Chromosome annotations unavailable")]
@@ -94,7 +94,7 @@ def render_screen(run, results_root=None):
         marker_color="#5996E8", width=0.55, text=[str(y) for _, y in counts], textposition="outside", cliponaxis=False,
         hovertemplate="%{x}<br>%{y} telomeric reads<extra></extra>"))
     # Leave headroom for count labels, including an all-zero dataset.
-    bars.update_layout(xaxis_title="Barcode", yaxis_title="Telomeric reads",
+    bars.update_layout(xaxis_title="Barcode", yaxis_title="Post-filtered telomeric reads",
                        yaxis_range=[0, max([y for _, y in counts] or [1]) * 1.18 or 1])
     # Plot individual exported lengths, not summaries of barcode summaries.
     boxes = go.Figure()
@@ -106,24 +106,43 @@ def render_screen(run, results_root=None):
         values = [r["length_bp"] / 1000 for r in records]
         # Keep identity attached to each plotted observation, including duplicate
         # lengths. Matching by a y value would route equal-length reads incorrectly.
-        customdata = [[item["id"], r.get("read_id")] for r in records]
+        barcode = next((b for b in run.barcodes if b.id == item['id']), None)
+        labels = {}
+        for read in barcode.reads if barcode else []:
+            serial = read.metrics.get('read_number')
+            if serial and serial.status == 'available':
+                labels[read.id] = f'Read {int(serial.value)}'
+        customdata = [[item["id"], r.get("read_id"), labels.get(r.get('read_id'), 'Read number unavailable')] for r in records]
         # Each barcode is a separate trace. Plotly computes presentation
         # quartiles from these source lengths; jitter only separates markers
         # horizontally and never changes a read's length.
         boxes.add_trace(go.Box(name=item["label"].replace("barcode", "BC"), y=values,
             customdata=customdata, boxpoints="all", jitter=0.16, pointpos=0, fillcolor="#a6d0f5", line_color="#214e78",
-            marker=dict(color="#3d83c9", size=5), hovertemplate="%{y:.3f} kb<extra>%{fullData.name}</extra>"))
+            marker=dict(color="#3d83c9", size=5), hovertemplate="%{customdata[2]}<br>Telomere length: %{y:.3f} kb<br>Click to open read<extra>%{fullData.name}</extra>"))
     boxes.update_layout(xaxis_title="Barcode", yaxis_title="Telomere length (kb)",
-                        yaxis_type="linear", yaxis_rangemode="tozero")
+                        yaxis_type="linear", yaxis_rangemode="tozero",
+                        updatemenus=[dict(type='dropdown',direction='down',active=0,
+                            x=1,y=1.42,xanchor='right',yanchor='bottom',
+                            buttons=[dict(label='Linear',method='relayout',args=[{'yaxis.type':'linear','yaxis.autorange':True,'yaxis.rangemode':'tozero'}]),
+                                     dict(label='Logarithmic',method='relayout',args=[{'yaxis.type':'log','yaxis.autorange':True,'yaxis.rangemode':'normal'}])])])
     # Both panels share typography, dimensions and offline Plotly settings.
     panels = []
-    for index, title, fig, note in [(2, "Telomeric Reads by Barcode", bars, "Post-filtered telomeric reads."),
-                                    (3, "Telomere Length by Barcode", boxes, "Post-filtered reads. Linear scale; a single read appears as a point.")] + comparison_figures(run):
+    for index, title, fig, note in sorted([(2, "Telomeric Reads by Barcode", bars, "Post-filtered telomeric reads."),
+                                    (1, "Telomere Length by Barcode", boxes, "Post-filtered reads. Choose Linear or Logarithmic scale; zero lengths cannot appear on a logarithmic axis. A single read appears as a point.")] + comparison_figures(run), key=lambda panel: panel[0]):
         if fig is None:
             panels.append(note)
             continue
-        fig.update_layout(template="plotly_white", height=350, showlegend=index == 4,
-            margin=dict(l=65, r=175 if index == 4 else 24, t=25, b=65), font=dict(family="Segoe UI, Arial", color="#12203c"))
+        fig.update_layout(template="plotly_white", height=350, showlegend=False,
+            margin=dict(l=65, r=120 if index == 4 else 24, t=25, b=65), font=dict(family="Segoe UI, Arial", color="#12203c"))
+        if index == 1:
+            from ..shared.plot_statistics import add_group_statistics
+            add_group_statistics(fig, [(trace.name, list(trace.y)) for trace in fig.data])
+            fig.update_layout(margin=dict(t=88))
+        if index == 4:
+            row_count = len(fig.data[0].y) if fig.data else 0
+            fig.update_layout(height=620,
+                yaxis=dict(tickmode='array',tickvals=list(fig.data[0].y) if fig.data else []),
+                margin=dict(l=85,r=120,t=25,b=65))
         # Bar charts can contain an empty trace, so trace count alone cannot
         # identify missing count data. Paper coordinates center the message
         # independently of the axis units and logarithmic scale.
@@ -133,7 +152,10 @@ def render_screen(run, results_root=None):
         # own markup and initialization script.
         chart = fig.to_html(full_html=False, include_plotlyjs=False,
                             config={"responsive": True, "displaylogo": False, "scrollZoom": False})
-        panels.append(f'<section><h2><span class="number">{index}</span>{title}</h2>{chart}<p class="note">{note}</p></section>')
+        width_style = ''
+        if index == 4:
+            chart = '<div style="max-width:1400px;margin:0 auto">' + chart + '</div>'
+        panels.append(f'<section{width_style}><h2><span class="number">{index}</span>{title}</h2>{chart}<p class="note">{note}</p></section>')
     # Resolve beside this module, independent of the process working directory.
     histograms = histogram_sections(run, results_root)
     read_plots = telomere_plot_sections(run, results_root)
@@ -149,6 +171,8 @@ def render_screen(run, results_root=None):
     table_export_script = (Path(__file__).parents[1] / 'assets' / 'table_export.js').read_text(encoding='utf-8')
     spacing_script = (Path(__file__).parents[1] / 'assets' / 'chromosome_spacing.js').read_text(encoding='utf-8')
     spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'barcode_navigation.js').read_text(encoding='utf-8')
+    spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'barcode_scale.js').read_text(encoding='utf-8')
+    spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'overview_layout.js').read_text(encoding='utf-8')
     html = html.removesuffix('</body></html>') + '<script>' + export_script + '</script><script>' + table_export_script + '</script><script>' + spacing_script + '</script></body></html>'
     if nanotel_population:
         html = html.replace('Post-filtered', 'NanoTel final-filtered').replace('post-filtered', 'NanoTel final-filtered')

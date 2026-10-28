@@ -1,7 +1,7 @@
 """Reusable help labels, constrained checkboxes and toggle switches."""
 from PySide6.QtWidgets import QLabel, QCheckBox, QMessageBox
-from PySide6.QtCore import Qt, QSize, QRectF, QPoint
-from PySide6.QtGui import QColor, QCursor, QPainter
+from PySide6.QtCore import Qt, QSize, QRectF
+from PySide6.QtGui import QColor, QPainter
 
 
 class HoverHelpLabel(QLabel):
@@ -9,29 +9,7 @@ class HoverHelpLabel(QLabel):
 
     def __init__(self, text, help_text):
         super().__init__(text)
-        self._help_popup = QLabel(help_text, None, Qt.ToolTip)
-        self._help_popup.setStyleSheet("""
-            QLabel {
-                color: #000000;
-                background-color: #ffffff;
-                border: 1px solid #cbd5e1;
-                border-radius: 3px;
-                font-size: 11px;
-                padding: 3px 5px;
-            }
-        """)
-
-    def enterEvent(self, event):
-        """Show help beside the pointer when the label is hovered."""
-        self._help_popup.adjustSize()
-        self._help_popup.move(QCursor.pos() + QPoint(10, 12))
-        self._help_popup.show()
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        """Hide help when the pointer leaves the label."""
-        self._help_popup.hide()
-        super().leaveEvent(event)
+        self.setToolTip(help_text)
 
 
 class MappingCheckBox(QCheckBox):
