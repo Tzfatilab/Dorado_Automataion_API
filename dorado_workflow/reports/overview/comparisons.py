@@ -106,8 +106,10 @@ def comparison_data(run):
     return dict(composition=composition, cells=cells, omitted=omitted)
 
 
-def overview_composition_section(data):
+def overview_composition_section(data, requested=None):
     """Pool available complete barcodes and disclose any excluded barcodes."""
+    if requested is False:
+        return composition_section(None, number=4, title='TVR Composition', requested=False)
     rows = data['composition']
     pooled = None
     if rows:
@@ -117,7 +119,7 @@ def overview_composition_section(data):
         pooled = dict(base_counts=dict(bases), total=sum(row['total'] for row in rows),
                       with_tvr=sum(row['with_tvr'] for row in rows))
     title = 'TVR Composition - Available Barcodes' if data['omitted'] else 'TVR Composition - All Barcodes'
-    section = composition_section(pooled, number=3, title=title)
+    section = composition_section(pooled, number=4, title=title)
     if pooled and 'class="histogram-figure"' in section:
         section = section.replace('class="saved-histogram composition-plot"',
             'id="overview-composition" class="saved-histogram composition-plot"')
@@ -138,6 +140,7 @@ def overview_composition_section(data):
 def comparison_figures(run):
     """Build charts 4/5; missing cells remain gaps, never zero-length telomeres."""
     import plotly.graph_objects as go
+    from dorado_workflow.reports.reads.density import tvr_enabled
     data = comparison_data(run)
     heatmap = go.Figure()
     cells = data["cells"]
@@ -152,6 +155,6 @@ def comparison_figures(run):
             colorbar=dict(title="Median<br>length (kb)"),
             hovertemplate="%{y} / %{x}<br>Median: %{z:.3f} kb<br>%{customdata} reads<extra></extra>"))
     heatmap.update_layout(xaxis_title="Chromosome",yaxis_title="Barcode",yaxis_autorange="reversed")
-    return [(3,"TVR Composition - All Barcodes",None,overview_composition_section(data)),
-            (4,"Median Telomere Length by Chromosome and Barcode",heatmap,
+    return [(4,"TVR Composition - All Barcodes",None,overview_composition_section(data, requested=tvr_enabled(run.settings))),
+            (5,"Median Telomere Length by Chromosome and Barcode",heatmap,
              "Post-filtered lengths; explicit chromosome annotations or chrN/chrN_Head/chrN_Tail labels. Cross-chromosome ambiguous reads excluded; gaps mean unavailable.")]

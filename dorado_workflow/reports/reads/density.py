@@ -18,6 +18,15 @@ def mismatch_enabled(settings):
     return None
 
 
+def tvr_enabled(settings):
+    """Distinguish an explicit empty TVR selection from unknown legacy settings."""
+    if not settings or settings.status != 'available' or not isinstance(settings.value, dict):
+        return None
+    options = settings.value.get('nanotel_analysis', settings.value)
+    patterns = options.get('tvr_patterns') if isinstance(options, dict) else None
+    return bool(patterns) if isinstance(patterns, list) else None
+
+
 def saved_read_sequence(folder, serial, header, length):
     """Load NanoTel's analyzed-orientation FASTA, verifying identity and length.
 
@@ -81,22 +90,30 @@ def read_track_data(read, folder=None):
         for samples in result['density'].values():
             samples.sort(key=lambda sample: sample[0])
     fact = read.tracks.get('motifs')
-    if fact and fact.status == 'available' and 'tvr_inclusive' in fact.value['methods']:
-        groups = {}
-        for hit in fact.value['matches']:
-            if hit['method'] == 'tvr_inclusive':
-                groups.setdefault((hit['motif'], hit['role']), []).append([hit['start'], hit['end']])
-        result['motifs'] = [dict(label=motif + (' (canonical)' if role == 'canonical' else ''),
-            role=role, color=motif_color(motif + (' (canonical)' if role == 'canonical' else '')),
-            positions=positions) for (motif, role), positions in sorted(groups.items())]
+    result['motifs_by_method'] = {}
+    if fact and fact.status == 'available':
+        for method in fact.value['methods']:
+            groups = {}
+            for hit in fact.value['matches']:
+                if hit['method'] == method:
+                    groups.setdefault((hit['motif'], hit['role']), []).append([hit['start'], hit['end']])
+            result['motifs_by_method'][method] = [dict(
+                label=motif + (' (canonical)' if role == 'canonical' else ''),
+                role=role, color=motif_color(motif + (' (canonical)' if role == 'canonical' else '')),
+                positions=positions) for (motif, role), positions in sorted(groups.items())]
+        result['motifs'] = result['motifs_by_method'].get('tvr_inclusive')
     # Reference mappings are shown as annotations, never projected onto read
     # coordinates without an exported query interval and transformation.
     if read.alignments.status == 'available':
         for record in read.alignments.value:
-            result['alignments'].append({key: value.value for key, value in record.items()
+            alignment = {key: value.value for key, value in record.items()
                 if key in ('reference', 'chromosome', 'arm', 'strand', 'raw', 'normalized',
                            'query_interval', 'query_strand', 'mapq')
-                and value.status == 'available'})
+                and value.status == 'available'}
+            query = record.get('query_interval')
+            if query and query.status != 'available':
+                alignment['query_interval_reason'] = query.reason
+            result['alignments'].append(alignment)
     return result
 
 

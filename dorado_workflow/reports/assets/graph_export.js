@@ -72,7 +72,7 @@
     cleanStatistics(layout);
     const tracks=graph.classList.contains('read-density-chart');
     const heatmap=figure.data.some(trace=>trace.type==='heatmap');
-    let width=tracks?1100:900,height=tracks?650:heatmap?Math.max(420,Math.min(800,(figure.data[0].y?.length||6)*42+150)):560;
+    let width=tracks?1100:900,height=tracks?Math.max(650,graph.layout.height||0):heatmap?Math.max(420,Math.min(800,(figure.data[0].y?.length||6)*42+150)):560;
     if(layout.meta?.barcodeLengthScale){width=Math.max(1100,figure.data.length*60);height=720;}
     layout.font={family:'Arial, Helvetica, sans-serif',size:12,color:'#222222'};
     layout.paper_bgcolor='white';layout.plot_bgcolor='white';layout.title={text:''};

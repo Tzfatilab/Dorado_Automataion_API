@@ -3,13 +3,15 @@ from html import escape
 from dorado_workflow.reports.shared.colors import motif_color
 
 
-def positions_section(row):
+def positions_section(row, requested=None):
     """Render source matches already selected by the shared comparison adapter.
 
     Each tick is one match start, pooled across reads. The analyzed sequence
     orientation is not known to establish distal/proximal biological direction.
     """
     heading = '<section><h2><span class="number">6</span>TVR Position Along Telomeres</h2>'
+    if requested is False:
+        return heading + '<p class="note">Not requested: no TVR patterns were selected for this run.</p></section>'
     if row is None:
         return heading + ('<p class="note">Unavailable: this run does not contain complete per-read motif-position exports. '
                           'Summary lengths and density plots cannot reconstruct TVR sequences or positions.</p></section>')

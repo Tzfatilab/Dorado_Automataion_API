@@ -17,10 +17,13 @@ window.readMappingSummary = (read, data) => {
   });
   const assigned = descriptions.length ? descriptions.join('<br>') :
     (read.chromosomes || []).length ? 'Assigned: ' + read.chromosomes.map(escape).join(', ') : 'No chromosome assignment exported';
-  return {spans, text: assigned + (spans.length ? '' : '<br>Aligned span within read not exported')};
+  const reasons = [...new Set(alignments.map(a=>a.query_interval_reason).filter(Boolean))];
+  const missingSpan = reasons.length ? 'Aligned span unavailable: '+reasons.map(escape).join('; ') : 'Aligned span within read not exported';
+  return {spans, text: assigned + (spans.length ? '' : '<br>'+missingSpan)};
 };
 
 window.renderReadTracks = (parent, read, options = {}) => {
+  options = {...read.reportTrackOptions, ...options};
   const add = (tag, text, target) => {
     const element = document.createElement(tag);
     element.textContent = text;
@@ -40,13 +43,20 @@ window.renderReadTracks = (parent, read, options = {}) => {
     return;
   }
   const chart = add('div', '', panel);
-  chart.reportInteractiveRead={...read,track_data:data};
+  chart.reportInteractiveRead={...read,track_data:data,reportTrackOptions:options};
   chart.className = 'read-density-chart';
   const traces = [], shapes = [], annotations = [];
   const extent = read.length / 1000;
-  const exact = data.intervals.exact, inclusive = data.intervals.tvr_inclusive;
+  const exact = data.intervals.exact;
+  const mismatch = options.mismatchEnabled === true ? data.intervals.mismatch : null;
+  const inclusive = options.tvrEnabled === false ? null : data.intervals.tvr_inclusive;
   // Configured motifs with no exported hits do not belong in this read's legend.
-  const motifs = (data.motifs || []).filter(m => Array.isArray(m.positions) && m.positions.length > 0).sort((a, b) =>
+  const motifMethod = options.tvrEnabled === false
+    ? (options.mismatchEnabled === true ? 'mismatch' : options.mismatchEnabled === false ? 'exact' : null)
+    : 'tvr_inclusive';
+  const selectedMotifs = data.motifs_by_method
+    ? data.motifs_by_method[motifMethod] ?? null : data.motifs;
+  const motifs = (selectedMotifs || []).filter(m => Array.isArray(m.positions) && m.positions.length > 0).sort((a, b) =>
     Number(a.role !== 'canonical') - Number(b.role !== 'canonical') || a.label.localeCompare(b.label));
   const canonicalName = motifs.filter(m => m.role === 'canonical').map(m => m.label.replace(' (canonical)', '')).join(', ');
 
@@ -54,22 +64,23 @@ window.renderReadTracks = (parent, read, options = {}) => {
   // TVR-inclusive density is not a TVR-only density: overlaps forbid subtraction.
   const series = [
     ['tvr_inclusive', 'Density + TVR', '#b88719', 'rgba(245,199,64,0.19)'],
-    ['exact', 'Telomere density' + (canonicalName ? ' (' + canonicalName + ')' : ''), '#dc413b', 'rgba(234,99,98,0.20)'],
-    ['mismatch', 'Density with mismatches', '#8962b3', null]
+    ['exact', 'Telomere density' + (canonicalName ? ' (' + canonicalName + ')' : ''), '#0072B2', 'rgba(0,114,178,0.10)'],
+    ['mismatch', 'Density with mismatches', '#E66100', null]
   ];
   series.forEach(([method, name, color, fill]) => {
     // NanoTel can export exact values under the mismatch name when disabled.
     // Require explicit run-setting evidence, including for the legend entry.
     if (method === 'mismatch' && options.mismatchEnabled !== true) return;
+    if (method === 'tvr_inclusive' && options.tvrEnabled === false) return;
     const samples = (data.density || {})[method];
     if (!samples || !samples.length) return;
     const x = samples.map(s => (s[0] + 1) / 1000), y = samples.map(s => s[2]);
     // NanoTel extends the last observed density to the end of the read.
     if (x[x.length - 1] < extent) { x.push(extent); y.push(y[y.length - 1]); }
     traces.push({type: 'scatter', mode: 'lines', name, x, y,
-      line: {color, width: method === 'exact' ? 2.2 : 1.4},
+      line: {color, width: method === 'exact' ? 2.2 : 1.8, dash: 'solid'},
       fill: fill ? 'tozeroy' : 'none', fillcolor: fill || undefined,
-      visible: method === 'mismatch' ? 'legendonly' : true,
+      visible: true,
       hovertemplate: 'Position: %{x:.3f} kb<br>Density: %{y:.3f}<extra>%{fullData.name}</extra>'});
   });
   const shade = (start, end, color) => {
@@ -77,30 +88,49 @@ window.renderReadTracks = (parent, read, options = {}) => {
       x0: start / 1000, x1: end / 1000, y0: 0, y1: 1, layer: 'below',
       line: {width: 0}, fillcolor: color});
   };
-  if (exact) shade(exact[0], exact[1], 'rgba(238,136,140,0.10)');
+  if (exact) shade(exact[0], exact[1], 'rgba(142,68,173,0.07)');
+  const intervalStrip = (intervals, name, color) => {
+    const x=[], y=[];
+    intervals.forEach(([start,end])=>{
+      if(end>start){x.push(start/1000,end/1000,null);y.push(-.015,-.015,null);}
+    });
+    if(x.length) traces.push({type:'scatter',mode:'lines',name,x,y,
+      line:{color,width:5},hovertemplate:'%{fullData.name}<br>%{x:.3f} kb<extra></extra>'});
+  };
+  if (exact) intervalStrip([exact], 'Telomere (exact)', '#8E44AD');
+  if (mismatch) {
+    const extensions=[];
+    if (!exact) extensions.push(mismatch);
+    else {
+      if(mismatch[0]<exact[0]) extensions.push([mismatch[0],Math.min(exact[0],mismatch[1])]);
+      if(mismatch[1]>exact[1]) extensions.push([Math.max(exact[1],mismatch[0]),mismatch[1]]);
+    }
+    extensions.forEach(([start,end])=>shade(start,end,'rgba(21,148,71,0.12)'));
+    intervalStrip(extensions,'Mismatch extension','#159447');
+  }
   if (inclusive && exact) {
     shade(inclusive[0], Math.min(exact[0], inclusive[1]), 'rgba(251,213,88,0.22)');
     shade(Math.max(exact[1], inclusive[0]), inclusive[1], 'rgba(251,213,88,0.22)');
   }
   // NanoTel labels sequence outside the called interval as sub-telomere.
   // This is a source-call context, not a genomic mapping inference.
-  const called = inclusive || exact;
+  const called = inclusive || mismatch || exact;
   if (called) {
     const x = [], y = [];
     [[0, called[0]], [called[1], read.length]].forEach(([start, end]) => {
       if (end > start) { x.push(start / 1000, end / 1000, null); y.push(0, 0, null); }
     });
     traces.push({type: 'scatter', mode: 'lines', name: 'Sub-telomere (NanoTel)', x, y,
-      line: {color: '#4267ca', width: 4}, hovertemplate: 'Outside called telomere<br>%{x:.3f} kb<extra></extra>'});
+      line: {color: '#374151', width: 4}, hovertemplate: 'Outside called telomere<br>%{x:.3f} kb<extra></extra>'});
     shapes.push({type: 'line', xref: 'x', yref: 'y', x0: called[1] / 1000,
       x1: called[1] / 1000, y0: 0, y1: 1.05, line: {color: '#243750', width: 1.5, dash: 'dash'}});
     annotations.push({xref: 'x', yref: 'y', x: called[1] / 1000, y: 1.06,
-      text: 'Telomere end' + (inclusive ? ' (including TVRs)' : ' (exact)') + '<br>' + (called[1] / 1000).toFixed(3) + ' kb',
+      text: 'Telomere end' + (inclusive ? ' (including TVRs)' : mismatch ? ' (1 mismatch)' : ' (exact)') + '<br>' + (called[1] / 1000).toFixed(3) + ' kb',
       showarrow: false, xanchor: called[1] > read.length * 0.75 ? 'right' : 'left',
       xshift: called[1] > read.length * 0.75 ? -8 : 8, yanchor: 'bottom', font: {size: 12, color: '#243750'}});
-    if (exact && inclusive && exact[1] !== inclusive[1]) {
+    if (exact && called !== exact && exact[1] !== called[1]) {
       shapes.push({type: 'line', xref: 'x', yref: 'y', x0: exact[1] / 1000,
-        x1: exact[1] / 1000, y0: 0, y1: 1, line: {color: '#dc413b', width: 1, dash: 'dot'}});
+        x1: exact[1] / 1000, y0: 0, y1: 1, line: {color: '#8E44AD', width: 1, dash: 'dot'}});
     }
   }
 
@@ -117,7 +147,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
   }
   // Unassigned means no exported motif hit within the TVR-inclusive interval,
   // using the same denominator as the composition chart, not missing exports.
-  if (inclusive && Array.isArray(data.motifs)) {
+  if (inclusive && Array.isArray(selectedMotifs)) {
     const spans=motifs.flatMap(m=>m.positions).map(([a,b])=>[Math.max(a,inclusive[0]),Math.min(b,inclusive[1])])
       .filter(([a,b])=>b>a).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
     const gaps=[];let cursor=inclusive[0];
@@ -128,57 +158,63 @@ window.renderReadTracks = (parent, read, options = {}) => {
   motifs.forEach(m => {
     traces.push(intervalTrace(m, m.positions, 2, true));
   });
-  [[2, 'Motif type'], [1, 'Sequence'], [0, 'Mapping to genome']].forEach(([y, text]) =>
+  const mapping = window.readMappingSummary(read, data);
+  // Keep all source alignments, sharing a lane only for the same reference
+  // (including its Head/Tail arm). Strand and MAPQ remain per-span metadata.
+  const mappingGroups = new Map();
+  mapping.spans.forEach(alignment => {
+    const key = String(alignment.reference);
+    if (!mappingGroups.has(key)) mappingGroups.set(key, []);
+    mappingGroups.get(key).push(alignment);
+  });
+  const mappingRows = Math.max(1, mappingGroups.size);
+  const mappingStep = 1.8;
+  const mappingTop = -.6;
+  [[2, 'Motif type'], [1, 'Sequence'], [mappingTop-(mappingRows-1)*mappingStep/2, 'Mapping<br>to genome']].forEach(([y, text]) =>
     annotations.push({xref: 'paper', yref: 'y2', x: 0, y, text, showarrow: false,
       xanchor: 'right', xshift: -12, font: {size: 12, color: '#243750'}}));
-  const mapping = window.readMappingSummary(read, data);
   const mappingPixels = Math.max(100, parent.clientWidth - (parent.clientWidth < 850 ? 155 : 400));
-  if (mapping.spans.length) {
+  [...mappingGroups.values()].forEach((alignments,index) => {
+    const alignment = alignments[0];
+    const reference = String(alignment.reference).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    const y = mappingTop-index*mappingStep;
     traces.push({type:'scatter',mode:'lines',xaxis:'x2',yaxis:'y2',
-      x:[0,extent,extent,0,0],y:[-.6,-.6,.6,.6,-.6],
+      x:[0,extent,extent,0,0],y:[y-.28,y-.28,y+.28,y+.28,y-.28],
       fill:'toself',fillcolor:'#e0e5ed',line:{width:0},showlegend:false,
       hoverinfo:'skip',name:'Outside mapped region'});
-    let covered = 0;
-    const gapLabel = (start,end) => {
-      if ((end-start)/extent*mappingPixels > 170) annotations.push({xref:'x2',yref:'y2',
-        x:(start+end)/2,y:0,text:'Outside mapped region',showarrow:false,font:{size:14,color:'#64748b'}});
-    };
-    [...mapping.spans].sort((a,b)=>a.query_interval.start-b.query_interval.start).forEach(a=>{
-      const start=a.query_interval.start/1000,end=a.query_interval.end/1000;
-      gapLabel(covered,start); covered=Math.max(covered,end);
-    });
-    gapLabel(covered,extent);
-  }
-  mapping.spans.forEach(alignment => {
+    const strands = [...new Set(alignments.map(a => a.query_strand).filter(s => s === '+' || s === '-'))];
+    const qualities = alignments.map(a => a.mapq).filter(q => Number.isFinite(q) && q >= 0 && q < 255);
+    const minQuality = Math.min(...qualities), maxQuality = Math.max(...qualities);
+    const groupMapq = qualities.length ? ' | MAPQ '+minQuality+(maxQuality !== minQuality ? '\u2013'+maxQuality : '') : '';
+    const label = reference + (strands.length === 1
+      ? ' | strand '+(strands[0] === '-' ? '\u2212 \u2190' : '+ \u2192')
+      : strands.length > 1 ? ' | strands + / \u2212' : '') + groupMapq;
+    annotations.push({xref:'paper',yref:'y2',x:0,y:y+.42,xanchor:'left',yanchor:'bottom',
+      text:label,showarrow:false,font:{size:12,color:'#243750'}});
+    alignments.forEach(alignment => {
     const q = alignment.query_interval;
-    const reference = String(alignment.reference).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
     const start = q.start / 1000, end = q.end / 1000;
-    traces.push({type:'scatter', mode:'lines', xaxis:'x2', yaxis:'y2',
-      x:[start,end,end,start,start], y:[-.6,-.6,.6,.6,-.6],
-      fill:'toself', fillcolor:'#276bd1',
-      line:{color:'#276bd1',width:0}, hoverinfo:'skip',
-      showlegend:false, name:'Aligned read span'});
     const strand = alignment.query_strand;
     const mapq = Number.isFinite(alignment.mapq) && alignment.mapq >= 0 && alignment.mapq < 255
       ? ' | MAPQ '+alignment.mapq : '';
-    const label = reference + (strand === '+' || strand === '-'
-      ? ' | strand '+(strand === '-' ? '−' : '+') : '') + mapq +
-      (strand === '+' ? ' →' : strand === '-' ? ' ←' : '');
+    const hover = reference+'<br>Within read: '+(q.start+1).toLocaleString()+'\u2013'+q.end.toLocaleString()+' bp'+
+      (strand ? '<br>Strand: '+strand : '')+mapq;
+    traces.push({type:'scatter', mode:'lines', xaxis:'x2', yaxis:'y2',
+      x:[start,end,end,start,start], y:[y-.28,y-.28,y+.28,y+.28,y-.28],
+      fill:'toself', fillcolor:'#276bd1',line:{color:'#276bd1',width:0},
+      hoveron:'fills',hovertemplate:hover+'<extra></extra>',showlegend:false,name:'Aligned read span'});
+    // Nearby spans share a lane; their precise coordinates stay in hover
+    // rather than stacking overlapping coordinate labels below the row.
+    if (alignments.length > 1) return;
     const availablePixels=(end-start)/extent*mappingPixels;
-    const strandLabel=strand === '+' || strand === '-'
-      ? 'strand '+(strand === '-' ? '− ←' : '+ →') : '';
-    const wrappedLabel=reference+mapq+(strandLabel ? '<br>'+strandLabel : '');
-    const visibleLabel=availablePixels > label.length*8+12 ? label : wrappedLabel;
-    annotations.push({xref:'x2',yref:'y2',x:(start+end)/2,y:0,
-      text:visibleLabel,showarrow:false,font:{size:14,color:'#ffffff'}});
-    // Put endpoint coordinates below the track, keeping labels inside the frame.
     const coordinateLabel=(position,anchor)=>annotations.push({xref:'x2',yref:'y2',
-      x:position,y:-.72,yanchor:'top',xanchor:anchor,
-      text:position.toFixed(2)+' kb',showarrow:false,font:{size:12,color:'#243750'}});
+      x:position,y:y-.38,yanchor:'top',xanchor:anchor,
+      text:position.toFixed(2)+' kb',showarrow:false,font:{size:11,color:'#243750'}});
     if (availablePixels > 120) { coordinateLabel(start,'left'); coordinateLabel(end,'right'); }
-    else annotations.push({xref:'x2',yref:'y2',x:(start+end)/2,y:-.72,yanchor:'top',
-      xanchor:start > extent*.75 ? 'right' : 'left',text:start.toFixed(2)+'–'+end.toFixed(2)+' kb',
-      showarrow:false,font:{size:12,color:'#243750'}});
+    else annotations.push({xref:'x2',yref:'y2',x:(start+end)/2,y:y-.38,yanchor:'top',
+      xanchor:start > extent*.75 ? 'right' : start < extent*.25 ? 'left' : 'center',
+      text:start.toFixed(2)+'\u2013'+end.toFixed(2)+' kb',showarrow:false,font:{size:11,color:'#243750'}});
+    });
   });
   if (!mapping.spans.length) annotations.push({xref: 'x2', yref: 'y2', x: extent / 2, y: 0, text: mapping.text,
     showarrow: false, font: {size: 12, color: '#738292'}});
@@ -187,9 +223,13 @@ window.renderReadTracks = (parent, read, options = {}) => {
       text: 'Density samples unavailable', showarrow: false});
   }
   if (!motifs.length) annotations.push({xref: 'x2', yref: 'y2', x: extent / 2, y: 2,
-    text: data.motifs === null ? 'Motif positions unavailable' : 'No exported motif matches', showarrow: false});
+    text: selectedMotifs == null ? 'Motif positions unavailable' : 'No exported motif matches', showarrow: false});
   const narrow = parent.clientWidth < 850;
-  const height = narrow ? 820 : 580;
+  const bottomMargin = narrow ? 220 : 60;
+  const tracksHeight = 125 + mappingRows*64;
+  const densityHeight = narrow ? 360 : 300;
+  const plotHeight = tracksHeight + 45 + densityHeight;
+  const height = 55 + bottomMargin + plotHeight;
   // Plotly's inner container uses height:100%; give it a definite parent height
   // to prevent a large empty area beneath the SVG in the reusable read shell.
   chart.style.height = height + 'px';
@@ -255,12 +295,12 @@ window.renderReadTracks = (parent, read, options = {}) => {
   }
   Plotly.newPlot(chart, traces, {
     template: 'plotly_white', height, barmode: 'overlay',
-    margin: {l: 130, r: narrow ? 25 : 270, t: 55, b: narrow ? 220 : 55},
+    margin: {l: 130, r: narrow ? 25 : 270, t: 55, b: bottomMargin},
     font: {family: 'Segoe UI, Arial', color: '#14263c'},
     xaxis: {domain: [0, 1], range: [0, extent], anchor: 'y', showticklabels: false, matches: 'x2'},
-    yaxis: {domain: [0.4, 1], range: [-0.035, 1.18], title: {text: 'Density'}, dtick: 0.2},
+    yaxis: {domain: [(tracksHeight+45)/plotHeight, 1], range: [-0.035, 1.18], title: {text: 'Density'}, dtick: 0.2},
     xaxis2: {domain: [0, 1], range: [0, extent], anchor: 'y2', title: {text: 'Position (kb)'}, zeroline: false},
-    yaxis2: {domain: [0, 0.32], range: [-1.5, 2.5], showticklabels: false, showgrid: false, zeroline: false, fixedrange: true},
+    yaxis2: {domain: [0, tracksHeight/plotHeight], range: [mappingTop-(mappingRows-1)*mappingStep-1, 2.5], showticklabels: false, showgrid: false, zeroline: false, fixedrange: true},
     legend: narrow ? {orientation: 'h', x: 0, y: -0.18, font: {size: 11}} :
       {x: 1.02, y: 1, font: {size: 12}, bgcolor: 'rgba(255,255,255,0.9)'},
     // Keep motif colors next to the motif strip, separate from density curves.

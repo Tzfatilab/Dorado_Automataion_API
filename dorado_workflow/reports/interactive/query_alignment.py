@@ -4,12 +4,14 @@ from .models import Availability as A, Fact, unavailable
 
 
 def query_alignment(row, read_length, reversed_read, evidence):
-    missing = unavailable('Aligned query span or analyzed-read orientation was not exported')
+    missing = unavailable('Aligned query coordinates were not exported in a supported coordinate system')
     result = {'query_interval': missing, 'query_strand': missing}
     if (row.get('alignment_query_convention') != 'zero_based_half_open'
-            or row.get('alignment_query_space') != 'original_read'
-            or type(reversed_read) is not bool):
+            or row.get('alignment_query_space') != 'original_read'):
         return result
+    if type(reversed_read) is not bool:
+        missing = unavailable('NanoTel analyzed-read orientation was not exported')
+        return {'query_interval': missing, 'query_strand': missing}
     try:
         start = integer(row.get('alignment_query_start'))
         end = integer(row.get('alignment_query_end'))

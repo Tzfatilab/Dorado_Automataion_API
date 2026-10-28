@@ -113,7 +113,8 @@ process_barcode_multiple_bams <- function(barcode_configs_list) {
   }
 
   # Step 4: Combine all mapped data for this barcode
-  combined_mapped_data <- do.call(rbind, all_mapped_data)
+  combined_mapped_data <- unique(do.call(rbind, all_mapped_data))
+  total_reads <- length(unique(combined_mapped_data$read_id_clean))
   combined_output_file <- file.path(barcode_output_dir,
                                     paste0("mapped", barcode_name, "_combined.csv"))
   safe_write_csv(combined_mapped_data, combined_output_file)

@@ -9,6 +9,8 @@
       .overview-chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:stretch}
       .overview-chart-grid>section{grid-column:auto!important;min-width:0;padding:20px;box-sizing:border-box;display:flex;flex-direction:column}
       .overview-chart-grid>section.overview-full-width{grid-column:1 / -1!important}
+      .overview-chart-grid>section>*{flex-shrink:0}
+      .overview-plot-frame{position:relative;flex:0 0 auto;min-width:0;width:100%;overflow:hidden;isolation:isolate}
       .overview-panel-header{flex:none;margin-bottom:2px}
       .overview-panel-header.has-view-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:20px;row-gap:4px}
       .overview-panel-header.has-view-controls h2{margin:0}
@@ -30,15 +32,15 @@
       @media(max-width:1000px){.overview-panel-header.has-view-controls{grid-template-columns:minmax(0,1fr)}.overview-panel-header.has-view-controls .overview-panel-actions{justify-self:start;justify-content:flex-start}}
     `;
     const sections=[...grid.children].filter(n=>n.tagName==='SECTION');
-    const specs=[['Telomere Length by Barcode',1,'Telomere Length by Barcode'],
-      ['Telomeric Reads by Barcode',2,'Telomeric Reads by Barcode'],['TVR Composition',3,null],
-      ['Median Telomere Length by Chromosome',4,'Median Telomere Length by Chromosome']];
+    const specs=[['Telomere Length by Barcode',2,'Telomere Length by Barcode'],
+      ['Telomeric Reads by Barcode',3,'Telomeric Reads by Barcode'],['TVR Composition',4,null],
+      ['Median Telomere Length by Chromosome',5,'Median Telomere Length by Chromosome']];
     for(const [match,number,title] of specs){
       const section=sections.find(s=>s.querySelector('h2')?.textContent.includes(match));if(!section)continue;
       section.style.gridColumn='auto';section.style.minWidth='0';grid.appendChild(section);
-      section.classList.toggle('overview-full-width',number===1||number===4);
+      section.classList.toggle('overview-full-width',number===2||number===5);
       const heading=section.querySelector('h2');
-      const text=title||(heading.textContent.includes('Available Barcodes')?'TVR Composition - Available Barcodes':'TVR Composition - All Barcodes');
+      const text=title||(section.dataset.tvrRequested==='false'?'TVR Composition':heading.textContent.includes('Available Barcodes')?'TVR Composition - Available Barcodes':'TVR Composition - All Barcodes');
       const badge=document.createElement('span');badge.className='number';badge.textContent=number;
       heading.replaceChildren(badge,document.createTextNode(text));
       let header=section.querySelector('.overview-panel-header');
@@ -52,22 +54,31 @@
       section.querySelectorAll('.histogram-heading').forEach(old=>{if(!old.children.length)old.remove();});
       for(const graph of section.querySelectorAll('.js-plotly-plot')){
         const heatmap=graph.data.find(trace=>trace.type==='heatmap');
-        const height=number===1?720:number===4?Math.max(540,(heatmap?.y?.length||18)*22+130):380;
+        const height=number===2?720:number===5?Math.max(540,(heatmap?.y?.length||18)*22+130):380;
         Object.assign(graph.style,{width:'100%',maxWidth:'100%',height:height+'px',minHeight:height+'px'});
-        if(graph.parentElement!==section&&!graph.closest('.read-composition-layout'))
-          Object.assign(graph.parentElement.style,{width:'100%',minWidth:'0',maxWidth:'100%'});
+        if(!graph.closest('.read-composition-layout')) {
+          let frame=graph;
+          while(frame.parentElement!==section)frame=frame.parentElement;
+          frame.classList.add('overview-plot-frame');
+          Object.assign(frame.style,{width:'100%',minWidth:'0',maxWidth:'100%',height:height+'px',minHeight:height+'px'});
+        }
+        // The overview owns sizing here; do not race the scale controls' observer.
+        graph.reportBarcodeResizeObserver?.disconnect();
         graph.reportHeatmapResize?.disconnect();graph.reportOverviewResize?.disconnect();
         let lastWidth=0;
         const fit=()=>{
           const width=Math.floor(graph.getBoundingClientRect().width);
-          if(width<200||width===lastWidth)return;lastWidth=width;
+          if(width<200||(width===lastWidth&&graph.layout.width===width&&graph.layout.height===height))return;lastWidth=width;
           const updates={autosize:false,width,height};
-          if(number===1)updates['margin.t']=88;
-          if(number===4)Object.assign(updates,{'margin.l':75,'margin.r':95,'margin.t':35,'margin.b':85,
+          if(number===2)updates['margin.t']=88;
+          if(number===5)Object.assign(updates,{'margin.l':75,'margin.r':95,'margin.t':35,'margin.b':85,
             'xaxis.tickangle':-45,'xaxis.tickfont.size':12,'yaxis.tickfont.size':12});
           Plotly.relayout(graph,updates);
         };
         graph.reportOverviewResize=new ResizeObserver(()=>requestAnimationFrame(fit));
+        if(graph.reportOverviewAfterPlot)graph.removeListener('plotly_afterplot',graph.reportOverviewAfterPlot);
+        graph.reportOverviewAfterPlot=()=>requestAnimationFrame(fit);
+        graph.on('plotly_afterplot',graph.reportOverviewAfterPlot);
         graph.reportOverviewResize.observe(graph);requestAnimationFrame(fit);
       }
     }

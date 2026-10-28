@@ -98,8 +98,8 @@ process_nanotel_barcode <- function(nanotel_csv_path,
   # Calculate sequence length minus running median
   filtered_data$seqLen_runningMED <- filtered_data$sequence_length - filtered_data$running_median
 
-  # Clean up sequence ID format (remove everything after first space)
-  filtered_data$read_id <- sub(" .*", "", filtered_data$read_id)
+  # FASTQ annotations can follow either spaces or tabs; SAM retains only the ID.
+  filtered_data$read_id <- sub("[[:space:]].*$", "", filtered_data$read_id)
 
   # Keep reads satisfying:
   # max_edge_distance < sequence_length - running_median.

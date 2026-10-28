@@ -127,18 +127,18 @@ def render_screen(run, results_root=None):
                                      dict(label='Logarithmic',method='relayout',args=[{'yaxis.type':'log','yaxis.autorange':True,'yaxis.rangemode':'normal'}])])])
     # Both panels share typography, dimensions and offline Plotly settings.
     panels = []
-    for index, title, fig, note in sorted([(2, "Telomeric Reads by Barcode", bars, "Post-filtered telomeric reads."),
-                                    (1, "Telomere Length by Barcode", boxes, "Post-filtered reads. Choose Linear or Logarithmic scale; zero lengths cannot appear on a logarithmic axis. A single read appears as a point.")] + comparison_figures(run), key=lambda panel: panel[0]):
+    for index, title, fig, note in sorted([(3, "Telomeric Reads by Barcode", bars, "Post-filtered telomeric reads."),
+                                    (2, "Telomere Length by Barcode", boxes, "Post-filtered reads. Choose Linear or Logarithmic scale; zero lengths cannot appear on a logarithmic axis. A single read appears as a point.")] + comparison_figures(run), key=lambda panel: panel[0]):
         if fig is None:
             panels.append(note)
             continue
         fig.update_layout(template="plotly_white", height=350, showlegend=False,
-            margin=dict(l=65, r=120 if index == 4 else 24, t=25, b=65), font=dict(family="Segoe UI, Arial", color="#12203c"))
-        if index == 1:
+            margin=dict(l=65, r=120 if index == 5 else 24, t=25, b=65), font=dict(family="Segoe UI, Arial", color="#12203c"))
+        if index == 2:
             from ..shared.plot_statistics import add_group_statistics
             add_group_statistics(fig, [(trace.name, list(trace.y)) for trace in fig.data])
             fig.update_layout(margin=dict(t=88))
-        if index == 4:
+        if index == 5:
             row_count = len(fig.data[0].y) if fig.data else 0
             fig.update_layout(height=620,
                 yaxis=dict(tickmode='array',tickvals=list(fig.data[0].y) if fig.data else []),
@@ -146,14 +146,14 @@ def render_screen(run, results_root=None):
         # Bar charts can contain an empty trace, so trace count alone cannot
         # identify missing count data. Paper coordinates center the message
         # independently of the axis units and logarithmic scale.
-        if not fig.data or (index == 2 and not counts):
+        if not fig.data or (index == 3 and not counts):
             fig.add_annotation(text="Data unavailable", x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False)
         # The document head includes Plotly once; figures supply only their
         # own markup and initialization script.
         chart = fig.to_html(full_html=False, include_plotlyjs=False,
                             config={"responsive": True, "displaylogo": False, "scrollZoom": False})
         width_style = ''
-        if index == 4:
+        if index == 5:
             chart = '<div style="max-width:1400px;margin:0 auto">' + chart + '</div>'
         panels.append(f'<section{width_style}><h2><span class="number">{index}</span>{title}</h2>{chart}<p class="note">{note}</p></section>')
     # Resolve beside this module, independent of the process working directory.

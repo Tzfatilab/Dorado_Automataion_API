@@ -3399,6 +3399,10 @@ if (isTRUE(opt$analysis)) {
     barcode_name, n_reads, n_complete, n_censored, censoring_rate,
     med_telo, pct_short, opt$short_telomere_threshold_bp, km_result
   )
+  # Query alignment coordinates refer to the original input sequence. Record
+  # the transformation applied by iter_fastq_files so reports can project them
+  # onto the analyzed read without guessing from the reference strand.
+  analysis_report$analyzed_read_reverse_complemented <- isTRUE(opt$r)
   jsonlite::write_json(
     analysis_report,
     file.path(opt$save_path, paste0(barcode_name, "_analysis.json")),

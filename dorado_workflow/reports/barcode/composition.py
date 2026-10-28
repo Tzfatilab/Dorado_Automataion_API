@@ -25,8 +25,11 @@ def motif_base_counts(start, end, hits):
     return counts
 
 
-def composition_section(row, number=5, title="TVR Composition"):
-    heading = f'<section><h2><span class="number">{number}</span>{escape(title)}</h2>'
+def composition_section(row, number=5, title="TVR Composition", requested=None):
+    attribute = ' data-tvr-requested="false"' if requested is False else ''
+    heading = f'<section{attribute}><h2><span class="number">{number}</span>{escape(title)}</h2>'
+    if requested is False:
+        return heading + '<p class="note">Not requested: no TVR patterns were selected for this run.</p></section>'
     if row is None or 'base_counts' not in row:
         return heading + '<p class="note">Unavailable: complete motif exports are required for all post-filtered reads.</p></section>'
     total = sum(row['base_counts'].values())

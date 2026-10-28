@@ -615,8 +615,6 @@ class ResultImporter:
                     "chromosome": chromosome_fact(row.get("alignment_genome"), ev),
                     "arm": unavailable("Head/Tail does not establish a chromosome arm"),
                     **interval}
-                from .reference_annotations import reference_annotation
-                alignment.update(reference_annotation(self, row.get("alignment_genome")))
                 from .query_alignment import query_alignment
                 alignment.update(query_alignment(row, targets[0].metrics['read_length'].value,
                     reversed_read, [ev] + orientation_evidence))

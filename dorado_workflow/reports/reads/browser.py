@@ -58,7 +58,10 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
         def call_length(method):
             fact = read.calls.get(method, {}).get('reported_length') if read else None
             return fact.value if fact and fact.status == 'available' else None
-        rows.append(dict(source_note=('Saved NanoTel read details. This read is outside the displayed filtered population and is excluded from filtered summary statistics.' if include_unfiltered and record['read_id'] not in retained else None), motifs=motif_counts, exact_length=call_length('exact'), tvr_length=call_length('tvr_inclusive'), regions=regions.value if regions and regions.status == 'available' else None, canonical=measurement('canonical_pct'), tvr=measurement('tvr_pct'),
+        def call_density(method):
+            fact = read.calls.get(method, {}).get('density') if read else None
+            return fact.value if fact and fact.status == 'available' else None
+        rows.append(dict(source_note=('Saved NanoTel read details. This read is outside the displayed filtered population and is excluded from filtered summary statistics.' if include_unfiltered and record['read_id'] not in retained else None), motifs=motif_counts, exact_length=call_length('exact'), mismatch_length=call_length('mismatch'), exact_density=call_density('exact'), mismatch_density=call_density('mismatch'), tvr_length=call_length('tvr_inclusive'), regions=regions.value if regions and regions.status == 'available' else None, canonical=measurement('canonical_pct'), tvr=measurement('tvr_pct'),
                          blocks=measurement('tvr_block_count'), overlap=measurement('repeat_overlap_bp'),
                          unassigned=measurement('repeat_unassigned_bp'), id=read.id if read else None,
                          header=read.original_id if read else record['original_id'],

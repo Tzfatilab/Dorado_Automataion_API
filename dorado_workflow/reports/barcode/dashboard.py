@@ -6,7 +6,7 @@ from dorado_workflow.reports.barcode.positions import positions_section
 from dorado_workflow.reports.barcode.chromosomes import chromosome_section
 from dorado_workflow.reports.barcode.completeness import results_section
 from dorado_workflow.reports.reads.browser import reads_section, READ_SCRIPT
-from dorado_workflow.reports.reads.density import mismatch_enabled
+from dorado_workflow.reports.reads.density import mismatch_enabled, tvr_enabled
 from dorado_workflow.reports.shared.organism import show_km
 
 
@@ -21,6 +21,8 @@ def barcode_views(run, icons, histograms=None, results_root=None):
     km_enabled = show_km(run)
     mismatch = mismatch_enabled(run.settings)
     mismatch_attribute = 'unknown' if mismatch is None else str(mismatch).lower()
+    tvr = tvr_enabled(run.settings)
+    tvr_attribute = 'unknown' if tvr is None else str(tvr).lower()
     histograms = histograms or {}
     composition = {row['barcode']: row for row in comparisons['composition']}
     pages, links = [], []
@@ -54,17 +56,22 @@ def barcode_views(run, icons, histograms=None, results_root=None):
         cards = []
         for index, (title, number, note, icon) in enumerate(specs):
             display = 'Unavailable' if number is None else f'{number/1000:,.2f} kb' if index == 2 else f'{number:,}'
+            if tvr is False and index in (3, 4):
+                display = 'Not requested'
+                note = 'No TVR patterns selected for this run'
+                number = None
             if empty and index == 2:
                 display = 'No reads'
                 note = 'No post-filtered telomeric reads'
             cards.append(f'<article class="stat stat-{index}"><svg aria-hidden="true" viewBox="0 0 48 48">{icon}</svg>'
                 f'<div><h3>{title}</h3><strong class="{"missing" if number is None else ""}">{display}</strong><p>{escape(note)}</p></div></article>')
-        pages.append(f'<div class="barcode-page" id="{barcode.id}" data-km-enabled="{str(km_enabled).lower()}" data-mismatch-enabled="{mismatch_attribute}" data-label="{escape(label, quote=True)}" data-chart-label="{escape(barcode.label.replace("barcode", "BC"), quote=True)}" hidden>'
+        pages.append(f'<div class="barcode-page" id="{barcode.id}" data-km-enabled="{str(km_enabled).lower()}" data-mismatch-enabled="{mismatch_attribute}" data-tvr-enabled="{tvr_attribute}" data-label="{escape(label, quote=True)}" data-chart-label="{escape(barcode.label.replace("barcode", "BC"), quote=True)}" hidden>'
             f'<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#/">All Barcodes</a> <span>› {escape(label)}</span></nav>'
             f'<section><h2><span class="number">1</span>Key Statistics ({escape(label)})</h2><div class="stats">{"".join(cards)}</div></section>'
-            '<p class="note">TVR counts use exported noncanonical matches overlapping TVR-inclusive telomere intervals of post-filtered reads. Missing details remain unavailable.</p>'
-            + (results_section(barcode, results_root) if km_enabled else '') + histograms.get(barcode.id, '') + '<div class="charts">' + composition_section(motifs)
-            + positions_section(motifs) + '</div>'
+            + ('<p class="note">TVR analysis was not requested: no TVR patterns were selected.</p>' if tvr is False else
+               '<p class="note">TVR counts use exported noncanonical matches overlapping TVR-inclusive telomere intervals of post-filtered reads. Missing details remain unavailable.</p>')
+            + (results_section(barcode, results_root) if km_enabled else '') + histograms.get(barcode.id, '') + '<div class="charts">' + composition_section(motifs, requested=tvr)
+            + positions_section(motifs, requested=tvr) + '</div>'
             + chromosome_section([c for c in comparisons['cells'] if c['barcode'] == barcode.label])
             + reads_section(barcode, results_root, show_completeness=km_enabled) + '</div>')
     navigation = '<nav class="barcode-navigation" aria-label="Choose a barcode"><strong>Explore a barcode</strong>' + ''.join(links) + '</nav>'

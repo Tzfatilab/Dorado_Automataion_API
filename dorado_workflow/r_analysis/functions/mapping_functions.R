@@ -111,14 +111,22 @@ process_barcode_mapping <- function(alignment_summary_path,
 
   # FIXED: Create read_id_clean columns more safely
   # Clean read IDs in both datasets first
-  minimap$read_id_clean <- as.character(sub(" .*", "", as.character(minimap$read_id)))
-  nanotel_data$read_id_clean <- as.character(sub(" .*", "", as.character(nanotel_data$read_id)))
+  # Normalize whitespace-delimited FASTQ metadata, including tab-separated tags.
+  # Apply this to both sources so existing filtered exports remain compatible.
+  minimap$read_id_clean <- sub("[[:space:]].*$", "", as.character(minimap$read_id))
+  nanotel_data$read_id_clean <- sub("[[:space:]].*$", "", as.character(nanotel_data$read_id))
 
   log_message(paste("Created cleaned read IDs"))
 
   # Filter minimap to only reads that have matching values in NanoTel read_id
   minimap_filtered <- minimap %>%
     filter(read_id_clean %in% nanotel_data$read_id_clean)
+
+  # The summary spans all BAM shards. Restrict this invocation to molecules
+  # actually present in this BAM before combining per-BAM mapping results.
+  bam_read_ids <- sub("[[:space:]].*$", "", get_bam_read_ids(bam_file_path))
+  minimap_filtered <- minimap_filtered %>%
+    filter(read_id_clean %in% bam_read_ids)
 
   log_message(paste("After NanoTel matching:", nrow(minimap_filtered), "alignments"))
   diagnostic_counts <- rbind(
@@ -190,7 +198,7 @@ process_barcode_mapping <- function(alignment_summary_path,
   safe_write_csv(merged_data, mapped_output_file)
 
   # Extract read IDs for BAM filtering (use original read_id from minimap)
-  filtered_read_ids <- merged_data$read_id.x  # from minimap
+  filtered_read_ids <- unique(merged_data$read_id.x)  # from minimap
 
   return(list(
     mapped_data = merged_data,

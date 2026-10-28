@@ -172,24 +172,6 @@ class AlignmentProcessor(ProcessorBase):
             self.log_complete(result)
             return result
 
-    def _export_reference_annotations(self, reference: Path) -> None:
-        """Carry verified arms into results only for the exact checked FASTA."""
-        import hashlib
-        verified_hash = '291f041630a339cb9c185956adb70e630ff5ad947aacdb351c8702abf9d8e042'
-        if reference.name != 'T2T-CHM13-150KchrHeadTail-Yincluded-telo-trimmed.fasta':
-            return
-        digest = hashlib.sha256()
-        with reference.open('rb') as source:
-            for chunk in iter(lambda: source.read(1024 * 1024), b''):
-                digest.update(chunk)
-        if digest.hexdigest() != verified_hash:
-            return
-        annotations = Path(__file__).parents[1] / 'data/references/Human/reference_annotations.csv'
-        destination = self.context.path_manager.get_results_dir_path() / 'reference_annotations.csv'
-        if annotations.is_file() and not destination.exists():
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(annotations, destination)
-
     def _run_minimap2_alignment(self, input_dir: Path, organism: str, input_type: str) -> list[Path]:
         """
         Align all input files with minimap2 and return sorted BAM paths.
@@ -197,7 +179,6 @@ class AlignmentProcessor(ProcessorBase):
         config = self.context.config_manager
         alignment_params = config.get_alignment_params()
         reference = Path(config.get_reference_path(organism))
-        self._export_reference_annotations(reference)
         preset = alignment_params.get("minimap_preset", "map-ont")
 
         input_files = self._find_alignment_inputs(input_dir, input_type)
