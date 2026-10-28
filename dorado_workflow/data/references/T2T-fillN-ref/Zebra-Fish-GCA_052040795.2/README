@@ -1,0 +1,44 @@
+Zebra Fish T2T (GCA_052040795.2 Danio rerio strain M-AB ecotype USA)
+
+The TVRs right after/before the CCTAA/TTAGGG pattern whre replaces with N's and included as the telomeric part, but there are sme TVR islands which were
+left as it is as part of the subtelomeric region.
+
+The Zebra Fish reference link: 
+https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_052040795.2/
+
+
+There are special TVRs patterns:
+
+5' TVRs:
+  1.CCCCTAGTTGACTA 
+  2.CCCCTAGTTCGCTCTA 
+  3.CCCCTAGAACTCTTA 
+  4.CCCCTAGTTGACTCT
+
+3' TVRs:
+  1.TAGTCAACTAGGGG 
+  2.TAGAGCGAACTAGGG 
+  3.TAAGAGTCCTAGGGG
+  
+  
+  
+
+Problems in 5' edges(Head):
+	- chromosome 1: There is a large TVR island 
+	- chromosome 14: Error in calculating the telomere length (a telomeric Island)
+	- chromosome 23: Error in calculating the telomere length (a TVR Island)
+
+
+Problems in 3' edges(Tail):
+	- chromosome 6: There is a large TVR island 
+	- chromosome 7: There is a large TVR island 
+	- chromosome 12:There are 2 large islands: 1 with TTAGGG and 1 TVR.
+	- chromosome 14:The is a large TVR island 
+	- similarity:
+  		last 20,000 nucs : 5 7 15 21 are identical , 12 & 14 are identical
+
+todo:
+  1.I have found some interesting islands among 5' edges with 3' pattern(TTAGGG + 5' TVRs)
+      See 5' edges:5, 12, 14
+  2.Add function which uses additional patterns (for exmple: CCCTAA + TTAGGG).    
+  3.Explore another Zebra Fish refrence: (https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_049306965.1/)
