@@ -498,14 +498,14 @@ mapping_filter <- function(df_join, filter=NULL,filter_column='alignment_genome'
       )) %>%
       mutate(pass_alignment_strand_thr = diff_align <= thr)
     
-    log_print(paste(sum(df_join$pass_alignment_strand_thr), "reads pass the gap between read sub-telomeric indices and the mapping to the subtelomeric indices of a given threshold of ", thr, "!"), console = FALSE, hide_notes = TRUE)
+    log_print(paste(sum(df_join$pass_alignment_strand_thr, na.rm = TRUE), "reads pass the gap between read sub-telomeric indices and the mapping to the subtelomeric indices of a given threshold of ", thr, "!"), console = FALSE, hide_notes = TRUE)
     return(df_join)
   }
   
   if(filter_column == 'alignment_genome') {
     df_join <- df_join %>% 
       mutate(pass_alignment_genome = (alignment_genome != '*') )
-    log_print(paste(sum(df_join$pass_alignment_genome), "reads pass the alignment filteration!"), console = FALSE, hide_notes = TRUE)
+    log_print(paste(sum(df_join$pass_alignment_genome, na.rm = TRUE), "reads pass the alignment filteration!"), console = FALSE, hide_notes = TRUE)
     return(df_join)
   }
   
@@ -520,7 +520,7 @@ mapping_filter <- function(df_join, filter=NULL,filter_column='alignment_genome'
       )
       ) %>%
       mutate(pass_alignment_direction =  diff_align <= 500)
-    log_print(paste(sum(df_join$pass_alignment_direction), "reads pass the alignment direction filteration! (The alignment genome start/end are colse enough (500 bases threshold) to the subtelome indices left start/righ end. )"), console = FALSE, hide_notes = TRUE)
+    log_print(paste(sum(df_join$pass_alignment_direction, na.rm = TRUE), "reads pass the alignment direction filteration! (The alignment genome start/end are colse enough (500 bases threshold) to the subtelome indices left start/righ end. )"), console = FALSE, hide_notes = TRUE)
     return(df_join)
   }
   
@@ -528,7 +528,7 @@ mapping_filter <- function(df_join, filter=NULL,filter_column='alignment_genome'
   if(filter_column == 'alignment_accuracy') {
     df_join <- df_join %>% 
       mutate(pass_alignment_accuracy = (alignment_accuracy >= thr))
-    log_print(paste(sum(df_join$pass_alignment_accuracy), "reads pass the alignment_accuracy filteration of", thr, "!"), console = FALSE, hide_notes = TRUE)
+    log_print(paste(sum(df_join$pass_alignment_accuracy, na.rm = TRUE), "reads pass the alignment_accuracy filteration of", thr, "!"), console = FALSE, hide_notes = TRUE)
     return(df_join)
   }
   
@@ -538,7 +538,7 @@ mapping_filter <- function(df_join, filter=NULL,filter_column='alignment_genome'
     df_join <- df_join %>% 
       mutate( pass_alignment_coverage = abs(subtelo_length/sequence_length - alignment_coverage) <= thr)
            
-    log_print(paste(sum(df_join$pass_alignment_coverage), "reads pass the alignment coverage filteration of", thr, " which is the diffrence between alignment coverage and sub-telomere coverage!"), console = FALSE, hide_notes = TRUE)
+    log_print(paste(sum(df_join$pass_alignment_coverage, na.rm = TRUE), "reads pass the alignment coverage filteration of", thr, " which is the diffrence between alignment coverage and sub-telomere coverage!"), console = FALSE, hide_notes = TRUE)
     # sum( abs( (subtelo_length2 / df_pass_genome$sequence_length) - df_pass_genome$alignment_coverage ) <0.2 )
     return(df_join)
   }
@@ -546,7 +546,7 @@ mapping_filter <- function(df_join, filter=NULL,filter_column='alignment_genome'
   if(filter_column == 'alignment_mapping_quality') {
     df_join <- df_join %>% 
       mutate(pass_alignment_mapping_quality = (alignment_mapping_quality  >= thr))
-    log_print(paste(sum(df_join$pass_alignment_mapping_quality), "reads pass the alignment mapping quality filteration of", thr, "!"), console = FALSE, hide_notes = TRUE)
+    log_print(paste(sum(df_join$pass_alignment_mapping_quality, na.rm = TRUE), "reads pass the alignment mapping quality filteration of", thr, "!"), console = FALSE, hide_notes = TRUE)
     return(df_join)
   }
   
