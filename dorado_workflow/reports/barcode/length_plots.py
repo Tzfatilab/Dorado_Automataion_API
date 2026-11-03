@@ -139,6 +139,16 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
                     raise ValueError('Invalid plot margins')
                 layout.setdefault('margin', {})['t'] = 24
                 _style_length_plot(layout)
+                from ..shared.short_telomeres import short_cutoff_bp, add_cutoff_line
+                # These saved plots can use a different exported population;
+                # mark the definition, without borrowing their counts for cards.
+                length_axis = 'xaxis' if kind == 'histogram' else 'yaxis'
+                axis_title = layout.get(length_axis, {}).get('title', '')
+                axis_title = axis_title.get('text', '') if isinstance(axis_title, dict) else str(axis_title)
+                unit = 'kb' if re.search(r'\bkb\b', axis_title, re.I) else 'bp' if re.search(r'\bbp\b', axis_title, re.I) else None
+                if unit:
+                    add_cutoff_line(layout, short_cutoff_bp(run.settings, barcode),
+                                    axis='x' if kind == 'histogram' else 'y', unit=unit)
                 for key, axis in layout.items():
                     if re.fullmatch(r'[xy]axis\d*', key) and isinstance(axis, dict) and isinstance(axis.get('title'), str):
                         axis['title'] = {'text': axis['title']}

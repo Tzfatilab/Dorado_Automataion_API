@@ -8,17 +8,15 @@ import math
 def results_section(barcode, results_root):
     """Prefer the normal barcode directory; support older summaries folders."""
     heading = '<section class="barcode-results"><h2><span class="number">2</span>Telomere Completeness &amp; Kaplan-Meier Estimate</h2>'
-    if results_root is None:
-        return heading + '<p class="note">Saved results unavailable.</p></section>'
-    root = Path(results_root)
-    name = barcode.label + '_results.txt'
-    paths = [p for p in root.rglob(name) if p.parent.name == barcode.label]
-    if not paths:
-        paths = [p for p in root.rglob(name)
-                 if p.parent.name == 'summaries' and p.parent.parent.name == barcode.label]
-    if len(paths) != 1:
-        return heading + '<p class="note">Saved results unavailable or ambiguous.</p></section>'
-    text = paths[0].read_text(encoding='utf-8-sig')
+    paths = []
+    if results_root is not None:
+        root = Path(results_root)
+        name = barcode.label + '_results.txt'
+        paths = [p for p in root.rglob(name) if p.parent.name == barcode.label]
+        if not paths:
+            paths = [p for p in root.rglob(name)
+                     if p.parent.name == 'summaries' and p.parent.parent.name == barcode.label]
+    text = paths[0].read_text(encoding='utf-8-sig') if len(paths) == 1 else ''
     # Parse only known exported measurements; missing values stay unavailable.
     fields = dict(line.split(':', 1) for line in text.splitlines() if ':' in line)
     fields = {key.strip(): value.strip() for key, value in fields.items()}
@@ -34,6 +32,24 @@ def results_section(barcode, results_root):
     ci = re.fullmatch(r'([0-9,]+(?:\.[0-9]+)?)\s*[-\u2013\u2014]\s*([0-9,]+(?:\.[0-9]+)?)\s*bp',
                       fields.get('KM Median 95% Confidence Interval', ''))
     low, high = (map(lambda v: float(v.replace(',', '')), ci.groups()) if ci else (None, None))
+    def imported(key):
+        fact = barcode.metrics.get(key)
+        value = fact.value if fact and fact.status == 'available' else None
+        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0 else None
+    def prefer(key, legacy):
+        value = imported(key)
+        return value if value is not None else legacy
+    complete = prefer('nanotel_final_complete_telomeric_reads', complete)
+    incomplete = prefer('nanotel_final_incomplete_telomeric_reads', incomplete)
+    total = prefer('nanotel_final_number_of_telomeric_reads_post_filtration', total)
+    # An assessed source status is authoritative, including withheld estimates.
+    km_status = barcode.metrics.get('km_status')
+    assessed = km_status and km_status.status == 'available'
+    if assessed:
+        reportable = km_status.value == 'reportable'
+        median, low, high = ([imported(k) for k in ('km_median_bp','km_ci_lower_bp','km_ci_upper_bp')]
+                             if reportable else (None,None,None))
+        width = imported('km_whole_relative_ci_width_pct')
     help_index = 0
     def tip(message):
         """Native buttons support mouse, touch, Enter and Space offline."""
@@ -62,8 +78,16 @@ def results_section(barcode, results_root):
                      f'<span><b>Short telomeres</b><br>&lt; {int(threshold[1].replace(",", "")):,} bp</span>'
                      f'<strong>{value:.1f}%</strong></div>')
             break
-    estimate = '<p class="note">KM estimate or confidence interval unavailable</p>'
-    if median is not None and low is not None and 0 <= low <= median <= high:
+    short_pct = imported('nanotel_final_telomeres_shorter_than_threshold_pct')
+    short_cutoff = imported('nanotel_final_short_telomere_threshold_bp')
+    if short_pct is not None and 0 <= short_pct <= 100 and short_cutoff:
+        short = (f'<div class="km-card short-card"><span class="short-icon" aria-hidden="true">&#9602;&#9605;&#9607;</span>'
+                 f'<span><b>Short telomeres</b><br>&lt; {short_cutoff:,.0f} bp</span>'
+                 f'<strong>{short_pct:.1f}%</strong></div>')
+    reason = barcode.metrics.get('km_reporting_reason')
+    message = str(reason.value) if assessed and reason and reason.status == 'available' else 'KM estimate or confidence interval unavailable'
+    estimate = '<p class="note">' + escape(message) + '</p>'
+    if median is not None and low is not None and high is not None and 0 <= low <= median <= high:
         # The dot position respects the exported CI; rounding affects labels only.
         dot = 180 if high == low else 60 + 240 * (median-low) / (high-low)
         estimate = (f'<svg class="km-interval" viewBox="0 0 360 112" role="img" aria-label="KM median {median/1000:.2f} kb; 95% confidence interval {low/1000:.2f} to {high/1000:.2f} kb">'
@@ -79,4 +103,4 @@ def results_section(barcode, results_root):
             + '</h3>' + bar + short + '</div><div><h3>Kaplan-Meier telomere length '
             + tip('Kaplan-Meier estimates the telomere-length distribution while accounting for incomplete (censored) measurements. The dot shows the exported KM median; the horizontal line shows its 95% confidence interval. This interval describes uncertainty in the median estimate, not a range containing 95% of reads. Values come from NanoTel; this dashboard does not refit the estimate.')
             + '</h3>' + estimate + '</div></div><details class="note km-source"><summary>Source results</summary><pre>'
-            + escape(text) + '</pre></details></section>')
+            + escape(text or 'Values imported from saved scientific exports; the optional text report is unavailable.') + '</pre></details></section>')

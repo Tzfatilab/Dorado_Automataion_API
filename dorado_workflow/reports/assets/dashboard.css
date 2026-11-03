@@ -81,6 +81,10 @@ h2 {
     gap:12px
 }
 
+.stat-short{background:#fff3e8;color:#a35325}
+@media(min-width:1350px){:is(#run-overview,.barcode-page) .stats{grid-template-columns:repeat(7,minmax(0,1fr))}}
+@media(min-width:851px) and (max-width:1349px){:is(#run-overview,.barcode-page) .stats{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
 .stat {
     border-radius:10px;
     min-height:135px;
@@ -320,3 +324,11 @@ button.km-info{border:0;padding:0;vertical-align:middle;cursor:pointer}button.km
 @media(max-width:999px) and (min-width:551px){.read-summary-header{grid-template-columns:repeat(3,minmax(0,1fr))}}
 
 .read-extra-information{margin:16px 0}.read-extra-information h3{margin-top:0}#read-detail .read-extra-information dl{grid-template-columns:minmax(160px,1fr) minmax(100px,1fr);max-width:760px;font-size:14px}#read-detail .read-extra-information dt,#read-detail .read-extra-information dd{border-bottom:1px solid #edf1f6;padding:6px 0}
+
+/* Center barcode statistic titles/captions, with the icon beside the value. */
+:is(#run-overview,.barcode-page) .stats>.stat{display:grid;grid-template-columns:28px minmax(0,1fr);column-gap:8px;padding:16px 12px}
+:is(#run-overview,.barcode-page) .stats>.stat>div{display:contents}
+:is(#run-overview,.barcode-page) .stats>.stat h3{grid-column:1/-1;grid-row:1;text-align:center;align-self:center;margin:0}
+:is(#run-overview,.barcode-page) .stats>.stat strong{grid-column:2;grid-row:2;text-align:center;align-self:center;min-width:0}
+:is(#run-overview,.barcode-page) .stats>.stat p{grid-column:1/-1;grid-row:3;text-align:center;align-self:start;margin:0}
+:is(#run-overview,.barcode-page) .stats>.stat>svg{grid-column:1;grid-row:2;width:28px;height:34px;justify-self:center;align-self:center}

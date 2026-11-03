@@ -31,6 +31,7 @@ class ResultImporter:
         self.sources = {}
         self.warnings = []
         self.metadata = {}
+        self.saved_statistics = {}
         self.meta_evidence = []
         # The persisted R configuration describes what was requested for this run.
         saved_config = self.root / "reports/r_pipeline_config.json"
@@ -135,8 +136,12 @@ class ResultImporter:
         workbook = load_workbook(path, read_only=True, data_only=True)
         tables = {}
         try:
+            retained_sources = any(s.title.startswith('_source_') for s in workbook)
             for sheet in workbook:
-                if sheet.title != "NanoTel Statistics" and not re.fullmatch(r"(?:filtered_)?barcode\d+", sheet.title):
+                if retained_sources and not sheet.title.startswith('_source_'):
+                    continue
+                name = sheet.title.removeprefix('_source_')
+                if name not in {"NanoTel Statistics", "NanoTel analysis facts", "KM by barcode", "KM run statistics", "Run metadata", "Barcode source counts", "Read mappings"} and not re.fullmatch(r"(?:filtered_)?barcode\d+", name):
                     continue
                 source = self.source(path, "xlsx", sheet.title)
                 iterator = iter(sheet.iter_rows(values_only=True))
@@ -145,7 +150,7 @@ class ResultImporter:
                     raise ValueError(f"Invalid workbook columns: {sheet.title}")
                 rows = [(dict(zip(headers, values)), Evidence(source.id, number))
                         for number, values in enumerate(iterator, 2) if any(v is not None for v in values)]
-                tables[sheet.title] = (headers, rows, source)
+                tables[name] = (headers, rows, source)
         finally:
             workbook.close()
         return tables
@@ -319,6 +324,27 @@ class ResultImporter:
             raise ValueError("Ambiguous NanoTel workbooks; select one results directory")
         if workbooks:
             tables = self.workbook_tables(workbooks[0])
+            self.saved_statistics = tables
+            metadata_table = tables.get('Run metadata')
+            if metadata_table:
+                restored = {}
+                for key in ('organism','settings','stages'):
+                    parts = [(r.get('Part'),r.get('Value')) for r,_ in metadata_table[1] if r.get('Field')==key]
+                    parts.sort(key=lambda p: p[0] if isinstance(p[0],int) else -1)
+                    if [p[0] for p in parts] != list(range(1,len(parts)+1)) or not parts:
+                        continue
+                    try:
+                        restored[key] = json.loads(''.join(p[1] for p in parts))
+                    except (ValueError,TypeError):
+                        self.warnings.append(f'Invalid saved workbook metadata: {key}')
+                if isinstance(restored.get('settings'),dict):
+                    self.metadata.setdefault('settings',restored['settings'])
+                if isinstance(restored.get('organism'),str):
+                    self.metadata.setdefault('organism',restored['organism'])
+                if isinstance(restored.get('stages'),dict):
+                    stages={k:v for k,v in restored['stages'].items() if type(v) is bool}
+                    self.metadata['stages']={**stages,**self.metadata.get('stages',{})}
+                self.meta_evidence.append(Evidence(metadata_table[2].id))
             stats = stats or tables.get("NanoTel Statistics")
             for name, table in tables.items():
                 if name.startswith("filtered_"):
@@ -510,6 +536,17 @@ class ResultImporter:
         # Use one completed barcode log and exact NanoTel labels. Ambiguous or unfinished
         # logs cannot establish reliable totals and leave existing availability unchanged.
         paths = [p for p in self.files("nanotel_barcode*.log") if barcode_from_summary_filename(p.name) == barcode.label]
+        if not paths:
+            table = self.saved_statistics.get('Barcode source counts')
+            rows = [(r,e) for r,e in table[1] if r.get('barcode') == barcode.label] if table else []
+            if len(rows) == 1:
+                row,ev=rows[0]
+                for key in ('total_reads','detected_telomeric_reads'):
+                    barcode.metrics[key] = number(row,key,ev,unit='reads',
+                        population='input_reads' if key=='total_reads' else 'detected_telomeric_reads')
+            elif rows:
+                barcode.warnings.append('Ambiguous workbook input counts; counts not imported')
+            return
         if len(paths) != 1:
             return
         path = paths[0]
@@ -574,6 +611,37 @@ class ResultImporter:
             barcode.warnings.append("Multiple combined mapping files; mapping join skipped")
             for read in barcode.reads:
                 read.alignments = unavailable("Ambiguous combined mapping sources", A.INVALID)
+            return
+        if not paths:
+            table = self.saved_statistics.get('Read mappings')
+            if table:
+                saved_reads = {}
+                for row,ev in table[1]:
+                    if row.get('barcode') == barcode.label:
+                        saved_reads.setdefault(row.get('read_id'),[]).append((row,ev))
+                for read in barcode.reads:
+                    parts = saved_reads.get(read.id,[])
+                    if not parts:
+                        continue
+                    try:
+                        parts.sort(key=lambda item:item[0].get('Part',0))
+                        if [r.get('Part') for r,_ in parts] != list(range(1,len(parts)+1)):
+                            raise ValueError('Duplicate or missing mapping chunks')
+                        saved=json.loads(''.join(r['Value'] for r,_ in parts))
+                        ev=parts[0][1]
+                        def restored(f):
+                            status=A(f['status'])
+                            return Fact(status,f.get('value') if status==A.AVAILABLE else None,
+                                reason=f.get('reason',''),unit=f.get('unit'),population=f.get('population'),
+                                origin=f.get('origin','source_reported'),evidence=[ev])
+                        if saved['status']!='available' or not isinstance(saved.get('value'),list):
+                            raise ValueError('Invalid saved alignment availability')
+                        records=[{k:restored(f) for k,f in alignment.items()} for alignment in saved['value']]
+                        read.alignments=Fact(A.AVAILABLE,records,evidence=[e for _,e in parts])
+                        barcode.evidence.append(ev)
+                    except (ValueError,TypeError,KeyError,AttributeError):
+                        read.alignments=unavailable('Invalid saved workbook alignment',A.INVALID)
+                        barcode.warnings.append('Saved workbook alignment could not be imported')
             return
         if paths and self.metadata.get("stages", {}).get("mapping") is False:
             barcode.warnings.append("Mapping files exist although supplied metadata says mapping was disabled; source records are retained")

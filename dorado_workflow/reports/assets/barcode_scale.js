@@ -37,7 +37,7 @@ window.reportBarcodeScaleUI=(section,graph)=>{
   let header=heading?.closest('.histogram-heading');
   if(heading&&!header){header=document.createElement('div');header.className='histogram-heading';heading.before(header);header.appendChild(heading);}
   const controls=document.createElement('div');controls.className='histogram-controls barcode-scale-controls';
-  controls.setAttribute('role','group');controls.setAttribute('aria-label','Telomere distribution view and scale');
+  controls.setAttribute('role','group');controls.setAttribute('aria-label','Telomere distribution scale');
   controls.style.cssText='display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0';
   const buttons=[];
   for(const [label,type] of [['Linear','linear'],['Logarithmic','log']]){
@@ -47,56 +47,45 @@ window.reportBarcodeScaleUI=(section,graph)=>{
     button.onclick=()=>Plotly.relayout(graph,{'yaxis.type':type,'yaxis.autorange':true,'yaxis.rangemode':type==='log'?'normal':'tozero'}).then(update);
     buttons.push({button,type});controls.appendChild(button);
   }
-  const viewButtons=[];
-  for(const [label,type] of [['Scatter plot','scatter'],['Violin plot','violin']]){
-    const button=document.createElement('button');button.type='button';button.textContent=label;
-    button.style.cssText='font:600 15px Segoe UI,Arial,sans-serif;padding:10px 18px;border:1px solid #ccd8e8;border-radius:7px;cursor:pointer';
-    if(type==='scatter')button.style.marginLeft='12px';
-    button.onclick=async()=>{
-      viewButtons.forEach(item=>item.button.disabled=true);
-      try{
-        const data=sourceTraces.map((trace,index)=>{
-          const result={...trace,type};
-          delete result.boxpoints;delete result.points;delete result.box;
-          delete result.spanmode;delete result.span;delete result.bandwidth;delete result.scalemode;
-          delete result.mode;delete result.jitter;delete result.pointpos;
-          result.meta={...((typeof trace.meta==='object')?trace.meta:{}),barcodeDistribution:true};
-          if(type==='violin')Object.assign(result,{points:'all',spanmode:'hard',scalemode:'width',box:{visible:false},pointpos:0});
-          else {
-            delete result.fillcolor;delete result.line;
-            Object.assign(result,{mode:'markers',x:trace.y.map((_,i)=>index+(((i*2654435761>>>0)%1000)/999-.5)*.32),
-              marker:{...trace.marker,size:5,opacity:.65}});
-          }
-          return result;
-        });
-        const layout=JSON.parse(JSON.stringify(graph.layout));
-        layout.height=720;layout.updatemenus=[];layout.showlegend=false;
-        delete layout.width;layout.autosize=true;
-        layout.xaxis={...layout.xaxis,type:type==='scatter'?'linear':'category',
-          tickmode:'array',tickvals:type==='scatter'?names.map((_,i)=>i):names,ticktext:names,
-          categoryorder:'array',categoryarray:names,autorange:true,tickangle:-45};
-        delete layout.xaxis.range;
-        for(const a of layout.annotations||[])if(a.name==='group-statistics'){
-          const index=typeof a.x==='number'?Math.round(a.x):names.indexOf(a.x);
-          a.x=type==='scatter'?index:names[index];
-        }
-        await Plotly.react(graph,data,layout,{responsive:true,displaylogo:false});
-        await Plotly.Plots.resize(graph);
-      }finally{viewButtons.forEach(item=>item.button.disabled=false);refresh();}
-    };
-    viewButtons.push({button,type});controls.appendChild(button);
-  }
+  const bandwidthNote=document.createElement('span');
+  bandwidthNote.textContent='Shared bandwidth: 1 kb';bandwidthNote.style.cssText='font-size:13px;color:#52647a;margin-left:8px';
+  controls.appendChild(bandwidthNote);
+  const applyViolin=async()=>{
+    const data=sourceTraces.map(trace=>{
+      const result={...trace,type:'violin'};
+      delete result.boxpoints;delete result.mode;delete result.span;
+      delete result.bandwidth;delete result.jitter;
+      // Degenerate groups have no estimable density; Plotly renders their points.
+      const bandwidth=new Set(trace.y).size>1?1:0;
+      Object.assign(result,{points:'all',bandwidth,spanmode:'hard',scalemode:'width',box:{visible:false},pointpos:0});
+      result.meta={...((typeof trace.meta==='object')?trace.meta:{}),barcodeDistribution:true};
+      return result;
+    });
+    const layout=JSON.parse(JSON.stringify(graph.layout));
+    layout.height=720;layout.updatemenus=[];layout.showlegend=false;
+    delete layout.width;layout.autosize=true;
+    layout.xaxis={...layout.xaxis,type:'category',tickmode:'array',tickvals:names,ticktext:names,
+      categoryorder:'array',categoryarray:names,autorange:true,tickangle:-45};
+    delete layout.xaxis.range;
+    for(const a of layout.annotations||[])if(a.name==='group-statistics'){
+      const index=typeof a.x==='number'?Math.round(a.x):names.indexOf(a.x);
+      a.x=names[index];
+    }
+    await Plotly.react(graph,data,layout,{responsive:true,displaylogo:false});
+    await Plotly.Plots.resize(graph);
+    refresh();
+  };
   if(header)header.appendChild(controls);else graph.before(controls);
   const refresh=()=>{
-    for(const {button,type} of [...buttons,...viewButtons]){
-      const active=type===((type==='scatter'||type==='violin')?graph.data.find(t=>['box','violin','scatter'].includes(t.type))?.type:(graph.layout.yaxis?.type||'linear'));
+    for(const {button,type} of buttons){
+      const active=type===(graph.layout.yaxis?.type||'linear');
       button.setAttribute('aria-pressed',String(active));button.style.background=active?'#2d65ce':'white';button.style.color=active?'white':'#20324c';
     }
   };
   refresh();graph.on?.('plotly_relayout',refresh);
   graph.layout.meta={...graph.layout.meta,barcodeLengthScale:true};
   Plotly.relayout(graph,{updatemenus:[],autosize:true,height:720,'margin.t':graph.layout.annotations?.some(a=>a.name==='group-statistics')?88:25,meta:graph.layout.meta}).then(()=>{
-    const initial=graph.data.some(t=>t.type==='violin')?1:0;viewButtons[initial].button.click();
+    return applyViolin();
   });
 };
 (() => {

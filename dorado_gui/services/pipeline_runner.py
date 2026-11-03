@@ -125,22 +125,30 @@ def run_pipeline(
     # Generate once, after filtering/mapping finish, in the existing worker thread.
     # A display/export failure must not discard successful scientific results.
     report_warning = ""
-    if result and do_nanotel:
+    if result and do_nanotel and summary_only:
+        summary_path = context.path_manager.get_r_analysis_dir_path() / "dashboard_summary.html"
+        log(f"Summary only: Excel and compact dashboard saved; detailed NanoTel outputs skipped.")
+        if summary_path.is_file():
+            log(f"Summary dashboard: {summary_path}")
+            if report_cb:
+                report_cb(str(summary_path))
+    if result and do_nanotel and not summary_only:
         try:
             from dorado_workflow.reports.all_barcodes import generate_run_report
-            log("Generating All Barcodes HTML report...")
+            log("Generating All Barcodes dashboard and Excel workbook...")
             report_path = generate_run_report(
                 context.path_manager.get_results_dir_path(),
                 context.path_manager.get_nanotel_output_dir_path(),
             )
             check_cancelled()
             log(f"All Barcodes report: {report_path}")
+            log(f"Excel workbook: {Path(report_path).with_name('nanotel_results.xlsx')}")
             if report_cb:
                 report_cb(str(report_path))
         except WorkflowCancelled:
             raise
         except Exception as exc:
-            report_warning = f"\nHTML report could not be generated: {exc}"
+            report_warning = f"\nDashboard/Excel export could not be completed: {exc}"
             log(report_warning.strip())
             # Preserve the location and exception type, not only its message.
             # This makes intermittent report failures diagnosable after the GUI closes.

@@ -25,7 +25,7 @@ def motif_base_counts(start, end, hits):
     return counts
 
 
-def composition_section(row, number=5, title="TVR Composition", requested=None):
+def composition_section(row, number=5, title="TVR patterns", requested=None):
     attribute = ' data-tvr-requested="false"' if requested is False else ''
     heading = f'<section{attribute}><h2><span class="number">{number}</span>{escape(title)}</h2>'
     if requested is False:

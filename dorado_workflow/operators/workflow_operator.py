@@ -55,11 +55,15 @@ class WorkflowOperator:
     STEP_DETAILS = {
         'Basecalling': (
             'Converts POD5 signal',
-            'a basecalled BAM file',
+            'basecalled reads',
         ),
         'Demultiplexing': (
             'Separates reads by barcode',
-            'barcode-specific BAM folders',
+            'barcode-specific read folders',
+        ),
+        'Basecalling and demultiplexing': (
+            'Basecalls and separates reads by barcode through a pipe',
+            'barcode-specific FASTQ files without intermediate BAM files',
         ),
         'BAM to FASTQ conversion': (
             'Converts BAM reads',
@@ -121,24 +125,60 @@ class WorkflowOperator:
         return True
 
     def _run_basecall_to_fastq(self, pod5_input: str, organism: Optional[str],
-                               align_during_basecalling: bool
+                               align_during_basecalling: bool, require_bam: bool = False
                                ) -> Optional[Tuple[Any, Any]]:
         """
-        Shared POD5 prefix: basecall ג†’ demux ג†’ BAM-to-FASTQ.
+        Shared POD5 prefix: basecall and demultiplex, converting BAM only when required.
         Returns:
             (demuxed_dir, fastq_dir) on success, or None on failure.
         """
+        config = self.context.config_manager
+        basecalling = config.get_basecalling_params()
+        modifications = basecalling.get('modified_bases', '5mCG_5hmCG')
+        emit_fastq = not (align_during_basecalling or require_bam or modifications)
+        demux_kit = config.get_demuxing_params().get('kit_name')
+        kit = demux_kit or basecalling.get('kit_name')
+        if emit_fastq and not kit:
+            self.context.logger.error(
+                'Select a barcode kit in basecalling or demultiplexing before running '
+                'barcode analysis. No basecalling or intermediate BAM files were created.'
+            )
+            return None
+        if emit_fastq and (not basecalling.get('no_trim', True) or not demux_kit):
+            if not self.basecaller.validate_inputs(pod5_input, organism, False):
+                return None
+            self.context.logger.info(
+                'Classifying barcodes before trimming and streaming directly to FASTQ demultiplexing; '
+                'no intermediate BAM or SAM files are saved.'
+            )
+            command = self.basecaller.build_classified_stream(pod5_input, organism, kit)
+            result = self._run_step('demuxer', 'Basecalling and demultiplexing', self.demuxer,
+                                    '-', input_format='fastq', upstream_command=command, classified=True)
+            if result is None:
+                return None
+            output = result.get_output('output_dir')
+            return output, output
+        if emit_fastq:
+            self.context.logger.info(
+                "No mapping or modification data required: basecalling and demultiplexing "
+                "directly to FASTQ; skipping intermediate BAM files and BAM-to-FASTQ conversion."
+            )
         result = self._run_step('basecaller', 'Basecalling', self.basecaller,
-                                 pod5_input, organism, align_during_basecalling)
+                                 pod5_input, organism, align_during_basecalling,
+                                 emit_fastq=emit_fastq)
         if result is None:
             return None
-        basecalled_bam = result.get_output('bam')
+        basecalled_reads = result.get_output('fastq' if emit_fastq else 'bam')
 
         result = self._run_step('demuxer', 'Demultiplexing', self.demuxer,
-                                 str(basecalled_bam))
+                                 str(basecalled_reads),
+                                 **({'input_format': 'fastq'} if emit_fastq else {}))
         if result is None:
             return None
         demuxed_dir = result.get_output('output_dir')
+
+        if emit_fastq:
+            return demuxed_dir, demuxed_dir
 
         result = self._run_step('bam_to_fastq', 'BAM to FASTQ conversion',
                                  self.bam_to_fastq, str(demuxed_dir))
@@ -239,7 +279,8 @@ class WorkflowOperator:
         self.context.logger.section_header("POD5 COMPLETE WORKFLOW")
         self._log_inputs(pod5_input, organism)
 
-        prep = self._run_basecall_to_fastq(pod5_input, organism, align_during_basecalling)
+        prep = self._run_basecall_to_fastq(pod5_input, organism, align_during_basecalling,
+                                         require_bam=methylation_enabled)
         if prep is None:
             return False
         demuxed_dir, fastq_dir = prep
@@ -291,6 +332,12 @@ class WorkflowOperator:
         """
         self.context.logger.section_header("POD5 BASECALLING WORKFLOW")
         self._log_inputs(pod5_input, organism)
+
+        config = self.context.config_manager
+        if not (config.get_demuxing_params().get('kit_name') or config.get_basecalling_params().get('kit_name')):
+            self.context.logger.info('No barcode kit selected: saving unsplit basecalled reads without demultiplexing.')
+            return self._run_step('basecaller', 'Basecalling', self.basecaller,
+                                  pod5_input, organism, align_during_basecalling) is not None
 
         return self._run_basecall_to_fastq(
             pod5_input, organism, align_during_basecalling) is not None

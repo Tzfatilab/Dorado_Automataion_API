@@ -75,7 +75,7 @@ def dashboard_data(run):
     total = sum_complete(run.barcodes, "total_reads", "input_reads")
     populations = {b.metrics["amount_of_telomeres"].population for b in run.barcodes
                    if b.metrics["amount_of_telomeres"].status == A.AVAILABLE}
-    population = next(iter(populations)) if len(populations) == 1 else "post_filtered_telomeres"
+    population = (next(iter(populations)) if len(populations) == 1 else None) or "post_filtered_telomeres"
     filtered = sum_complete(run.barcodes, "amount_of_telomeres", population)
     if len(populations) > 1:
         filtered = unavailable("Barcode counts describe different filtering populations")
@@ -129,7 +129,7 @@ def dashboard_data(run):
     reference_count = aggregate(len(references), mapped_evidence, "references", "mapped post-filtered reads") if references else unavailable("No mapped post-filtered reference records available")
     # Convert Facts to plain dictionaries at the presentation boundary. Keep the
     # legacy unavailable TVR-coverage fact separate from motif match-count payloads.
-    return {"metrics": {"barcode_count": asdict(run.metrics["barcode_count"]), "total_reads": asdict(total),
+    return {"metrics": {"barcode_count": asdict(run.metrics.get("barcode_count", unavailable("Barcode count was not exported"))), "total_reads": asdict(total),
              "telomeric_reads": asdict(filtered), "telomeric_percentage": asdict(pct),
              "median_telomere_length": asdict(med), "mapped_references": asdict(reference_count),
              "detected_telomeric_reads": asdict(detected)},

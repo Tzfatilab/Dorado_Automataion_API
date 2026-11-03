@@ -84,6 +84,8 @@ def render_screen(run, results_root=None):
         # Escape source-derived captions/tooltips before inserting them into HTML.
         caption = f'<p>{escape(note)}</p>' if note else ''
         cards.append(f'<article class="stat stat-{index}" title="{escape(fact.get("reason") or note, quote=True)}"><svg viewBox="0 0 48 48" aria-hidden="true">{ICONS[index]}</svg><div><h3>{label}</h3><strong class="{"missing" if value is None else ""}">{display}</strong>{caption}</div></article>')
+    from ..shared.short_telomeres import pooled_short_summary_html
+    cards.append(pooled_short_summary_html(run))
     # Only source-reported post-filtered counts enter the bars. An unavailable
     # barcode count is omitted rather than fabricated as a zero-height bar.
     counts = [(b.label.replace("barcode", "BC"), b.metrics["amount_of_telomeres"].value)
@@ -98,6 +100,8 @@ def render_screen(run, results_root=None):
                        yaxis_range=[0, max([y for _, y in counts] or [1]) * 1.18 or 1])
     # Plot individual exported lengths, not summaries of barcode summaries.
     boxes = go.Figure()
+    from ..shared.short_telomeres import short_cutoff_bp, add_cutoff_line
+    short_cutoffs = {}
     for item in data["distributions"]:
         if item["lengths"]["status"] != "available":
             continue
@@ -107,6 +111,8 @@ def render_screen(run, results_root=None):
         # Keep identity attached to each plotted observation, including duplicate
         # lengths. Matching by a y value would route equal-length reads incorrectly.
         barcode = next((b for b in run.barcodes if b.id == item['id']), None)
+        cutoff = short_cutoff_bp(run.settings, barcode)
+        short_cutoffs[item['label'].replace('barcode', 'BC')] = cutoff / 1000 if cutoff is not None else None
         labels = {}
         for read in barcode.reads if barcode else []:
             serial = read.metrics.get('read_number')
@@ -116,8 +122,8 @@ def render_screen(run, results_root=None):
         # Each barcode is a separate trace. Plotly computes presentation
         # quartiles from these source lengths; jitter only separates markers
         # horizontally and never changes a read's length.
-        boxes.add_trace(go.Box(name=item["label"].replace("barcode", "BC"), y=values,
-            customdata=customdata, boxpoints="all", jitter=0.16, pointpos=0, fillcolor="#a6d0f5", line_color="#214e78",
+        boxes.add_trace(go.Violin(name=item["label"].replace("barcode", "BC"), y=values,
+            customdata=customdata, points="all", bandwidth=1.0 if len(set(values)) > 1 else 0, spanmode="hard", scalemode="width", box=dict(visible=False), pointpos=0, fillcolor="#a6d0f5", line_color="#214e78",
             marker=dict(color="#3d83c9", size=5), hovertemplate="%{customdata[2]}<br>Telomere length: %{y:.3f} kb<br>Click to open read<extra>%{fullData.name}</extra>"))
     boxes.update_layout(xaxis_title="Barcode", yaxis_title="Telomere length (kb)",
                         yaxis_type="linear", yaxis_rangemode="tozero",
@@ -136,7 +142,21 @@ def render_screen(run, results_root=None):
             margin=dict(l=65, r=120 if index == 5 else 24, t=25, b=65), font=dict(family="Segoe UI, Arial", color="#12203c"))
         if index == 2:
             from ..shared.plot_statistics import add_group_statistics
-            add_group_statistics(fig, [(trace.name, list(trace.y)) for trace in fig.data])
+            add_group_statistics(fig, [(trace.name, list(trace.y)) for trace in fig.data], include_median=False,
+                                 short_cutoffs=short_cutoffs)
+            cutoffs = {value for value in short_cutoffs.values() if value is not None}
+            if len(cutoffs) == 1 and None not in short_cutoffs.values():
+                layout = fig.layout.to_plotly_json()
+                add_cutoff_line(layout, next(iter(cutoffs)) * 1000)
+                fig.update_layout(layout)
+            elif cutoffs:
+                for index, trace in enumerate(fig.data):
+                    cutoff = short_cutoffs.get(trace.name)
+                    if cutoff is not None:
+                        fig.add_shape(type='line', name='short-telomere-cutoff', xref='x', x0=index-.35,
+                                      x1=index+.35, yref='y', y0=cutoff, y1=cutoff,
+                                      line=dict(color='#b45309', width=1.5, dash='dash'))
+            note += ' Short percentages use n, the exported post-filtered reads plotted for each barcode; lengths equal to the cutoff are not short.'
             fig.update_layout(margin=dict(t=88))
         if index == 5:
             row_count = len(fig.data[0].y) if fig.data else 0
@@ -156,6 +176,8 @@ def render_screen(run, results_root=None):
         if index == 5:
             chart = '<div style="max-width:1400px;margin:0 auto">' + chart + '</div>'
         panels.append(f'<section{width_style}><h2><span class="number">{index}</span>{title}</h2>{chart}<p class="note">{note}</p></section>')
+    from ..shared.barcode_exclusion import exclusion_data_html
+    selection_data = exclusion_data_html(run)
     # Resolve beside this module, independent of the process working directory.
     histograms = histogram_sections(run, results_root)
     read_plots = telomere_plot_sections(run, results_root)
@@ -166,13 +188,18 @@ def render_screen(run, results_root=None):
     css = (Path(__file__).parents[1] / "assets" / "dashboard.css").read_text(encoding="utf-8")
     # Combine the complete page in memory. Cards appear before the two panels;
     # CSS controls wrapping while figure scripts attach hover/zoom behavior.
-    html = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{TITLE}</title><style>{css}</style><script>{get_plotlyjs()}</script></head><body><header><h1>{TITLE}</h1><span>Project overview &nbsp; | &nbsp; NanoTel summary</span></header><main><div id="run-overview">{navigation}<section><h2><span class="number">1</span>Key Statistics (All Barcodes)</h2><div class="stats">{"".join(cards)}</div></section><div class="charts">{"".join(panels)}</div>{availability_html(run)}</div>{barcode_pages}<section id="unknown-barcode" hidden><h2>Barcode or read not found</h2><a href="#/">Back to All Barcodes</a></section></main>{ROUTER}</body></html>'
+    html = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{TITLE}</title><style>{css}</style><script>{get_plotlyjs()}</script></head><body><header><h1>{TITLE}</h1><span>Project overview &nbsp; | &nbsp; NanoTel summary</span></header><main><div id="run-overview">{navigation}<section><h2><span class="number">1</span>Key Statistics (All Barcodes)</h2><div class="stats">{"".join(cards)}</div></section><div class="charts">{"".join(panels)}</div>{availability_html(run)}{selection_data}</div>{barcode_pages}<section id="unknown-barcode" hidden><h2>Barcode or read not found</h2><a href="#/">Back to All Barcodes</a></section></main>{ROUTER}</body></html>'
     export_script = (Path(__file__).parents[1] / 'assets' / 'graph_export.js').read_text(encoding='utf-8')
     table_export_script = (Path(__file__).parents[1] / 'assets' / 'table_export.js').read_text(encoding='utf-8')
     spacing_script = (Path(__file__).parents[1] / 'assets' / 'chromosome_spacing.js').read_text(encoding='utf-8')
     spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'barcode_navigation.js').read_text(encoding='utf-8')
     spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'barcode_scale.js').read_text(encoding='utf-8')
     spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'overview_layout.js').read_text(encoding='utf-8')
+    spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'barcode_names.js').read_text(encoding='utf-8')
+    spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'barcode_exclusion.js').read_text(encoding='utf-8')
+    spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'barcode_compact_controls.js').read_text(encoding='utf-8')
+    spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'barcode_header_design.js').read_text(encoding='utf-8')
+    spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'report_workbook.js').read_text(encoding='utf-8')
     html = html.removesuffix('</body></html>') + '<script>' + export_script + '</script><script>' + table_export_script + '</script><script>' + spacing_script + '</script></body></html>'
     if nanotel_population:
         html = html.replace('Post-filtered', 'NanoTel final-filtered').replace('post-filtered', 'NanoTel final-filtered')
@@ -210,6 +237,9 @@ def generate_report(results, output):
     (destination / "index.html").write_text(page, encoding="utf-8")
     # Preserve unrounded imported facts and source evidence alongside the view.
     (destination / "source-data.json").write_text(json.dumps(run.to_dict(), ensure_ascii=True, indent=2), encoding="utf-8")
+    from dorado_workflow.reports.exports.dashboard_workbook import write_dashboard_workbook
+    with available_details(results):
+        write_dashboard_workbook(run, destination / "nanotel_results.xlsx", results)
     return destination / "index.html"
 
 
@@ -227,6 +257,8 @@ def generate_run_report(results, nanotel_directory):
         run = import_results(results)
         page = render_screen(run, results_root=results)
         destination = write_run_reports(nanotel_directory, run, page)
+        from dorado_workflow.reports.exports.dashboard_workbook import write_dashboard_workbook
+        write_dashboard_workbook(run, Path(nanotel_directory) / "nanotel_results.xlsx", results)
     # Archive only after a complete dashboard has been saved successfully.
     for barcode in Path(nanotel_directory).glob('barcode*'):
         if barcode.is_dir():

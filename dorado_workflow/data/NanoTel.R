@@ -81,7 +81,7 @@ option_list = list(
               help = "This flag tells us the expected telomere position: helps with the filter and telo_position accuracy",
               metavar = "Check right or left edge for filter and position"),
   make_option("--summary_only", action = "store_true", default = FALSE,
-              help = "Summary-only mode: skip per-read FASTA, PNG, and EPS outputs. Summary CSV files are still generated.",
+              help = "Summary-only mode: keep numeric CSV/JSON/KM analysis; skip FASTA, tracks, per-read and aggregate plots.",
               metavar = "Skip detailed per-read output files"),
   make_option("--tvr_patterns", action = "store", default = NULL, type = "character",
               help = "Space separated list of additional pattern(s) for Telomere variant repeats. Must be in double quotes.",
@@ -3251,8 +3251,8 @@ if (isTRUE(opt$analysis)) {
   if (!requireNamespace("jsonlite", quietly = TRUE)) {
     stop("The --analysis JSON export requires the jsonlite package.")
   }
-  if (!requireNamespace("plotly", quietly = TRUE) ||
-      !requireNamespace("htmltools", quietly = TRUE)) {
+  if (!isTRUE(opt$summary_only) && (!requireNamespace("plotly", quietly = TRUE) ||
+      !requireNamespace("htmltools", quietly = TRUE))) {
     stop("The --analysis interactive plots require plotly and htmltools.")
   }
 
@@ -3335,10 +3335,12 @@ if (isTRUE(opt$analysis)) {
         sprintf("Edge filter: read length minus running median telomere length (%s bp) is not greater than %s bp", edge_values[i], opt$max_edge_distance))
     if (!length(reasons)) "Passed NanoTel filters" else paste(reasons, collapse="; ")
   }, character(1))
+  if (!isTRUE(opt$summary_only)) {
   audit_dir <- file.path(opt$save_path, "report_details")
   dir.create(audit_dir, recursive=TRUE, showWarnings=FALSE)
   write_csv(data.frame(sequence_ID=filter_audit$sequence_ID, Serial=filter_audit$Serial,
     reason=filter_reasons), file.path(audit_dir, paste0(barcode_name, "_filter_reasons.csv")))
+  }
 
   # Write filtered sorted summary
   write_csv(x = df_filtered,
@@ -3414,6 +3416,7 @@ if (isTRUE(opt$analysis)) {
     file.path(opt$save_path, paste0(barcode_name, "_km_statistics.csv")), na = ""
   )
 
+  if (!isTRUE(opt$summary_only)) {
   # --- Telomere plot (uses pre-final-filter data so x-axis extends to the crossing point) ---
   df_plot <- df_for_plot
   telomere_plot_label <- if(global_max_mismatch > 0) {
@@ -3454,6 +3457,7 @@ if (isTRUE(opt$analysis)) {
     file.path(opt$save_path, paste0(barcode_name, "_telomere_histogram"))
   )
 
+  } # detailed analysis plots: full mode only
 } # end --analysis block
 
 t2 <- Sys.time()

@@ -3,7 +3,7 @@ Basecaller Processor Module
 ===========================
 
 Handles the basecalling step of the workflow using Dorado.
-Converts POD5 files to BAM format with base modifications.
+Converts POD5 files to BAM, or FASTQ when alignment/modification data is not needed.
 """
 
 from pathlib import Path
@@ -22,7 +22,7 @@ class BasecallerProcessor(ProcessorBase):
     - Validate POD5 input exists
     - Build basecalling command with appropriate parameters
     - Execute basecalling
-    - Track output BAM file
+    - Track the selected BAM or FASTQ output file
     - Collect statistics
 
     Configuration used:
@@ -101,16 +101,19 @@ class BasecallerProcessor(ProcessorBase):
         self.context.logger.info("✓ All basecalling prerequisites validated")
         return True
 
-    def execute(self, pod5_input: str, organism: str = "mouse", align : bool = False) -> ProcessorResult:
+    def execute(self, pod5_input: str, organism: str = "mouse", align : bool = False,
+                emit_fastq: Optional[bool] = None) -> ProcessorResult:
         """
         Execute the basecalling process.
 
         Args:
             pod5_input: Path to POD5 input (file or directory)
             organism: Organism type ('mouse' or 'human') for reference selection
+            emit_fastq: None selects FASTQ for sequence-only calls; False reserves BAM
+                for a downstream consumer. True rejects alignment/modification loss.
 
         Returns:
-            ProcessorResult with success status, output BAM path, and statistics
+            ProcessorResult with success status, selected output path, and statistics
         """
         self.log_start()
 
@@ -127,7 +130,8 @@ class BasecallerProcessor(ProcessorBase):
             self.context.logger.info("Basecalling: preparing Dorado")
 
             # Build the basecalling command
-            command, expected_output = self._build_command(pod5_input, organism, align)
+            command, expected_output = self._build_command(pod5_input, organism, align, emit_fastq)
+            emit_fastq = expected_output.suffix == '.fastq'
 
             # Execute basecalling and forward Dorado's live progress to the GUI.
             self.context.logger.info("Basecalling: Dorado is running; live progress follows")
@@ -143,7 +147,7 @@ class BasecallerProcessor(ProcessorBase):
             if not actual_output.exists() or actual_output.stat().st_size == 0:
                 result = ProcessorResult(
                     success=False,
-                    error=f"No BAM output file found after basecalling: {actual_output}"
+                    error=f"No {'FASTQ' if emit_fastq else 'BAM'} output file found after basecalling: {actual_output}"
                 )
                 self.log_complete(result)
                 return result
@@ -156,7 +160,7 @@ class BasecallerProcessor(ProcessorBase):
             result = ProcessorResult(
                 success=True,
                 output_paths={
-                    'bam': actual_output,
+                    'fastq' if emit_fastq else 'bam': actual_output,
                     'output_dir': self.output_dir
                 },
                 statistics=stats
@@ -178,17 +182,28 @@ class BasecallerProcessor(ProcessorBase):
             self.log_complete(result)
             return result
 
-    def _build_command(self, pod5_input: str, organism: str, align : bool = False) -> tuple[str, Path]:
-        """
-        Build the dorado basecalling command.
+    def _build_command(self, pod5_input: str, organism: str, align : bool = False,
+                       emit_fastq: Optional[bool] = None) -> tuple[str, Path]:
+        arguments = self._build_arguments(pod5_input, organism, align, emit_fastq)
+        extension = 'fastq' if '--emit-fastq' in arguments else 'bam'
+        timestamp = datetime.now().strftime('%Y-%m-%d_T%H-%M-%S')
+        output_file = self.output_dir / f"calls_{timestamp}.{extension}"
+        command = f"{format_command(arguments)} > {quote_path(output_file)}"
+        self.context.logger.info(f"Basecall command: {command}")
+        return command, output_file
 
-        Args:
-            pod5_input: Path to POD5 input
-            organism: Organism type for reference selection
+    def build_classified_stream(self, pod5_input: str, organism: str, kit_name: str) -> list:
+        """Produce classified records on stdout for demux; no intermediate file."""
+        if not kit_name:
+            raise ValueError('A barcode kit is required to classify a basecalling stream')
+        modifications = self.context.config_manager.get_basecalling_params().get('modified_bases', '5mCG_5hmCG')
+        if modifications:
+            raise ValueError('Modification calls require a retained BAM output')
+        return self._build_arguments(pod5_input, organism, False, False, kit_name)
 
-        Returns:
-            Tuple of (command string, expected output path)
-        """
+    def _build_arguments(self, pod5_input: str, organism: str, align: bool = False,
+                         emit_fastq: Optional[bool] = None, kit_name_override: Optional[str] = None) -> list:
+        """Build shell-free Dorado arguments for file output or a binary pipe."""
         # Get configuration parameters
         config = self.context.config_manager
         basecalling_params = config.get_basecalling_params()
@@ -196,13 +211,14 @@ class BasecallerProcessor(ProcessorBase):
         model = config.get_dorado_model_path()
         min_qscore = basecalling_params.get('min_qscore', 9)
         modified_bases = basecalling_params.get('modified_bases', '5mCG_5hmCG')
-        kit_name = basecalling_params.get('kit_name')
+        kit_name = kit_name_override or basecalling_params.get('kit_name')
         recursive = basecalling_params.get('recursive', True)
         no_trim = basecalling_params.get('no_trim', True)
 
-        # Generate output filename with timestamp
-        timestamp = datetime.now().strftime('%Y-%m-%d_T%H-%M-%S')
-        output_file = self.output_dir / f"calls_{timestamp}.bam"
+        if emit_fastq is None:
+            emit_fastq = not (align or modified_bases)
+        if emit_fastq and (align or modified_bases):
+            raise ValueError("FASTQ output cannot retain alignments or modified-base calls; use BAM output")
 
         # Build command parts
         command_arguments = [
@@ -213,6 +229,9 @@ class BasecallerProcessor(ProcessorBase):
         # Add optional flags
         if recursive:
             command_arguments.append("-r")
+
+        if emit_fastq:
+            command_arguments.append("--emit-fastq")
 
         if modified_bases:
             command_arguments.extend(["--modified-bases", modified_bases])
@@ -227,16 +246,13 @@ class BasecallerProcessor(ProcessorBase):
             reference = config.get_reference_path(organism)
             command_arguments.extend(["--reference", reference])
 
-        # Dorado basecaller writes BAM to stdout; redirect it to the known output file.
+        # File redirection or piping is handled by the caller.
         command_arguments.extend([
             model,
             pod5_input,
         ])
 
-        command = f"{format_command(command_arguments)} > {quote_path(output_file)}"
-
-        self.context.logger.info(f"Basecall command: {command}")
-        return command, output_file
+        return command_arguments
 
 
     @staticmethod
@@ -295,9 +311,12 @@ class BasecallerProcessor(ProcessorBase):
 
     def get_latest_output(self) -> Optional[Path]:
         """
-        Convenience method to get the latest basecalled BAM file.
+        Convenience method to get the latest basecalled BAM or FASTQ file.
 
         Returns:
-            Path to most recent BAM file, or None if not found
+            Path to most recent basecalled file, or None if not found
         """
-        return self._find_output_bam()
+        candidates = (path for path in self.output_dir.rglob('*')
+                      if path.is_file() and path.suffix.lower() in ('.bam', '.fastq')
+                      and 'barcode' not in path.parent.name and 'unclassified' not in path.parent.name)
+        return max(candidates, key=lambda path: path.stat().st_mtime, default=None)

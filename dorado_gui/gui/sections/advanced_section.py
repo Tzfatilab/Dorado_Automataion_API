@@ -354,7 +354,9 @@ class AdvancedSection:
 
         self.summary_only = ToggleSwitch()
         self.summary_only.setToolTip(
-            "Skip per-read FASTA/plot files and create only summary outputs."
+            "Save Excel with barcode statistics, before/after-filter read tables and available KM statistics. "
+            "Include a compact summary dashboard. Skip per-read plots, FASTA and density/motif track exports. "
+            "Detection and filters are unchanged; separately selected mapping/methylation still run."
         )
         self.summary_only.setChecked(False)
         summary_layout.addWidget(summary_label)

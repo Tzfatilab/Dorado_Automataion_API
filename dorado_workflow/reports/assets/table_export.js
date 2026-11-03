@@ -1,9 +1,9 @@
 /* Offline CSV and genuine XLSX exports; no network or spreadsheet formulas. */
 (() => {
-  if(window.reportTableExportInstalled==='v3')return;
+  if(window.reportTableExportInstalled==='v5')return;
   window.reportTableExportObserver?.disconnect();
   document.querySelectorAll('.table-export-controls').forEach(node=>node.remove());
-  window.reportTableExportInstalled='v3';
+  window.reportTableExportInstalled='v5';
   const encoder=new TextEncoder(),attached=new WeakSet();
   const text=value=>value==null?'':String(value);
   const xml=value=>text(value).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
@@ -36,29 +36,45 @@
     return join([...entries,central,end]);
   };
   const columnName=index=>{let label='';for(index++;index;index=Math.floor((index-1)/26))label=String.fromCharCode(65+(index-1)%26)+label;return label;};
-  const workbook=data=>{
-    if(!data.headers.length)throw Error('This table has no columns to export.');
-    if(data.rows.length>1048575||data.headers.length>16384)throw Error('This table exceeds the Excel worksheet size limit. Save CSV instead.');
-    const rows=[data.headers,...data.rows];
-    const last=columnName(data.headers.length-1)+(rows.length);
-    const sheetName=(data.name||'Table').replace(/[\\/*?:\[\]]/g,' ').replace(/^'+|'+$/g,'').slice(0,31)||'Table';
-    const cell=(value,index,row)=>{
-      const reference=columnName(index)+(row+1);
-      if(typeof value==='number'&&Number.isFinite(value))return `<c r="${reference}" s="2"><v>${value}</v></c>`;
-      if(text(value).length>32767)throw Error('A cell exceeds Excel’s text limit. Save CSV instead.');
-      return `<c r="${reference}" s="${row?0:1}" t="inlineStr"><is><t xml:space="preserve">${xml(value)}</t></is></c>`;
-    };
-    const widths=data.headers.map((header,index)=>Math.min(44,Math.max(12,text(header).length+2,...data.rows.slice(0,500).map(row=>text(row[index]).length+2))));
+  const workbook=input=>{
+    const sheets=Array.isArray(input)?input:[input];
+    if(!sheets.length)throw Error('There are no worksheets to export.');
     const declaration='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
     const ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main';
-    return zip({
-      '[Content_Types].xml':declaration+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',
+    const used=new Set(),names=[];
+    for(const data of sheets){
+      if(!data.headers.length)throw Error('This table has no columns to export.');
+      if(data.rows.length>1048575||data.headers.length>16384)throw Error('This table exceeds the Excel worksheet size limit. Save CSV instead.');
+      const base=(data.name||'Table').replace(/[\\/*?:\[\]\x00-\x1f]/g,' ').replace(/^'+|'+$/g,'').trim().slice(0,31)||'Table';
+      let name=base,index=2;
+      while(used.has(name.toLowerCase())){const suffix='_'+index++;name=base.slice(0,31-suffix.length)+suffix;}
+      used.add(name.toLowerCase());names.push(name);
+    }
+    const files={
+      '[Content_Types].xml':declaration+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+sheets.map((_,i)=>'<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('')+'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',
       '_rels/.rels':declaration+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
-      'xl/workbook.xml':declaration+`<workbook xmlns="${ns}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xml(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
-      'xl/_rels/workbook.xml.rels':declaration+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
-      'xl/styles.xml':declaration+`<styleSheet xmlns="${ns}"><numFmts count="1"><numFmt numFmtId="164" formatCode="0.##########"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF18324D"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`,
-      'xl/worksheets/sheet1.xml':declaration+`<worksheet xmlns="${ns}"><dimension ref="A1:${last}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${widths.map((width,index)=>`<col min="${index+1}" max="${index+1}" width="${width}" customWidth="1"/>`).join('')}</cols><sheetData>${rows.map((row,index)=>`<row r="${index+1}"${index===0?' ht="30" customHeight="1"':''}>${row.map((value,column)=>cell(value,column,index)).join('')}</row>`).join('')}</sheetData><autoFilter ref="A1:${last}"/></worksheet>`
+      'xl/workbook.xml':declaration+`<workbook xmlns="${ns}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${names.map((name,i)=>`<sheet name="${xml(name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')}</sheets></workbook>`,
+      'xl/_rels/workbook.xml.rels':declaration+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+sheets.map((_,i)=>'<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')+'<Relationship Id="rId'+(sheets.length+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
+      'xl/styles.xml':declaration+`<styleSheet xmlns="${ns}"><numFmts count="4"><numFmt numFmtId="164" formatCode="0.##########"/><numFmt numFmtId="165" formatCode="#,##0"/><numFmt numFmtId="166" formatCode="#,##0.000"/><numFmt numFmtId="167" formatCode="0.0%"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF18324D"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="167" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`
+    };
+    sheets.forEach((data,index)=>{
+      const rows=[data.headers,...data.rows],last=columnName(data.headers.length-1)+rows.length;
+      const widths=data.headers.map((header,column)=>data.widths?.[column]||Math.min(44,Math.max(13,text(header).length+2,...data.rows.slice(0,500).map(row=>Math.min(40,text(row[column]).length+2)))));
+      const cell=(value,column,row)=>{
+        const reference=columnName(column)+(row+1);
+        if(typeof value==='number'&&Number.isFinite(value)){
+          const style={integer:3,decimal:4,percent:5}[data.formats?.[column]]||2;
+          return `<c r="${reference}" s="${row?style:1}"><v>${value}</v></c>`;
+        }
+        if(text(value).length>32767)throw Error('A cell exceeds Excel\u2019s text limit. Save CSV instead.');
+        return `<c r="${reference}" s="${row?0:1}" t="inlineStr"><is><t xml:space="preserve">${xml(value)}</t></is></c>`;
+      };
+      const frozen=Math.max(0,Math.min(data.freezeColumns||0,data.headers.length-1));
+      const first=columnName(frozen)+'2';
+      const pane=`<pane${frozen?' xSplit="'+frozen+'"':''} ySplit="1" topLeftCell="${first}" activePane="${frozen?'bottomRight':'bottomLeft'}" state="frozen"/>`;
+      files['xl/worksheets/sheet'+(index+1)+'.xml']=declaration+`<worksheet xmlns="${ns}"><dimension ref="A1:${last}"/><sheetViews><sheetView workbookViewId="0">${pane}</sheetView></sheetViews><cols>${widths.map((width,i)=>`<col min="${i+1}" max="${i+1}" width="${width}" customWidth="1"/>`).join('')}</cols><sheetData>${rows.map((row,i)=>`<row r="${i+1}"${i===0?' ht="54" customHeight="1"':''}>${row.map((value,column)=>cell(value,column,i)).join('')}</row>`).join('')}</sheetData><autoFilter ref="A1:${last}"/></worksheet>`;
     });
+    return zip(files);
   };
   const contextName=table=>{
     const heading=table.closest('section,details')?.querySelector('h3,h2,summary')?.cloneNode(true);
@@ -100,7 +116,8 @@
     document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
   };
   const exportTable=(table,format)=>{
-    const data=table.reportExportData?.()||domData(table);
+    const raw=table.reportExportData?.()||domData(table);
+    const data=window.reportBarcodeNames?.exportData(table,raw)||raw;
     const name=contextName(table).replace(/[^a-zA-Z0-9_-]+/g,'-').replace(/^-|-$/g,'').slice(0,150)||'table';
     if(format==='csv')save(new Blob([csv(data)],{type:'text/csv;charset=utf-8'}),name+'.csv');
     else save(new Blob([workbook(data)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),name+'.xlsx');

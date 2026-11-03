@@ -8,6 +8,7 @@ from dorado_workflow.reports.barcode.completeness import results_section
 from dorado_workflow.reports.reads.browser import reads_section, READ_SCRIPT
 from dorado_workflow.reports.reads.density import mismatch_enabled, tvr_enabled
 from dorado_workflow.reports.shared.organism import show_km
+from dorado_workflow.reports.shared.short_telomeres import short_summary_html, short_cutoff_bp
 
 
 def barcode_views(run, icons, histograms=None, results_root=None):
@@ -65,14 +66,16 @@ def barcode_views(run, icons, histograms=None, results_root=None):
                 note = 'No post-filtered telomeric reads'
             cards.append(f'<article class="stat stat-{index}"><svg aria-hidden="true" viewBox="0 0 48 48">{icon}</svg>'
                 f'<div><h3>{title}</h3><strong class="{"missing" if number is None else ""}">{display}</strong><p>{escape(note)}</p></div></article>')
-        pages.append(f'<div class="barcode-page" id="{barcode.id}" data-km-enabled="{str(km_enabled).lower()}" data-mismatch-enabled="{mismatch_attribute}" data-tvr-enabled="{tvr_attribute}" data-label="{escape(label, quote=True)}" data-chart-label="{escape(barcode.label.replace("barcode", "BC"), quote=True)}" hidden>'
+        cutoff = short_cutoff_bp(run.settings, barcode)
+        cutoff_attribute = f'{cutoff:g}' if cutoff is not None else ''
+        pages.append(f'<div class="barcode-page" id="{barcode.id}" data-barcode-id="{escape(barcode.label, quote=True)}" data-short-cutoff-bp="{cutoff_attribute}" data-km-enabled="{str(km_enabled).lower()}" data-mismatch-enabled="{mismatch_attribute}" data-tvr-enabled="{tvr_attribute}" data-label="{escape(label, quote=True)}" data-chart-label="{escape(barcode.label.replace("barcode", "BC"), quote=True)}" hidden>'
             f'<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#/">All Barcodes</a> <span>› {escape(label)}</span></nav>'
-            f'<section><h2><span class="number">1</span>Key Statistics ({escape(label)})</h2><div class="stats">{"".join(cards)}</div></section>'
+            f'<section><h2><span class="number">1</span>Key Statistics ({escape(label)})</h2><div class="stats">{"".join(cards)}{short_summary_html(barcode, run.settings)}</div></section>'
             + ('<p class="note">TVR analysis was not requested: no TVR patterns were selected.</p>' if tvr is False else
                '<p class="note">TVR counts use exported noncanonical matches overlapping TVR-inclusive telomere intervals of post-filtered reads. Missing details remain unavailable.</p>')
             + (results_section(barcode, results_root) if km_enabled else '') + histograms.get(barcode.id, '') + '<div class="charts">' + composition_section(motifs, requested=tvr)
             + positions_section(motifs, requested=tvr) + '</div>'
-            + chromosome_section([c for c in comparisons['cells'] if c['barcode'] == barcode.label])
+            + chromosome_section([c for c in comparisons['cells'] if c['barcode'] == barcode.label], cutoff_bp=short_cutoff_bp(run.settings, barcode))
             + reads_section(barcode, results_root, show_completeness=km_enabled) + '</div>')
     navigation = '<nav class="barcode-navigation" aria-label="Choose a barcode"><strong>Explore a barcode</strong>' + ''.join(links) + '</nav>'
     return navigation, ''.join(pages)

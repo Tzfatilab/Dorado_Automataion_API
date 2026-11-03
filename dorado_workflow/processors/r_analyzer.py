@@ -293,8 +293,18 @@ class RAnalyzer(ProcessorBase):
                 "short_telomere_threshold_bp", 2000
             ),
         )
-        workbook_path = writer.write()
+        from dorado_workflow.reports.interactive.importers import import_results
+        # Import current CSV/JSON sources before writing or cleaning the workbook.
+        run = import_results(self.context.path_manager.get_results_dir_path()) if cleanup_sources else None
+        workbook_path = writer.write(run=run)
         if cleanup_sources:
+            # Render while numeric CSV/JSON sources still exist. No read-track
+            # generation is requested; cleanup follows both successful saves.
+            from dorado_workflow.reports.overview.summary import write_summary_dashboard
+            dashboard_path = write_summary_dashboard(
+                run, self.r_analysis_dir / "dashboard_summary.html"
+            )
+            self.context.logger.info(f"Summary dashboard saved to: {dashboard_path}")
             self._cleanup_summary_workspace()
         return workbook_path
 
@@ -347,7 +357,7 @@ class RAnalyzer(ProcessorBase):
             path
             for path in nanotel_dir.rglob("*_summary.csv")
             if path.is_file()
-            and not path.name.lower().startswith("filtered_")
+            and "filtered_" not in path.name.lower()
             and "statistics" not in path.name.lower()
         ]
         found_barcodes = {

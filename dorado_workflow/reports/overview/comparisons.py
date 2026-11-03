@@ -1,7 +1,7 @@
 """Presentation-only comparisons of exported, post-filtered telomere records."""
 from collections import Counter, defaultdict
 from html import escape
-from statistics import median, quantiles
+from statistics import mean, median, quantiles
 import re
 from dorado_workflow.reports.shared.colors import motif_color
 from dorado_workflow.reports.barcode.composition import motif_base_counts, composition_section
@@ -101,7 +101,7 @@ def comparison_data(run):
     cells = []
     for (b, c), values in groups.items():
         q1, _, q3 = quantiles(values, n=4, method='inclusive') if len(values) > 1 else [values[0]] * 3
-        cells.append(dict(barcode=b, chromosome=c, median_kb=median(values)/1000,
+        cells.append(dict(barcode=b, chromosome=c, mean_kb=mean(values)/1000, median_kb=median(values)/1000,
                           q1_kb=q1/1000, q3_kb=q3/1000, reads=len(values), observations=observations[(b,c)]))
     return dict(composition=composition, cells=cells, omitted=omitted)
 
@@ -109,7 +109,7 @@ def comparison_data(run):
 def overview_composition_section(data, requested=None):
     """Pool available complete barcodes and disclose any excluded barcodes."""
     if requested is False:
-        return composition_section(None, number=4, title='TVR Composition', requested=False)
+        return composition_section(None, number=4, title='TVR patterns', requested=False)
     rows = data['composition']
     pooled = None
     if rows:
@@ -118,7 +118,7 @@ def overview_composition_section(data, requested=None):
             bases.update(row['base_counts'])
         pooled = dict(base_counts=dict(bases), total=sum(row['total'] for row in rows),
                       with_tvr=sum(row['with_tvr'] for row in rows))
-    title = 'TVR Composition - Available Barcodes' if data['omitted'] else 'TVR Composition - All Barcodes'
+    title = 'TVR patterns'
     section = composition_section(pooled, number=4, title=title)
     if pooled and 'class="histogram-figure"' in section:
         section = section.replace('class="saved-histogram composition-plot"',
@@ -149,12 +149,12 @@ def comparison_figures(run):
         barcodes = [b.label for b in run.barcodes]
         lookup = {(c["barcode"],c["chromosome"]):c for c in cells}
         heatmap.add_trace(go.Heatmap(x=chroms,y=[b.replace("barcode","BC") for b in barcodes],
-            z=[[lookup.get((b,c),{}).get("median_kb") for c in chroms] for b in barcodes],
+            z=[[lookup.get((b,c),{}).get("mean_kb") for c in chroms] for b in barcodes],
             customdata=[[lookup.get((b,c),{}).get("reads",0) for c in chroms] for b in barcodes],
             colorscale="RdYlBu_r",xgap=1,ygap=1,hoverongaps=False,
-            colorbar=dict(title="Median<br>length (kb)"),
-            hovertemplate="%{y} / %{x}<br>Median: %{z:.3f} kb<br>%{customdata} reads<extra></extra>"))
+            colorbar=dict(title="Average<br>length (kb)"),
+            hovertemplate="%{y} / %{x}<br>Average: %{z:.3f} kb<br>%{customdata} reads<extra></extra>"))
     heatmap.update_layout(xaxis_title="Chromosome",yaxis_title="Barcode",yaxis_autorange="reversed")
-    return [(4,"TVR Composition - All Barcodes",None,overview_composition_section(data, requested=tvr_enabled(run.settings))),
-            (5,"Median Telomere Length by Chromosome and Barcode",heatmap,
+    return [(4,"TVR patterns",None,overview_composition_section(data, requested=tvr_enabled(run.settings))),
+            (5,"Average Telomere Length by Chromosome and Barcode",heatmap,
              "Post-filtered lengths; explicit chromosome annotations or chrN/chrN_Head/chrN_Tail labels. Cross-chromosome ambiguous reads excluded; gaps mean unavailable.")]

@@ -81,7 +81,10 @@ process_nanotel_barcode <- function(nanotel_csv_path,
 
   if (nrow(filtered_data) == 0) {
     warning("No reads passed filters for barcode: ", barcode)
-    return(data.frame())
+    filtered_data$running_median <- numeric(0)
+    filtered_data$seqLen_runningMED <- numeric(0)
+    filtered_data$barcode <- character(0)
+    return(filtered_data)
   }
 
   # Sort by sequence length (descending)
@@ -107,7 +110,7 @@ process_nanotel_barcode <- function(nanotel_csv_path,
     filter(seqLen_runningMED > max_edge_distance)
 
   # Add barcode identifier
-  final_data$barcode <- barcode
+  final_data$barcode <- rep(barcode, nrow(final_data))
 
   log_message(paste("Final filtering complete:",
                     nrow(filtered_data), "->", nrow(final_data), "reads for", barcode))
@@ -147,9 +150,12 @@ batch_process_nanotel_files <- function(input_files,
         min_read_length = min_read_length
       )
 
-      if (nrow(processed_data) > 0) {
-        # Save individual filtered file
-        barcode <- unique(processed_data$barcode)[1]
+      # Successful empty outputs are scientific zero counts, not missing files.
+      # Preserve their schema and identity just like nonempty outputs.
+      {
+        barcode <- if (nrow(processed_data) > 0) unique(processed_data$barcode)[1] else
+          extract_barcode_from_path(file_path)
+        if (is.na(barcode)) barcode <- tools::file_path_sans_ext(basename(file_path))
 
         # Summary mode keeps detailed CSVs at the run level. Full mode retains
         # the existing per-barcode output layout.
@@ -213,6 +219,15 @@ calculate_nanotel_summary_stats <- function(all_barcodes_data,
       mean_telo_start = round(mean(Telomere_start_mismatch, na.rm = TRUE), 1),
       .groups = "drop"
     )
+
+  empty_barcodes <- names(all_barcodes_data)[vapply(all_barcodes_data, nrow, integer(1)) == 0L]
+  if (length(empty_barcodes)) {
+    empty <- as.data.frame(matrix(NA_real_, nrow=length(empty_barcodes), ncol=ncol(summary_stats)))
+    names(empty) <- names(summary_stats)
+    empty$barcode <- empty_barcodes
+    empty$amount_of_telomeres <- 0L
+    summary_stats <- bind_rows(summary_stats, empty)
+  }
 
   names(summary_stats)[names(summary_stats) == "below_threshold_pct"] <-
     paste0("below_", short_telomere_threshold_bp, "bp_pct")

@@ -44,7 +44,8 @@ class DemuxProcessor(ProcessorBase):
         # Define output directory
         self.output_dir = self.context.path_manager.get_demuxed_dir_path()
 
-    def validate_inputs(self, basecalled_bam: str, input_format: str = "bam") -> bool:
+    def validate_inputs(self, basecalled_bam: str, input_format: str = "bam",
+                        streamed: bool = False, classified: bool = False) -> bool:
         """
         Validate that all prerequisites for demultiplexing are met.
 
@@ -58,11 +59,16 @@ class DemuxProcessor(ProcessorBase):
 
         # Check if basecalled BAM exists
         bam_path = Path(basecalled_bam)
-        if not bam_path.exists():
+        if streamed and (basecalled_bam != '-' or input_format != 'fastq' or not classified):
+            self.context.logger.error('Streamed demultiplexing requires classified stdin and FASTQ output')
+            return False
+        if not streamed and not bam_path.exists():
             self.context.logger.error(f"Demultiplexing input not found: {basecalled_bam}")
             return False
 
-        if input_format == "fastq":
+        if streamed:
+            pass  # Barcode tags arrive from basecalling before any trimming.
+        elif input_format == "fastq":
             fastq_files = (
                 [path for path in bam_path.rglob("*") if path.is_file()]
                 if bam_path.is_dir() else [bam_path]
@@ -70,7 +76,7 @@ class DemuxProcessor(ProcessorBase):
             if not any(self._is_fastq_file(path) for path in fastq_files):
                 self.context.logger.error(f"No FASTQ files found in: {basecalled_bam}")
                 return False
-            if not self.context.config_manager.get_demuxing_params().get('kit_name'):
+            if not self._barcode_kit():
                 self.context.logger.error("A barcode kit name is required to demultiplex FASTQ input")
                 return False
         elif input_format == "bam":
@@ -91,7 +97,8 @@ class DemuxProcessor(ProcessorBase):
         self.context.logger.info("✓ All demultiplexing prerequisites validated")
         return True
 
-    def execute(self, basecalled_bam: str, input_format: str = "bam") -> ProcessorResult:
+    def execute(self, basecalled_bam: str, input_format: str = "bam",
+                upstream_command=None, classified: bool = False) -> ProcessorResult:
         """
         Execute the demultiplexing process.
 
@@ -104,7 +111,8 @@ class DemuxProcessor(ProcessorBase):
         self.log_start()
 
         # Validate inputs first
-        if not self.validate_inputs(basecalled_bam, input_format):
+        streamed = upstream_command is not None
+        if not self.validate_inputs(basecalled_bam, input_format, streamed, classified):
             result = ProcessorResult(
                 success=False,
                 error="Input validation failed"
@@ -114,11 +122,16 @@ class DemuxProcessor(ProcessorBase):
 
         try:
             # Build the demultiplexing command
-            command = self._build_command(basecalled_bam, input_format)
+            command = self._build_command(basecalled_bam, input_format, classified)
 
             # Execute demultiplexing
             self.context.logger.info(f"Starting demultiplexing for: {basecalled_bam}")
-            self.context.command_executor.execute(command, capture_output=True)
+            if streamed:
+                self.context.command_executor.execute_pipeline([
+                    upstream_command, self._build_arguments(basecalled_bam, input_format, classified)
+                ])
+            else:
+                self.context.command_executor.execute(command, capture_output=True)
 
             # Organize files into barcode subdirectories
             self.context.logger.info("Organizing demuxed files into barcode directories...")
@@ -166,7 +179,16 @@ class DemuxProcessor(ProcessorBase):
             self.log_complete(result)
             return result
 
-    def _build_command(self, basecalled_bam: str, input_format: str = "bam") -> str:
+    def _barcode_kit(self):
+        return (self.context.config_manager.get_demuxing_params().get('kit_name')
+                or self.context.config_manager.get_basecalling_params().get('kit_name'))
+
+    def _build_command(self, basecalled_bam: str, input_format: str = "bam", classified: bool = False) -> str:
+        command = format_command(self._build_arguments(basecalled_bam, input_format, classified))
+        self.context.logger.info(f"Demux command: {command}")
+        return command
+
+    def _build_arguments(self, basecalled_bam: str, input_format: str = "bam", classified: bool = False) -> list:
         """
         Build the dorado demux command.
 
@@ -179,7 +201,7 @@ class DemuxProcessor(ProcessorBase):
         # Get configuration parameters
         demuxing_params = self.context.config_manager.get_demuxing_params()
 
-        kit_name = demuxing_params.get('kit_name')
+        kit_name = self._barcode_kit() if input_format == 'fastq' else demuxing_params.get('kit_name')
         no_trim = demuxing_params.get('no_trim', True)
         sort_bam = demuxing_params.get('sort_bam', True)
         emit_summary = demuxing_params.get('emit_summary', True)
@@ -191,7 +213,9 @@ class DemuxProcessor(ProcessorBase):
         ]
 
         # Add kit name if specified
-        if kit_name:
+        if classified:
+            command_arguments.append('--no-classify')
+        elif kit_name:
             command_arguments.extend(["--kit-name", kit_name])
 
         # Add optional flags
@@ -210,10 +234,7 @@ class DemuxProcessor(ProcessorBase):
         command_arguments.append(basecalled_bam)
 
         # Join command parts
-        command = format_command(command_arguments)
-
-        self.context.logger.info(f"Demux command: {command}")
-        return command
+        return command_arguments
 
 
     @staticmethod

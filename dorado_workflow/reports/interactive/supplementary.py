@@ -8,14 +8,13 @@ from .models import Availability as A, Evidence, Fact, unavailable
 def import_statistics(importer, barcode, number):
     """Keep NanoTel final-filter and pre-edge KM metrics in separate namespaces."""
     # Preserve explicit unavailable states even when neither export exists.
-    # Summary-only intentionally skips NanoTel's --analysis artifact generation.
-    skipped = importer.metadata.get("stages", {}).get("summary_only") is True
-    reason = "Summary-only run: analysis statistics not requested" if skipped else "NanoTel analysis statistics file not exported"
-    state = A.NOT_REQUESTED if skipped else A.NOT_EXPORTED
+    reason = "NanoTel analysis statistics file not exported"
+    state = A.NOT_EXPORTED
     for key in ("nanotel_final_censoring_rate_pct", "nanotel_final_telomeres_shorter_than_threshold_pct",
                 "km_status", "km_median_bp", "km_censoring_rate_pct"):
         barcode.metrics[key] = unavailable(reason, state)
     paths = importer.files(f"{barcode.label}_analysis.json")
+    analysis = None
     if len(paths) == 1:
         path = paths[0]
         ev = Evidence(importer.source(path, "json").id)
@@ -23,30 +22,57 @@ def import_statistics(importer, barcode, number):
             row = json.loads(path.read_text(encoding="utf-8-sig"))
             if not isinstance(row, dict) or row.get("barcode") != barcode.label:
                 raise ValueError("barcode identity mismatch")
-            fields = {
-                "number_of_telomeric_reads_post_filtration": "reads",
-                "complete_telomeric_reads": "reads", "incomplete_telomeric_reads": "reads",
-                "censoring_rate_pct": "%", "median_telomeric_length_post_filtration_bp": "bp",
-                "short_telomere_threshold_bp": "bp", "telomeres_shorter_than_threshold_pct": "%",
-            }
-            for key, unit in fields.items():
-                barcode.metrics["nanotel_final_" + key] = number(
-                    row, key, ev, unit=unit, population="NanoTel final-filtered reads",
-                    maximum=100 if unit == "%" else None)
+            analysis = row, ev, {}
         except (ValueError, TypeError) as exc:
             barcode.warnings.append(f"Invalid NanoTel analysis JSON: {exc}")
     elif len(paths) > 1:
         barcode.warnings.append("Ambiguous NanoTel analysis JSON files; statistics not imported")
+    else:
+        # Summary mode archives these source values in Excel before cleanup.
+        # Recover exact fields with worksheet evidence; do not refit or infer KM.
+        table = getattr(importer, 'saved_statistics', {}).get('NanoTel analysis facts')
+        if table:
+            entries = [(r, e) for r, e in table[1] if r.get('Barcode') == barcode.label]
+            fields = [r.get('Source field') for r, _ in entries]
+            if entries and all(isinstance(f, str) and f for f in fields) and len(set(fields)) == len(fields):
+                row = {r['Source field']: r.get('Value') for r, _ in entries}
+                if row.get('barcode') == barcode.label:
+                    analysis = row, entries[0][1], {r['Source field']: e for r, e in entries}
+                else:
+                    barcode.warnings.append('Workbook analysis barcode identity mismatch')
+            elif entries:
+                barcode.warnings.append('Duplicate or invalid workbook analysis fields; statistics not imported')
+    if analysis:
+        row, ev, field_evidence = analysis
+        fields = {
+            "number_of_telomeric_reads_post_filtration": "reads",
+            "complete_telomeric_reads": "reads", "incomplete_telomeric_reads": "reads",
+            "censoring_rate_pct": "%", "median_telomeric_length_post_filtration_bp": "bp",
+            "short_telomere_threshold_bp": "bp", "telomeres_shorter_than_threshold_pct": "%",
+        }
+        for key, unit in fields.items():
+            raw = row.get(key)
+            source_row = {key: None if raw == 'Unavailable' else raw}
+            barcode.metrics["nanotel_final_" + key] = number(
+                source_row, key, field_evidence.get(key, ev), unit=unit, population="NanoTel final-filtered reads",
+                maximum=100 if unit == "%" else None)
 
     paths = importer.files(f"{barcode.label}_km_statistics.csv")
-    if len(paths) != 1:
-        if paths:
-            barcode.warnings.append("Ambiguous KM statistics files; statistics not imported")
+    if len(paths) == 1:
+        _, rows, _ = importer.csv_table(paths[0])
+        if len(rows) != 1 or rows[0][0].get("barcode") != barcode.label:
+            barcode.warnings.append("Invalid KM statistics barcode/row count")
+            return
+    elif paths:
+        barcode.warnings.append("Ambiguous KM statistics files; statistics not imported")
         return
-    _, rows, _ = importer.csv_table(paths[0])
-    if len(rows) != 1 or rows[0][0].get("barcode") != barcode.label:
-        barcode.warnings.append("Invalid KM statistics barcode/row count")
-        return
+    else:
+        table = getattr(importer, 'saved_statistics', {}).get('KM by barcode')
+        rows = [(r, e) for r, e in table[1] if r.get('barcode') == barcode.label] if table else []
+        if len(rows) != 1:
+            if rows:
+                barcode.warnings.append('Ambiguous workbook KM barcode rows; statistics not imported')
+            return
     row, ev = rows[0]
     status = row.get("km_status")
     if status not in {"reportable", "too_wide", "non_estimable", "invalid", "failed"}:

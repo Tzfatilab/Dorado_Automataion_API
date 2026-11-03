@@ -22,14 +22,14 @@
       @media(max-width:1499px){.overview-chart-grid{grid-template-columns:minmax(0,1fr)}.overview-panel-header h2{min-height:0}}
     `;
     const sections=[...grid.children].filter(n=>n.tagName==='SECTION');
-    const specs=[['Telomeric Reads by Barcode',2,'Telomeric Reads by Barcode'],['TVR Composition',3,null],
+    const specs=[['Telomeric Reads by Barcode',2,'Telomeric Reads by Barcode'],['TVR patterns',3,'TVR patterns'],
       ['Telomere Length by Barcode',4,'Telomere Length by Barcode'],
-      ['Median Telomere Length by Chromosome',5,'Median Telomere Length by Chromosome']];
+      ['Telomere Length by Chromosome',5,'Average Telomere Length by Chromosome']];
     for(const [match,number,title] of specs){
       const section=sections.find(s=>s.querySelector('h2')?.textContent.includes(match));if(!section)continue;
       section.style.gridColumn='auto';section.style.minWidth='0';grid.appendChild(section);
       const heading=section.querySelector('h2');
-      const text=title||(heading.textContent.includes('Available Barcodes')?'TVR Composition - Available Barcodes':'TVR Composition - All Barcodes');
+      const text=title||(heading.textContent.includes('Available Barcodes')?'TVR patterns - Available Barcodes':'TVR patterns - All Barcodes');
       const badge=document.createElement('span');badge.className='number';badge.textContent=number;
       heading.replaceChildren(badge,document.createTextNode(text));
       let header=section.querySelector('.overview-panel-header');

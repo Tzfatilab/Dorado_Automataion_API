@@ -497,10 +497,9 @@ class NanoTelProcessor(ProcessorBase):
             "--short_telomere_threshold_bp", str(short_threshold),
         ]
 
-        # Summary-only output is removed after Excel creation; preserve its
-        # behavior until analysis-artifact retention is explicitly implemented.
-        if not summary_only:
-            command_arguments.append("--analysis")
+        # Numeric analysis (including source-assessed KM) belongs in both modes.
+        # NanoTel's summary flag suppresses plots and per-read artifacts only.
+        command_arguments.append("--analysis")
 
         if summary_only:
             command_arguments.append(self._summary_only_flag(nanotel_script))
