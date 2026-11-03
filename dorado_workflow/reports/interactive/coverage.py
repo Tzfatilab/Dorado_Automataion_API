@@ -16,13 +16,20 @@ def import_coverage(importer, barcode):
         for key in KEYS:
             read.metrics[key] = unavailable('Versioned NanoTel coverage export not available')
     seen = set()
+    exports = []
+    for read in barcode.reads:
+        fact = read.metrics.get('_repeat_coverage_export')
+        if fact and fact.status == A.AVAILABLE:
+            exports.append(('summary coverage', fact.value, fact.evidence[0]))
     for path in importer.files('*read*_coverage.json'):
         if path.parent.name != 'report_details' or not (path.name.startswith(barcode.label+'_read') or
                 (re.fullmatch(r'read\d+_coverage.json', path.name) and path.parent.parent.name.lower() == barcode.label.lower())):
             continue
+        exports.append((path.name, path.read_text(encoding='utf-8-sig'), Evidence(importer.source(path, 'json').id)))
+    for name, encoded, ev in exports:
         targets = []
         try:
-            row = json.loads(path.read_text(encoding='utf-8-sig'))
+            row = json.loads(encoded)
             targets = index.get(row.get('read_id'), [])
             if len(targets) != 1:
                 raise ValueError('unmatched or ambiguous read identity')
@@ -30,7 +37,6 @@ def import_coverage(importer, barcode):
             if read.id in seen:
                 raise ValueError('duplicate coverage exports')
             seen.add(read.id)
-            ev = Evidence(importer.source(path, 'json').id)
             legacy = row.get('schema_version') == 1 and row.get('definition') == 'union_coverage_exact_interval_v1'
             if ((not legacy and (row.get('schema_version') != 2 or row.get('definition') != DEFINITION)) or
                 row.get('method') != 'tvr_inclusive' or row.get('convention') != 'one_based_inclusive' or
@@ -68,7 +74,7 @@ def import_coverage(importer, barcode):
                 convention='zero_based_half_open',space='nanotel_analyzed_read') for b in blocks],evidence=[ev])
             read.evidence.append(ev)
         except (ValueError,TypeError,KeyError,AttributeError) as exc:
-            barcode.warnings.append(f'{path.name}: invalid coverage export: {exc}')
+            barcode.warnings.append(f'{name}: invalid coverage export: {exc}')
             for read in targets:
                 for key in KEYS:
                     read.metrics[key]=unavailable('Invalid or conflicting coverage export',A.INVALID)

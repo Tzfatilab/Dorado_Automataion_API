@@ -11,6 +11,7 @@ dist/
 *.log
 
 .Rproj.user/
+*.RData
 
 test/
 /tests/

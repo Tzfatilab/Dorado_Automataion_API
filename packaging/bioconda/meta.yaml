@@ -54,7 +54,6 @@ requirements:
     - r-ggplot2
     - r-future
     - r-logr
-    - r-ggprism
     - r-testit
     - r-survival
     - r-plotly
@@ -111,7 +110,7 @@ test:
     - python -c "from pathlib import Path; from dorado_workflow.managers.config_manager import ConfigManager; c = ConfigManager(); assert Path(c.config_path).is_file(); assert Path(c.get_nanotel_script_path()).is_file()"
     - python -c "from pathlib import Path; import dorado_workflow; p = Path(dorado_workflow.__file__).parent / 'r_analysis'; assert (p / 'main_analysis_pipeline.R').is_file(); assert len(list((p / 'functions').glob('*.R'))) == 4"
     - python -c "from importlib.util import find_spec; from pathlib import Path; p = Path(next(iter(find_spec('dorado_gui').submodule_search_locations))) / 'icons'; assert len(list(p.glob('*.png'))) == 9"
-    - R -e "pkgs <- c('optparse', 'BiocGenerics', 'S4Vectors', 'IRanges', 'Biostrings', 'conflicted', 'dplyr', 'readr', 'purrr', 'stringr', 'ggplot2', 'future', 'logr', 'ggprism', 'testit', 'survival'); stopifnot(all(vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)))"
+    - R -e "pkgs <- c('optparse', 'BiocGenerics', 'S4Vectors', 'IRanges', 'Biostrings', 'conflicted', 'dplyr', 'readr', 'purrr', 'stringr', 'ggplot2', 'future', 'logr', 'testit', 'survival'); stopifnot(all(vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)))"
     - RUN_REAL_INTEGRATION_TESTS=1 python -m unittest discover -s tests -p "test_real_integration.py" -v
 
 about:

@@ -158,7 +158,6 @@ if (!exists("compose", mode = "function")) {
 suppressPackageStartupMessages(require(parallel))
 suppressPackageStartupMessages(require(logr))
 suppressPackageStartupMessages(require(future))
-suppressPackageStartupMessages(require(ggprism))
 
 suppressPackageStartupMessages(require(testit))
 suppressPackageStartupMessages(require(survival))
@@ -481,55 +480,6 @@ save_analysis_plot <- function(plot, prefix) {
 
 }
 
-save_telomere_histogram_png <- function(histogram, path, barcode, mismatch_allowance,
-                                        percentage = FALSE) {
-  grDevices::png(path, width = 1800, height = 1200, res = 170)
-  on.exit(grDevices::dev.off(), add = TRUE)
-  par(mar = c(5, 5, 5, 2) + 0.1, las = 1)
-  bins <- histogram$bins
-  title <- paste0("Telomere Lengths Distribution - ", analysis_barcode_title(barcode))
-  if (!nrow(bins)) {
-    plot.new(); title(main = title); text(0.5, 0.5, "No final-filtered reads with finite positive telomere lengths")
-    return(invisible(NULL))
-  }
-  heights <- if (percentage) bins$pct else bins$count
-  trend <- histogram$trend
-  trend_heights <- if (percentage) trend$pct else trend$count
-  upper <- max(1, heights, trend_heights) * 1.12
-  strip_height <- upper * 0.055
-  plot(NA, xlim = range(c(bins$lower_bp, bins$upper_bp)),
-       ylim = c(-strip_height * 1.8, upper), xlab = "Telomere length (bp)",
-       ylab = if (percentage) "Percentage of plotted reads (%)" else "Read count",
-       main = title, xaxt = "n", yaxt = "n")
-  rect(bins$lower_bp, 0, bins$upper_bp, heights, col = "#D9E8F5", border = "white")
-  if (nrow(trend)) lines(trend$length_bp, trend_heights, col = "#263B64", lwd = 2.5)
-  xticks <- axTicks(1); yticks <- axTicks(2)
-  yticks <- yticks[yticks >= 0]
-  if (!percentage) yticks <- yticks[yticks == floor(yticks)]
-  axis(1, at = xticks, labels = format(xticks, big.mark = ",", scientific = FALSE, trim = TRUE))
-  axis(2, at = yticks, labels = if (percentage) paste0(yticks, "%") else yticks)
-  limits <- par("usr")[1:2]
-  rect(limits[1], -strip_height * 1.5, limits[2], -strip_height * 0.5,
-       col = "#FFF8FA", border = "#F1DCE5")
-  censored_x <- histogram$reads$telomere_length_bp[which(histogram$reads$event == 0L)]
-  # A barcode may have no censored reads. Base graphics cannot combine empty
-  # x coordinates with scalar y coordinates, so draw markers only when present.
-  if (length(censored_x)) {
-    segments(censored_x, -strip_height * 1.4, censored_x, -strip_height * 0.6,
-             col = adjustcolor("#CC79A7", 0.55))
-  }
-  legend_indices <- if (nrow(trend)) 1:3 else c(1, 3)
-  legend("topright", legend = c("Telomeric reads", "Smoothed observed lengths", "Censored reads (observed lengths)")[legend_indices],
-         pch = c(15, NA, 124)[legend_indices], lty = c(NA, 1, NA)[legend_indices],
-         lwd = c(1, 2.5, 1)[legend_indices],
-         col = c("#D9E8F5", "#263B64", "#CC79A7")[legend_indices], bty = "n", cex = 0.8)
-  subtitle <- sprintf("Final-filtered reads | %s | complete: %d | censored: %d | unknown: %d",
-                if (mismatch_allowance == 0L) "exact" else "mismatch",
-                sum(histogram$reads$event == 1L, na.rm = TRUE),
-                sum(histogram$reads$event == 0L, na.rm = TRUE), sum(is.na(histogram$reads$event)))
-  if (histogram$excluded) subtitle <- paste0(subtitle, " | invalid lengths omitted: ", histogram$excluded)
-  mtext(subtitle, side = 3, line = 0.4, cex = 0.8)
-}
 
 
 #' my changes: 5.11.2023
@@ -627,32 +577,6 @@ split_telo <- function(dna_seq, sub_length) {
 
 # create a patterns which are create from 1 pattern using 1
 # mismatch + the original pattern
-get_one_mismatch <- function(seq, abc = c("A", "C", "G", "T")) {
-  seq_list <- list()
-  seq_length <- str_length(seq)
-
-  if(seq_length == 1) {
-    return(as.list(abc))
-  }
-
-  if(seq_length == 0) {
-    return(list())
-  }
-
-  for(i in seq_len(str_length(seq))) {
-    for(l in abc ) {
-      if(i == 1)
-        curr_seq <- str_c(l, str_sub(seq, start = 2, end = seq_length))
-      else if (i == seq_length)
-        curr_seq <- str_c(str_sub(seq, start = 1, end = seq_length - 1), l)
-      else
-        curr_seq <- str_c(str_sub(seq, start = 1 , end = i -1), l , str_sub(seq, start = i + 1, end = seq_length))
-      seq_list <- base::append(seq_list, curr_seq)
-    }
-  }
-
-  return(seq_list)
-}
 
 
 
@@ -838,6 +762,8 @@ report_repeat_coverage <- function(read_id, boundary, hits) {
     unassigned_bp=denominator-canonical_bp-tvr_bp+overlap_bp,
     canonical_pct=100*canonical_bp/denominator, tvr_pct=100*tvr_bp/denominator,
     tvr_block_count=length(tvr),
+    tvr_motifs=as.list(unique(as.character(hits$motif[hits$role == "tvr" &
+      hits$end >= start(boundary) & hits$start <= end(boundary)]))),
     blocks=lapply(seq_along(tvr), function(i) list(start=as.integer(start(tvr)[i]),
       end=as.integer(end(tvr)[i]))))
 }
@@ -913,7 +839,7 @@ merge_report_batches <- function(folder, output_dir, barcode) {
 # Export only already-computed windows and hits, in the analyzed read's native
 # 1-based inclusive coordinates. A completion row distinguishes zero hits from
 # a missing search. Summary-only runs intentionally omit these detailed files.
-export_report_density <- function(read_id, serial, analyses, output_dir, tvr_boundary=NULL) {
+export_report_density <- function(read_id, serial, analyses, output_dir, tvr_boundary=NULL, motifs_only=FALSE) {
   folder <- file.path(output_dir, "report_details")
   dir.create(folder, recursive=TRUE, showWarnings=FALSE)
   densities <- list(); motifs <- list()
@@ -921,7 +847,7 @@ export_report_density <- function(read_id, serial, analyses, output_dir, tvr_bou
     analysis <- analyses[[method]]
     if (is.null(analysis)) next
     windows <- analysis[[1]]
-    densities[[method]] <- data.frame(read_id=read_id, method=method,
+    if (!motifs_only) densities[[method]] <- data.frame(read_id=read_id, method=method,
       start=windows$start_index, end=windows$end_index, density=windows$density,
       convention="one_based_inclusive", space="nanotel_analyzed_read")
     hits <- analysis[[2]]$motif_matches
@@ -933,7 +859,7 @@ export_report_density <- function(read_id, serial, analyses, output_dir, tvr_bou
       convention="one_based_inclusive", space="nanotel_analyzed_read"), rows)
   }
   stem <- make_barcode_read_stem(serial)
-  if (!is.null(tvr_boundary) && !is.null(analyses$tvr_inclusive)) {
+  if (!motifs_only && !is.null(tvr_boundary) && !is.null(analyses$tvr_inclusive)) {
     coverage <- report_repeat_coverage(read_id, tvr_boundary,
       analyses$tvr_inclusive[[2]]$motif_matches)
     if (!is.null(coverage)) jsonlite::write_json(coverage,
@@ -943,11 +869,11 @@ export_report_density <- function(read_id, serial, analyses, output_dir, tvr_bou
   sink <- getOption("nanotel.report_batch")
   if (!is.null(sink)) {
     write_report_batch(sink, "index", data.frame(read_key=as.character(serial), read_id=read_id, schema_version=2L))
-    write_report_batch(sink, "density", compact_report_rows(do.call(rbind, densities), serial))
+    if (!motifs_only) write_report_batch(sink, "density", compact_report_rows(do.call(rbind, densities), serial))
     write_report_batch(sink, "motifs", compact_report_rows(do.call(rbind, motifs), serial))
   } else {
     # Compatibility for standalone callers outside the batched pipeline.
-    write.csv(do.call(rbind, densities), file.path(folder, paste0(stem, "_density.csv")), row.names=FALSE)
+    if (!motifs_only) write.csv(do.call(rbind, densities), file.path(folder, paste0(stem, "_density.csv")), row.names=FALSE)
     write.csv(do.call(rbind, motifs), file.path(folder, paste0(stem, "_motifs.csv")), row.names=FALSE, na="")
   }
 }
@@ -958,48 +884,6 @@ export_report_density <- function(read_id, serial, analyses, output_dir, tvr_bou
 # calculate according to sum(width of the IRanges)
 # The calculation is on the full sequence and it is not fit for subsequences
 #' use purrr::map to replace the for loops code
-get_density_iranges_with_csv <- function(sequence, patterns, output_path = NA) {
-  #' @title Pattern searching function.
-  #' @description: get the density of a given pattern or a total density of a
-  #' list of patterns, and IRanges of the patterns.
-  #' @param pattern: a list of patterns or a string of 1 pattern.
-  #' @param sequence: DNAString object
-  #' @param output_path: the filename for the csv patterns summary.
-  #' @value A numeric for the total density of the pattern(patterns) in the
-  #' sequences, a IRanges object of the indcies of the patterns found.
-  #' @return a list of (density, IRanges, data frame) Total density of all the
-  #' patterns in the list( % of the patterns in this sequence) and the IRanges
-  #' of them
-  #' @examples
-  total_density <- 0
-  patterns_df <- data_frame(patterns = character(), start_idx = integer(),
-                            end_idx = integer())
-  mp_all <- IRanges()# union of all the IRanges of all the patterns in the list
-  if (is.list(patterns)) {
-    patterns <- unique(patterns)  # make sure there are no dups
-    for (pat in patterns) {
-      curr_match <- matchPattern(pattern = pat, subject = unlist(sequence),
-                                 max.mismatch = 0, fixed = FALSE)
-      patterns_df <- add_row(patterns_df, patterns = as.data.frame(curr_match)$x
-                     , start_idx = start(curr_match), end_idx = end(curr_match))
-      mp_all <- IRanges::union(mp_all, curr_match)
-    }
-  }else {
-    mp_all <- matchPattern(pattern = patterns, subject = unlist(sequence),
-                           max.mismatch = 0, fixed = FALSE)
-    patterns_df <- add_row(patterns_df, patterns = as.data.frame(mp_all)$x,
-                           start_idx = start(mp_all), end_idx = end(mp_all))
-    mp_all <- IRanges::union(mp_all, mp_all) # incase there are overlaps
-  }
-  total_density <- sum(width(mp_all)) / nchar(sequence)
-  pat_list <- list(total_density, mp_all, patterns_df)
-  names(pat_list) <- c("total density", "patterns IRanges",
-                       "Patterns data frame")
-  if (!isTRUE(is.na(output_path))) {
-    write_csv(x = patterns_df, file = output_path)
-  }
-  return(pat_list)
-}
 
 
 get_sub_density <- function(sub_irange, ranges) {
@@ -1329,75 +1213,6 @@ analyze_subtelos <- function(dna_seq, patterns, sub_length,
 #  a a list of (a data frame, numeric: total density)
 
 # find a hole inside a telomeric sequence
-find_inner_hole <- function(subtelos, min_in_a_row = 3, max_density_score = 0.75) {
-    classes <- list("CCCTAA" = -5, "NONE" = 1, "SKIP" = 0)
-  # set score, start, in.a.row to 0,-1,0
-
-  score <- 0.0
-  start <- -1
-  end <- -1
-  in_a_row <- 0
-  start_end_diff <- subtelos[1, "end_index"] - subtelos[1, "start_index"]
-
-  # loop through subsequences
-  end_position <- 0 # for end loop
-  for (i in seq_len(nrow(subtelos))){
-    subt <- subtelos[i, ]
-    # if the subsequence's class is telomeric pattern reset values
-    if (subt$class == classes$CCCTAA ) {
-      score <- 0
-      start <- -1
-      in_a_row <- 0
-    }else {
-      # otherwise add one to in.a.row, update score and set start index
-      in_a_row <- in_a_row + 1
-      score <- score + subt$density
-      if (start == -1) {
-        start <- subt$start_index
-      }
-    }
-    if (in_a_row >= min_in_a_row && score <= max_density_score) {
-      end_position <- i + 1
-      break
-    }
-  }
-  if (end_position == 0) {
-    return(IRanges(1, 1)) # no hole was found
-  }
-
-
-  #' search for end from the last subsequence (backward to finding stat incase
-  #' there is island of non-telomeric subsequence)
-  end <- -1
-  score <- 0.0
-  in_a_row <- 0
-  for (i in nrow(subtelos):end_position){
-    subt <- subtelos[i, ]
-    if (subt$class ==  subt$CCCTAA) {
-      score <- 0.0
-      end <- -1
-      in_a_row <- 0
-    }else {
-      # otherwise add one to in.a.row, update score and set start index
-      in_a_row <- in_a_row + 1
-      score <- score + subt$density
-      if (end == -1) {
-        end <- subt$end_index
-      }
-    }
-    #' if more than MIN.IN.A.ROW subtelomeres were found and the overall score
-    #' is high enough, return start index
-    if (in_a_row >= min_in_a_row && score >= max_density_score) {
-      break
-    }
-  }
-
-  if (start > end) {
-    end <- start + start_end_diff
-  }
-
-  return(IRanges(start = start, end = end))
-}
 
 
 
@@ -2249,61 +2064,6 @@ plot_single_telo_with_tvr <- function(x_length, seq_length, subs,subs_mismatch, 
 # add options for the image saved:
 #'ggsave currently recognises the extensions eps/ps, tex (pictex), pdf, jpeg,
 #'tiff, png, bmp, svg and wmf (windows only).
-plot_single_telo_ggplot2 <- function(seq_length, subs, serial_num, seq_start,
-                         seq_end, save_it = TRUE,
-                         main_title = "", output_jpegs) {
-  #' @title plot the density over a sequence
-  #' @param seq_length: The length of the sequence
-  #' @param subs: the data frame of subseuences from the analyze_subtelos
-  #' function
-  #' @param serial_num: The serial number of the current sequence, used as the
-  #' name of the file
-  #' @param seq_start: The start of the Telomere.
-  #' @param seq_end: The end " ".
-  #' @param sava.it: save the file if TRE
-  #' @param main_title: ad a title.
-  #' @param w: width of the jpeg
-  #' @param h: height of the jpeg
-  #' @param output_jpegs: the output directory for saving the file
-  subs <- na.omit(subs)
-  # save the densities in a csv file for later use !
-  write_csv(x = subs, file = file.path(output_jpegs, paste0(make_barcode_read_stem(serial_num), ".csv")))
-  sub_title <- paste("read length:", seq_length, ", telomere length:",
-                     abs(seq_start - seq_end) + 1)
-
-  my_ggplot <- ggplot2::ggplot(subs, aes(x = start_index, y = density)) +
-    geom_area(color = NA, fill = "red") +
-    # the 3 last lines are for the telomere-sub-telomre region ....
-    geom_rect(aes(xmin = seq_start, ymin = -0.01, xmax = seq_end, ymax = 0),
-              color = "green", fill = "green")  +
-    geom_hline(yintercept = 0, linetype = "dashed") +
-    geom_hline(yintercept = 1, linetype = "dashed") +
-    labs(title = main_title, x = "Position", y = "Density",
-         subtitle = sub_title)
-
-  if (seq_end < seq_length) {
-    my_ggplot <- my_ggplot +
-      geom_rect(aes(xmin = seq_end, ymin = -0.01, xmax = seq_length, ymax = 0),
-                color = "blue", fill = "blue")
-  }
-
-
-  if (seq_start > 1) {
-    my_ggplot <- my_ggplot +
-      geom_rect(aes(xmin = 1, ymin = -0.01, xmax = seq_start, ymax = 0),
-                color = "blue", fill = "blue")
-  }
-
-
-  # save file if specified
-  if (isTRUE(save_it)) {
-    eps_path <- file.path(output_jpegs, paste0(make_barcode_read_stem(serial_num), "_gg.eps"))
-    #'ggsave currently recognises the extensions eps/ps, tex (pictex), pdf,
-    #'jpeg, tiff, png, bmp, svg and wmf (windows only).
-    suppressMessages(ggsave(plot = my_ggplot, device = "eps",
-                            filename = eps_path))
-  }
-}
 
 
 # get the telomere end index, with more accuracy
@@ -2465,6 +2225,9 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
                      Telomere_length_mismatch_tvr = integer())
   }
 
+  # Retain compact coverage facts even when detailed tracks are skipped.
+  if (summary_only) df$repeat_coverage <- character()
+
   # last update
   telo_density <- get_sub_density(telo_position, analyze_list[[2]][[2]])
   telo_density2 <- get_sub_density(telo_position2, analyze_list2[[2]][[2]])
@@ -2496,6 +2259,10 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
     } # not consid
   }
 
+  if (summary_only && !is.null(analyze_list3)) {
+    export_report_density(current_fastq_name,current_serial,list(tvr_inclusive=analyze_list3),
+      dirname(output_dir),telo_position3,motifs_only=TRUE)
+  }
   if(!summary_only) {
     export_report_density(current_fastq_name, current_serial,
       list(exact=analyze_list, mismatch=analyze_list2, tvr_inclusive=analyze_list3), dirname(output_dir), if (is.null(tvr_patterns)) NULL else telo_position3)
@@ -2616,6 +2383,12 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
               , Telomere_start_mismatch_tvr = telo_start3, Telomere_end_mismatch_tvr = telo_end3,
               Telomere_length_mismatch_tvr = telo_length3)
   }
+  if (summary_only && !is.null(tvr_patterns) && !is.na(telo_start3) && telo_start3 > 0) {
+    coverage <- report_repeat_coverage(current_fastq_name, telo_position3,
+      analyze_list3[[2]]$motif_matches)
+    if (!is.null(coverage)) df$repeat_coverage <- as.character(jsonlite::toJSON(
+      coverage, auto_unbox=TRUE, digits=NA))
+  }
   return(df)
 
 } # End of analyze_read
@@ -2708,7 +2481,7 @@ make_barcode_read_stem <- function(serial_num) {
 search_patterns <- function(sample_telomeres, pattern_list, max_length = 1e5,
      output_dir, serial_start = 1, min_density,  title = "Telomeric repeat density", tvr_patterns, right_edge = FALSE,
      summary_only = FALSE, report_batch_dir = NULL) {
-  if (!summary_only && !is.null(report_batch_dir)) {
+  if (!is.null(report_batch_dir)) {
     sink <- open_report_batch(report_batch_dir)
     previous <- options(nanotel.report_batch=sink)
     on.exit({ lapply(sink$connections, close); options(previous) }, add=TRUE)
@@ -2837,17 +2610,6 @@ list_sequence_files <- function(input_path, format = "fastq") {
   files
 }
 
-create_sample <- function(input_path, format = "fastq") {
-  #' @title: Extract DA sampe from fasta/q files.
-  #' @description By given input files(fastq otr fasta) creates a DNAStringSet
-  #' object.
-  #' @param input_path: path to the file or directory containing files.
-  #' @param format: The file/files format should be either fastq format or
-  #'        fasta format gz extension is supported.
-  sample <- Biostrings::readDNAStringSet(
-    filepath = list_sequence_files(input_path, format), format = format)
-  return(sample)
-}
 
 # update : 2023-02-10 change the function to use parallel::parLapply instead of mclapply for Windows compatibility
 filter_reads <- function(samples, patterns, do_rc = TRUE,
@@ -2956,7 +2718,7 @@ run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta
                                       summary_only = FALSE) {
 
   report_batch_dir <- NULL
-  if (!summary_only) {
+  if (!summary_only || !is.null(tvr_patterns)) {
     report_batch_dir <- tempfile("nanotel-report-batches-")
     dir.create(report_batch_dir)
     on.exit(unlink(report_batch_dir, recursive=TRUE), add=TRUE)
@@ -3047,7 +2809,7 @@ run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta
   }
 
   plan(sequential)
-  if (!summary_only) merge_report_batches(report_batch_dir, output_path, get_barcode_file_prefix(input_path))
+  if (!is.null(report_batch_dir)) merge_report_batches(report_batch_dir, output_path, get_barcode_file_prefix(input_path))
   ans_list <- list(df_summary, dna_length)
   names(ans_list) <- c("df_summary", "all_reads_length_vec")
 
@@ -3251,7 +3013,7 @@ if (isTRUE(opt$analysis)) {
   if (!requireNamespace("jsonlite", quietly = TRUE)) {
     stop("The --analysis JSON export requires the jsonlite package.")
   }
-  if (!isTRUE(opt$summary_only) && (!requireNamespace("plotly", quietly = TRUE) ||
+  if ((!requireNamespace("plotly", quietly = TRUE) ||
       !requireNamespace("htmltools", quietly = TRUE))) {
     stop("The --analysis interactive plots require plotly and htmltools.")
   }
@@ -3416,32 +3178,8 @@ if (isTRUE(opt$analysis)) {
     file.path(opt$save_path, paste0(barcode_name, "_km_statistics.csv")), na = ""
   )
 
-  if (!isTRUE(opt$summary_only)) {
+  {
   # --- Telomere plot (uses pre-final-filter data so x-axis extends to the crossing point) ---
-  df_plot <- df_for_plot
-  telomere_plot_label <- if(global_max_mismatch > 0) {
-    "Telomere Length (mismatch)"
-  } else {
-    "Telomere Length (exact)"
-  }
-
-  p_telo <- ggplot(df_plot, aes(x = read_index)) +
-    geom_line(aes(y = sequence_length,          color = "Read Length")) +
-    geom_line(aes(y = .data[[analysis_columns[["length"]]]], color = telomere_plot_label)) +
-    geom_line(aes(y = TelLenMM_RunningMed,      color = "Running Median Telomere Length")) +
-    scale_color_manual(
-      values = c("Read Length"                    = "#E8735A",
-                 "Telomere Length (mismatch)"     = "#228B22",
-                 "Telomere Length (exact)"        = "#228B22",
-                 "Running Median Telomere Length" = "#4169E1")
-    ) +
-    labs(title = paste("Telomere Analysis -", barcode_name),
-         x     = "Read (sorted by length, longest to shortest)",
-         y     = "Length (bp)",
-         color = NULL) +
-    theme_prism() +
-    theme(legend.position = "bottom")
-
   # Preserve the line plot's pre-edge population; the histogram uses final reads.
   # Selected exact/mismatch columns are shared with filtering/KM, not TVR columns.
   line_data <- make_analysis_plot_data(df_for_plot, analysis_columns, opt$max_edge_distance)

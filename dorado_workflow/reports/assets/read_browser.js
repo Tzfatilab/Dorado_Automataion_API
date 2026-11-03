@@ -1,14 +1,15 @@
 (() => {
+  const summaryOnly=document.body.dataset.summaryOnly==='true';
   const detail = document.createElement('section');
   detail.id = 'read-detail'; detail.hidden = true;
-  document.querySelector('main').appendChild(detail);
+  if(!summaryOnly)document.querySelector('main').appendChild(detail);
   const browsers = new Map();
   function node(tag, text, parent) {
     const el = document.createElement(tag); el.textContent = text;
     if (parent) parent.appendChild(el); return el;
   }
   function kb(value) { return value == null ? 'Unavailable' : (value / 1000).toLocaleString(undefined, {maximumFractionDigits:3}); }
-  function pct(value) { return value == null ? 'Unavailable' : (value > 0 && value < .1 ? '<0.1%' : value.toFixed(1) + '%'); }
+  function pct(value) { return value == null ? 'Unavailable' : (value > 0 && value < .1 ? '<0.1%' : value.toFixed(summaryOnly?2:1) + '%'); }
   function formatCount(value) { return value == null ? 'Unavailable' : value.toLocaleString(); }
   document.querySelectorAll('.read-browser').forEach(section => {
     const page = section.closest('.barcode-page');
@@ -26,7 +27,8 @@
     if (showCompleteness && tableHead && ![...tableHead.children].some(th=>th.textContent==='Status')) {
       const th=node('th','Status');tableHead.insertBefore(th,tableHead.children[1]);
     }
-    const rows = JSON.parse(section.querySelector('.read-data').textContent);
+    const filteredRows = JSON.parse(section.querySelector('.read-data').textContent);
+    let rows=filteredRows;
     // Saved plots may include reads removed by final filtering. Keep these
     // detail-only records out of the filtered read table and its statistics.
     const labelData = section.querySelector('.read-labels');
@@ -76,12 +78,13 @@
       read.read_status = showCompleteness
         ? (read.excluded ? 'Excluded by filtering; ' : '') + read.completeness_label
         : (read.excluded ? 'Excluded by filtering' : 'Included in filtered reads');
+      read.filter_status=read.excluded?'Not in filtered results':'Passed filters';
       read.filter_reason = keys.some(key=>edgeRemoved.has(key)) ? 'Removed by the NanoTel edge filter: read length minus running median telomere length did not exceed the configured edge-distance threshold.' :
         read.excluded ? (read.nanotel_filter_reason && read.nanotel_filter_reason!=='Passed NanoTel filters' ? read.nanotel_filter_reason : 'Outside the displayed filtered population; specific filter reason unavailable.') : 'Included in the filtered read table.';
     });
     browsers.set(page.id, {page, rows:detailRows});
     section.querySelector('.read-total').textContent = rows ? `(${rows.length.toLocaleString()} telomeric reads)` : '';
-    if (rows === null) {
+    if (rows === null && !summaryOnly) {
       section.querySelector('.read-status').textContent = 'Post-filtered read records were not exported.';
       section.querySelectorAll('input,select').forEach(el => el.disabled = true); return;
     }
@@ -93,10 +96,20 @@
       const label=node('label','Search ',null),input=node('input','',label);
       input.className='read-search';input.type='search';input.placeholder='Search reads...';controls.prepend(label);
     }
+    let populationSelect=null;
+    if(summaryOnly){
+      const label=node('label','Population ',controls);populationSelect=node('select','',label);
+      [['filtered','After filtering'],['before','Before filtering']].forEach(([v,t])=>{const o=node('option',t,populationSelect);o.value=v;});
+      const before=[...(detailRows||[])].sort((a,b)=>a.label.localeCompare(b.label,undefined,{numeric:true}));
+      rows=filteredRows||[];
+      populationSelect.onchange=()=>{rows=populationSelect.value==='before'?before:filteredRows||[];columnFilters.clear();current=1;render();};
+      const reset=node('button','Reset filters and sorting',controls);reset.type='button';reset.onclick=()=>{columnFilters.clear();sort.value='original';search.value='';current=1;render();};
+    }
     const search=section.querySelector('.read-search');
     const limit=section.querySelector('.read-limit');
+    if(summaryOnly)limit.value='25';
     const sort={value:'original'},direction={value:'desc'};
-    const originalOrder=new Map(rows.map((r,index)=>[r,index]));
+    const originalOrder=new Map((summaryOnly?detailRows:rows).map((r,index)=>[r,index]));
     const columnFilters=new Map();
     const noTvr = page.dataset.tvrEnabled === 'false';
     const withMismatch = page.dataset.mismatchEnabled === 'true';
@@ -112,6 +125,11 @@
           lengthColumn('length','Total read length (kb)'),column('canonical','Canonical %',pct),
           column('tvr','TVR %',pct),column('blocks','# TVR blocks',formatCount)]),
       column('chromosomes','Chromosome',value=>value.join(', ')||'Unavailable',value=>value.join(', ')||'Unavailable')];
+    if(summaryOnly)columns.splice(1,0,column('filter_status','Filter status'));
+    if(summaryOnly&&!noTvr){
+      columns.splice(columns.length-1,0,lengthColumn('exact_length','Exact telomere length (kb)'),densityColumn('exact_density','Exact repeat density (%)'),
+        ...(withMismatch?[lengthColumn('mismatch_length','Telomere length (1 mismatch, kb)'),densityColumn('mismatch_density','Repeat density (1 mismatch, %)')]:[]));
+    }
     tableHead.replaceChildren(...columns.map(c=>node('th',c.title)));
     if(noTvr) section.querySelector(':scope > p.note').textContent =
       'Post-filtered telomeric reads. Exact and mismatch measurements use their respective exported canonical telomere calls. Repeat densities are percentages within each called interval. No TVR patterns were selected.';
@@ -157,7 +175,13 @@
     });
     let current = 1;
     function render() {
-      const filtered = rows.filter(r => (r.label+' '+r.header).toLowerCase().includes(search.value.toLowerCase()) && [...columnFilters].every(([index,values])=>values.has(columnValues(r)[index])));
+      if(summaryOnly){
+        section.querySelector('.read-total').textContent='('+rows.length.toLocaleString()+' reads)';
+        section.querySelector(':scope > p.note').textContent=populationSelect?.value==='before'?
+          'Before filtering: imported NanoTel summary reads, not necessarily all input reads. Overview statistics and plots retain their own stated populations.':
+          'Post-filtered reads. Table search and filters do not change Key Statistics or overview plots.';
+      }
+      const filtered = rows.filter(r => (summaryOnly?columnValues(r).join(' '):r.label+' '+r.header).toLowerCase().includes(search.value.toLowerCase()) && [...columnFilters].every(([index,values])=>values.has(columnValues(r)[index])));
       direction.disabled = sort.value === 'original';
       section.querySelectorAll('.reads-table thead th').forEach((th,index)=>{
         th.setAttribute('aria-sort',sort.value===columnKeys[index]?(direction.value==='asc'?'ascending':'descending'):'none');
@@ -183,7 +207,7 @@
       filtered.slice((current-1)*size,current*size).forEach(r => {
         const tr = node('tr','',body), td = node('td','',tr);
         const href = '#/barcode/' + page.id + '/read/' + r.id;
-        if (r.id) { const a = node('a',r.label,td); a.href = href; a.title = r.header; }
+        if (r.id && !summaryOnly) { const a = node('a',r.label,td); a.href = href; a.title = r.header; }
         else node('span',r.label,td);
         columnValues(r).slice(1).forEach(text => node('td',text,tr));
 
@@ -203,11 +227,21 @@
     }
     search.addEventListener('input',()=>{current=1;render();});
     limit.addEventListener('change',()=>{current=1;render();});
+    if(summaryOnly)browsers.get(page.id).findRead=id=>{
+      const target=detailRows.find(r=>r.id===id);if(!target)return;
+      populationSelect.value=filteredRows?.some(r=>r.id===id)?'filtered':'before';populationSelect.onchange();
+      search.value='';columnFilters.clear();sort.value='original';
+      const position=rows.findIndex(r=>r.id===id);current=Math.floor(position/Number(limit.value))+1;render();
+      const tr=section.querySelector('tbody').rows[position%Number(limit.value)];
+      if(tr){tr.style.background='#fff2b3';tr.tabIndex=-1;tr.focus({preventScroll:true});tr.scrollIntoView({behavior:'smooth',block:'center'});}
+    };
     render();
   });
+  window.findSummaryRead=(barcode,id)=>browsers.get(barcode)?.findRead?.(id);
   window.reportReadRows = id => browsers.get(id)?.rows || [];
   // One reusable detail shell avoids generating thousands of hidden pages.
   window.showReadDetail = hash => {
+    if(summaryOnly)return false;
     detail.hidden=true;
     const match = /^#\/barcode\/([^/]+)\/read\/([^/]+)$/.exec(hash);
     if(!match)return false;

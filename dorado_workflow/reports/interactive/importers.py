@@ -29,6 +29,7 @@ class ResultImporter:
         if not self.root.is_dir():
             raise ValueError("Results directory does not exist")
         self.sources = {}
+        self._source_digests = {}
         self.warnings = []
         self.metadata = {}
         self.saved_statistics = {}
@@ -72,7 +73,10 @@ class ResultImporter:
         label = path.relative_to(self.root).as_posix() if path.is_relative_to(self.root) else path.name
         key = safe_id("s", label, sheet or "")
         if key not in self.sources:
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            # Workbook sheets have distinct provenance IDs but share file bytes.
+            if path not in self._source_digests:
+                self._source_digests[path] = hashlib.sha256(path.read_bytes()).hexdigest()
+            digest = self._source_digests[path]
             self.sources[key] = Source(key, label, digest, fmt, sheet)
         return self.sources[key]
 
@@ -141,7 +145,7 @@ class ResultImporter:
                 if retained_sources and not sheet.title.startswith('_source_'):
                     continue
                 name = sheet.title.removeprefix('_source_')
-                if name not in {"NanoTel Statistics", "NanoTel analysis facts", "KM by barcode", "KM run statistics", "Run metadata", "Barcode source counts", "Read mappings"} and not re.fullmatch(r"(?:filtered_)?barcode\d+", name):
+                if name not in {"NanoTel Statistics", "NanoTel analysis facts", "KM by barcode", "KM run statistics", "Run metadata", "Barcode source counts", "Read mappings", "Barcode figures", "Read motifs"} and not re.fullmatch(r"(?:filtered_)?barcode\d+", name):
                     continue
                 source = self.source(path, "xlsx", sheet.title)
                 iterator = iter(sheet.iter_rows(values_only=True))
@@ -431,6 +435,8 @@ class ResultImporter:
             self.mapping(b)
             self.density_details(b)
             self.motif_details(b)
+            from .supplementary import restore_summary_sources
+            restore_summary_sources(self,b)
             from .coverage import import_coverage
             import_coverage(self, b)
             import_statistics(self, b, number)
@@ -574,6 +580,8 @@ class ResultImporter:
         if serial.status == A.AVAILABLE and (serial.value < 1 or serial.value != int(serial.value)):
             serial = unavailable("Invalid NanoTel read number", A.INVALID)
         metrics["read_number"] = serial
+        if row.get("repeat_coverage") not in (None, "", "NA", "Unavailable"):
+            metrics["_repeat_coverage_export"] = Fact(A.AVAILABLE, row["repeat_coverage"], evidence=[ev])
         calls = {}
         warnings = []
         for method, suffix in (("exact", ""), ("mismatch", "_mismatch"), ("tvr_inclusive", "_mismatch_tvr")):
@@ -663,6 +671,15 @@ class ResultImporter:
                             fields=['analyzed_read_reverse_complemented'])]
             except (OSError, ValueError, TypeError, AttributeError):
                 barcode.warnings.append('Analyzed-read orientation metadata could not be read')
+        if not analysis_paths:
+            # Summary-only cleanup retains orientation in its source worksheets.
+            # Use the explicit boolean; never guess from the alignment strand.
+            table = self.saved_statistics.get('NanoTel analysis facts')
+            orientation = [(r,e) for r,e in table[1] if r.get('Barcode')==barcode.label
+                and r.get('Source field')=='analyzed_read_reverse_complemented'] if table else []
+            if len(orientation)==1 and type(orientation[0][0].get('Value')) is bool:
+                reversed_read=orientation[0][0]['Value']
+                orientation_evidence=[orientation[0][1]]
         for path in paths:
             _, rows, source = self.csv_table(path)
             barcode.evidence.append(Evidence(source.id))

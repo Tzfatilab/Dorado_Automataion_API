@@ -12,6 +12,7 @@ from openpyxl.utils import get_column_letter
 from ..reads.browser import read_rows
 from ..shared.short_telomeres import short_cutoff_bp
 from ..shared.organism import show_km
+from ..shared.barcode_statistics import barcode_key_statistics
 
 MISSING = 'Unavailable'
 EMPTY = 'Not applicable'
@@ -25,34 +26,41 @@ def numeric(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0
 
 
-def build_dashboard_workbook(run, results_root=None, workbook=None):
+def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=None):
     """Build the shared visible layout, optionally retaining hidden source sheets."""
     wb = workbook if workbook is not None else Workbook()
     if workbook is None:
         wb.remove(wb.active)
 
+    next_rows = {}
+
     def sheet(name, headers):
         ws = wb.create_sheet(name)
         ws.append(headers)
         ws.freeze_panes = 'B2'
+        next_rows[ws] = 2
         return ws
 
     def append(ws, row):
         # JSON facts can exceed Excel's per-cell limit. Preserve them in ordered
         # chunks rather than silently truncating scientific values.
+        row_number = next_rows[ws]
         ws.append(row)
-        for cell in ws[ws.max_row]:
+        next_rows[ws] += 1
+        for column in range(1, len(row) + 1):
+            cell = ws.cell(row_number, column)
             if isinstance(cell.value, str):
                 if len(cell.value) > 32767:
                     raise ValueError('Excel cell limit exceeded; use the chunked source facts sheet')
                 cell.data_type = 's'
+        return row_number
 
     summary = sheet('Barcode summary', ['Barcode ID', 'Total barcode reads',
         'Post-filtered telomeric reads', 'Median length (kb)', 'Reads with TVRs',
         'TVR motifs', 'Chromosomes', 'Short telomeres (%)'])
     from ..overview.comparisons import comparison_data
     from ..reads.density import tvr_enabled, mismatch_enabled
-    comparisons = comparison_data(run)
+    comparisons = comparison_data(run) if comparisons is None else comparisons
     compositions = {row['barcode']: row for row in comparisons['composition']}
     tvr_requested = tvr_enabled(run.settings)
     mismatch_requested = mismatch_enabled(run.settings)
@@ -91,15 +99,13 @@ def build_dashboard_workbook(run, results_root=None, workbook=None):
         cutoffs.add(cutoff)
         motif = compositions.get(barcode.label)
         no_reads = source_count == 0
-        with_tvr = ('Not requested' if tvr_requested is False else 0 if no_reads else
-                    motif['with_tvr'] if motif else MISSING)
-        motif_count = ('Not requested' if tvr_requested is False else 0 if no_reads else
-                       len(motif['motifs']) if motif else MISSING)
-        chromosomes = {c['chromosome'] for c in comparisons['cells'] if c['barcode'] == barcode.label}
-        median = value(barcode.metrics.get('median_telomere_length'))
+        stats = barcode_key_statistics(barcode, run.settings, comparisons['cells'], motif)
+        with_tvr = stats['reads_with_tvr'] if stats['reads_with_tvr'] is not None else MISSING
+        motif_count = stats['tvr_motifs'] if stats['tvr_motifs'] is not None else MISSING
+        median = stats['median_length_bp']
         append(summary, [barcode.label, value(barcode.metrics.get('total_reads')), source_count,
             EMPTY if no_reads else median/1000 if numeric(median) else MISSING,
-            with_tvr, motif_count, len(chromosomes) if chromosomes else 0 if no_reads else MISSING,
+            with_tvr, motif_count, stats['chromosomes'] if stats['chromosomes'] is not None else MISSING,
             100*short/len(lengths) if numeric(short) and lengths else EMPTY if lengths == [] else MISSING])
         def kb(v):
             return v/1000 if numeric(v) else MISSING
@@ -107,28 +113,32 @@ def build_dashboard_workbook(run, results_root=None, workbook=None):
             return v/100 if numeric(v) else MISSING
         columns = [('Read number', lambda r:r['label'], None), ('Read ID', lambda r:r['header'], None),
             ('Exact telomere length (kb)', lambda r:kb(r['exact_length']), '0.000')]
+        columns += [('Exact repeat density (%)', lambda r:r['exact_density'], '0.00%')]
+        if mismatch_requested is True:
+            columns += [('Telomere length (1 mismatch, kb)',lambda r:kb(r['mismatch_length']),'0.000'),
+                        ('Repeat density (1 mismatch, %)',lambda r:r['mismatch_density'],'0.00%')]
         if tvr_requested is False:
-            columns += [
-                ('Telomere length (1 mismatch, kb)' if mismatch_requested is True else 'Filtered telomere length (kb)',
-                 lambda r:kb(r['mismatch_length'] if mismatch_requested is True else r['telomere']), '0.000'),
-                ('Exact repeat density (%)', lambda r:r['exact_density'], '0.0%')]
-            columns += ([('Repeat density (1 mismatch, %)',lambda r:r['mismatch_density'],'0.0%')]
-                        if mismatch_requested is True else [('TVR analysis',lambda r:'Not requested',None)])
+            if mismatch_requested is not True:
+                columns += [('Filtered telomere length (kb)',lambda r:kb(r['telomere']),'0.000'),
+                            ('TVR analysis',lambda r:'Not requested',None)]
             columns += [('Read length (bp)',lambda r:r['length'],'#,##0')]
         else:
             columns += [('Telomere length with TVRs (kb)',lambda r:kb(r['tvr_length']),'0.000'),
-                ('TVR content (%)',lambda r:pct(r['tvr']),'0.0%'),
-                ('Canonical content (%)',lambda r:pct(r['canonical']),'0.0%'),
+                ('TVR content (%)',lambda r:pct(r['tvr']),'0.00%'),
+                ('Canonical content (%)',lambda r:pct(r['canonical']),'0.00%'),
                 ('TVR blocks',lambda r:r['blocks'],'#,##0')]
         columns += [('Mapping',lambda r:', '.join(r['chromosomes']) or MISSING,None)]
+        retained_ids = {record['read_id'] for record in barcode.metrics['filtered_length_records'].value} if filtered is not None else set()
+        before_filter = list(filtered or []) + read_rows(barcode, include_unfiltered=True, exclude_ids=retained_ids)
         for name, records in [(barcode.label,filtered),
-                              (barcode.label+'_before_filter',read_rows(barcode,include_unfiltered=True))]:
+                              (barcode.label+'_before_filter',before_filter)]:
             barcode_sheet = sheet(name,[c[0] for c in columns])
             for record in records or []:
-                append(barcode_sheet,[c[1](record) if c[1](record) is not None else MISSING for c in columns])
+                values = [column[1](record) for column in columns]
+                row_number = append(barcode_sheet, [v if v is not None else MISSING for v in values])
                 for i,c in enumerate(columns,1):
-                    if c[2] and numeric(barcode_sheet.cell(barcode_sheet.max_row,i).value):
-                        barcode_sheet.cell(barcode_sheet.max_row,i).number_format=c[2]
+                    if c[2] and numeric(barcode_sheet.cell(row_number,i).value):
+                        barcode_sheet.cell(row_number,i).number_format=c[2]
         if km is not None:
             reportable = value(barcode.metrics.get('km_status')) == 'reportable'
             append(km, [barcode.label, *[value(barcode.metrics.get(k)) if reportable or k not in
@@ -181,10 +191,10 @@ def build_dashboard_workbook(run, results_root=None, workbook=None):
     return wb
 
 
-def write_dashboard_workbook(run, destination, results_root=None):
+def write_dashboard_workbook(run, destination, results_root=None, comparisons=None):
     """Save imported facts atomically without refitting KM or scientific filters."""
     destination = Path(destination)
-    wb = build_dashboard_workbook(run, results_root)
+    wb = build_dashboard_workbook(run, results_root, comparisons=comparisons)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix('.tmp.xlsx')
     try:

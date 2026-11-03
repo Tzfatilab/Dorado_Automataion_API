@@ -5,8 +5,9 @@ from .short_telomeres import short_cutoff_bp
 from ..overview.comparisons import comparison_data
 
 
-def exclusion_payload(run):
-    composition = {row['barcode']: row for row in comparison_data(run)['composition']}
+def exclusion_payload(run, comparisons=None):
+    comparisons = comparison_data(run) if comparisons is None else comparisons
+    composition = {row['barcode']: row for row in comparisons['composition']}
     rows = []
     for barcode in run.barcodes:
         def value(key):
@@ -34,6 +35,6 @@ def exclusion_payload(run):
     return rows
 
 
-def exclusion_data_html(run):
-    payload = json.dumps(exclusion_payload(run), ensure_ascii=True, allow_nan=False).replace('<', '\\u003c')
+def exclusion_data_html(run, comparisons=None):
+    payload = json.dumps(exclusion_payload(run, comparisons=comparisons), ensure_ascii=True, allow_nan=False).replace('<', '\\u003c')
     return '<script type="application/json" id="barcode-exclusion-data">' + payload + '</script>'

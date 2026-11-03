@@ -72,6 +72,7 @@ dorado_workflow = [
     "reports/assets/dashboard.css",
     "reports/assets/read_density.js",
     "reports/assets/read_browser.js",
+    "reports/assets/barcode_router.js",
     "reports/assets/read_repeats.js",
     "reports/assets/graph_export.js",
     "reports/assets/table_export.js",

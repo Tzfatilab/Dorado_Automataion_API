@@ -14,13 +14,14 @@ scientific analysis or infers missing chromosome annotations.
 import argparse
 from html import escape
 from pathlib import Path
+from ..storage.layout import atomic_text
 import json
 from dataclasses import asdict
 from dorado_workflow.reports.interactive.importers import import_results
 from dorado_workflow.reports.interactive.dashboard import dashboard_data
-from dorado_workflow.reports.overview.comparisons import comparison_figures
+from dorado_workflow.reports.overview.comparisons import comparison_figures, comparison_data
 from dorado_workflow.reports.shared.availability import availability_html
-from dorado_workflow.reports.barcode.dashboard import barcode_views, ROUTER
+from dorado_workflow.reports.barcode.dashboard import barcode_views, barcode_summary_section, ROUTER
 from dorado_workflow.reports.barcode.length_plots import histogram_sections, telomere_plot_sections
 
 TITLE = "Telomere Analysis Summary - All Barcodes"
@@ -37,7 +38,7 @@ ICONS = [
 ]
 
 
-def render_screen(run, results_root=None):
+def render_screen(run, results_root=None, summary_only=False, comparisons=None):
     """Render an imported Run model without writing files or changing its data.
 
     Aggregates come from dashboard_data(), which preserves population and
@@ -49,7 +50,7 @@ def render_screen(run, results_root=None):
     import plotly.graph_objects as go
     from plotly.offline import get_plotlyjs
     # Reuse the shared aggregate layer; do not average barcode medians here.
-    data = dashboard_data(run)
+    data = dashboard_data(run, include_details=False)
     metrics = data["metrics"]
     nanotel_population = any(b.metrics.get("amount_of_telomeres") and
         b.metrics["amount_of_telomeres"].population == "NanoTel final-filtered reads" for b in run.barcodes)
@@ -58,6 +59,11 @@ def render_screen(run, results_root=None):
     # must never substitute for missing chromosome annotations.
     if "detected_chromosomes" in run.metrics:
         metrics["detected_chromosomes"] = asdict(run.metrics["detected_chromosomes"])
+    comparisons = comparison_data(run) if comparisons is None else comparisons
+    chromosome_cells=comparisons['cells']
+    chromosomes={cell['chromosome'] for cell in chromosome_cells}
+    if chromosomes:
+        metrics['detected_chromosomes']={'status':'available','value':len(chromosomes)}
     cards = []
     # Card order mirrors the approved design; notes identify each population.
     specs = [("barcode_count", "Total barcodes", ""),
@@ -134,7 +140,7 @@ def render_screen(run, results_root=None):
     # Both panels share typography, dimensions and offline Plotly settings.
     panels = []
     for index, title, fig, note in sorted([(3, "Telomeric Reads by Barcode", bars, "Post-filtered telomeric reads."),
-                                    (2, "Telomere Length by Barcode", boxes, "Post-filtered reads. Choose Linear or Logarithmic scale; zero lengths cannot appear on a logarithmic axis. A single read appears as a point.")] + comparison_figures(run), key=lambda panel: panel[0]):
+                                    (2, "Telomere Length by Barcode", boxes, "Post-filtered reads. Choose Linear or Logarithmic scale; zero lengths cannot appear on a logarithmic axis. A single read appears as a point.")] + comparison_figures(run, data=comparisons), key=lambda panel: panel[0]):
         if fig is None:
             panels.append(note)
             continue
@@ -177,18 +183,23 @@ def render_screen(run, results_root=None):
             chart = '<div style="max-width:1400px;margin:0 auto">' + chart + '</div>'
         panels.append(f'<section{width_style}><h2><span class="number">{index}</span>{title}</h2>{chart}<p class="note">{note}</p></section>')
     from ..shared.barcode_exclusion import exclusion_data_html
-    selection_data = exclusion_data_html(run)
+    selection_data = exclusion_data_html(run, comparisons=comparisons)
     # Resolve beside this module, independent of the process working directory.
     histograms = histogram_sections(run, results_root)
     read_plots = telomere_plot_sections(run, results_root)
     # Sections 2 and 3 share a row on desktop and stack on smaller screens.
     barcode_plots = {b.id: '<div class="charts">' + histograms[b.id] + read_plots[b.id] + '</div>'
                      for b in run.barcodes}
-    navigation, barcode_pages = barcode_views(run, ICONS, barcode_plots, results_root=results_root)
+    navigation, barcode_pages = barcode_views(run, ICONS, barcode_plots, results_root=results_root,summary_only=summary_only,comparisons=comparisons)
     css = (Path(__file__).parents[1] / "assets" / "dashboard.css").read_text(encoding="utf-8")
+    barcode_summary = barcode_summary_section(run, comparisons) if summary_only else ''
+    workbook_link = '<a class="summary-workbook-link" href="nanotel_summary.xlsx">Open Excel workbook</a>' if summary_only else ''
+    body_attributes = ' data-summary-only="true"' if summary_only else ''
+    if summary_only:
+        css += 'body[data-summary-only] .summary-workbook-link{color:white}body[data-summary-only] .reads-table tr:focus{outline:2px solid #d59a15}'
     # Combine the complete page in memory. Cards appear before the two panels;
     # CSS controls wrapping while figure scripts attach hover/zoom behavior.
-    html = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{TITLE}</title><style>{css}</style><script>{get_plotlyjs()}</script></head><body><header><h1>{TITLE}</h1><span>Project overview &nbsp; | &nbsp; NanoTel summary</span></header><main><div id="run-overview">{navigation}<section><h2><span class="number">1</span>Key Statistics (All Barcodes)</h2><div class="stats">{"".join(cards)}</div></section><div class="charts">{"".join(panels)}</div>{availability_html(run)}{selection_data}</div>{barcode_pages}<section id="unknown-barcode" hidden><h2>Barcode or read not found</h2><a href="#/">Back to All Barcodes</a></section></main>{ROUTER}</body></html>'
+    html = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{TITLE}</title><style>{css}</style><script>{get_plotlyjs()}</script></head><body{body_attributes}><header>{workbook_link}<h1>{TITLE}</h1><span>Project overview &nbsp; | &nbsp; NanoTel summary</span></header><main><div id="run-overview">{navigation}<section><h2><span class="number">1</span>Key Statistics (All Barcodes)</h2><div class="stats">{"".join(cards)}</div></section><div class="charts">{"".join(panels)}</div>{availability_html(run)}{barcode_summary}{selection_data}</div>{barcode_pages}<section id="unknown-barcode" hidden><h2>Barcode or read not found</h2><a href="#/">Back to All Barcodes</a></section></main>{ROUTER}</body></html>'
     export_script = (Path(__file__).parents[1] / 'assets' / 'graph_export.js').read_text(encoding='utf-8')
     table_export_script = (Path(__file__).parents[1] / 'assets' / 'table_export.js').read_text(encoding='utf-8')
     spacing_script = (Path(__file__).parents[1] / 'assets' / 'chromosome_spacing.js').read_text(encoding='utf-8')
@@ -223,23 +234,21 @@ def generate_report(results, output):
     destination = Path(output)
     if destination.exists():
         raise FileExistsError(f"Output already exists; choose a new report folder: {destination}")
-    print("Importing NanoTel results...", flush=True)
-    run = import_results(results)
-    # Finish importing and rendering before creating the output folder, so
-    # calculation/import errors do not leave an empty report destination.
-    print(f"Rendering five sections for {len(run.barcodes)} barcodes...", flush=True)
     from dorado_workflow.reports.storage.archive import available_details
-    with available_details(results):
-        page = render_screen(run, results_root=results)
-    destination = Path(output)
-    # Refuse overwrites, including an existing empty destination directory.
-    destination.mkdir(parents=True, exist_ok=False)
-    (destination / "index.html").write_text(page, encoding="utf-8")
-    # Preserve unrounded imported facts and source evidence alongside the view.
-    (destination / "source-data.json").write_text(json.dumps(run.to_dict(), ensure_ascii=True, indent=2), encoding="utf-8")
     from dorado_workflow.reports.exports.dashboard_workbook import write_dashboard_workbook
+    # Keep one extraction alive for import, HTML and workbook. Reopening the
+    # archive separately for each output repeats decompression and hashing.
     with available_details(results):
-        write_dashboard_workbook(run, destination / "nanotel_results.xlsx", results)
+        print("Importing NanoTel results...", flush=True)
+        run = import_results(results)
+        comparisons = comparison_data(run)
+        print(f"Rendering five sections for {len(run.barcodes)} barcodes...", flush=True)
+        page = render_screen(run, results_root=results, comparisons=comparisons)
+        # Import/render errors still occur before creating the output directory.
+        destination.mkdir(parents=True, exist_ok=False)
+        (destination / "index.html").write_text(page, encoding="utf-8")
+        (destination / "source-data.json").write_text(json.dumps(run.to_dict(), ensure_ascii=True, indent=2), encoding="utf-8")
+        write_dashboard_workbook(run, destination / "nanotel_results.xlsx", results, comparisons=comparisons)
     return destination / "index.html"
 
 
@@ -255,10 +264,11 @@ def generate_run_report(results, nanotel_directory):
     # Import and embed saved plots while the archive contents are available.
     with available_details(results):
         run = import_results(results)
-        page = render_screen(run, results_root=results)
+        comparisons = comparison_data(run)
+        page = render_screen(run, results_root=results, comparisons=comparisons)
         destination = write_run_reports(nanotel_directory, run, page)
         from dorado_workflow.reports.exports.dashboard_workbook import write_dashboard_workbook
-        write_dashboard_workbook(run, Path(nanotel_directory) / "nanotel_results.xlsx", results)
+        write_dashboard_workbook(run, Path(nanotel_directory) / "nanotel_results.xlsx", results, comparisons=comparisons)
     # Archive only after a complete dashboard has been saved successfully.
     for barcode in Path(nanotel_directory).glob('barcode*'):
         if barcode.is_dir():
@@ -278,6 +288,16 @@ def main():
     # Print an absolute path for convenient opening from any working directory.
     # Exceptions intentionally reach the CLI caller with their original context.
     print(generate_report(args.results, args.output).resolve())
+
+
+def render_summary(run, results_root=None, comparisons=None):
+    return render_screen(run, results_root=results_root, summary_only=True, comparisons=comparisons)
+
+
+def write_summary_dashboard(run, destination, comparisons=None):
+    destination = Path(destination)
+    atomic_text(destination, render_summary(run, results_root=destination.parent, comparisons=comparisons))
+    return destination
 
 
 if __name__ == "__main__":

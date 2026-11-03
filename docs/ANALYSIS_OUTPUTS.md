@@ -1,11 +1,12 @@
 # NanoTel.R --analysis outputs
 
 These outputs belong to NanoTel.R's optional `--analysis` block, separate from
-`r_analysis`. Existing TXT, CSV and PNG outputs remain available. The application
-enables `--analysis` for full NanoTel runs. Summary-only runs remain unchanged
-because their temporary NanoTel tree is deleted after Excel creation. KM results
-appear in a separate GUI log table; KM-input censoring remains silent.
-See [GUI integration handoff](GUI_ANALYSIS_INTEGRATION.md).
+`r_analysis`. The application enables it for both Full and Summary runs.
+Summary retains the numeric tables, original barcode figures and motif evidence
+in `nanotel_summary.xlsx` before removing its temporary NanoTel workspace.
+Both modes use the same dashboard renderer; Summary omits individual read
+screens, per-read images, FASTA and density arrays. See [Summary only](summary-only.md).
+KM results appear in a separate GUI log table; KM-input censoring remains silent.
 
 ## Barcode files
 

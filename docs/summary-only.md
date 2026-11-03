@@ -1,49 +1,47 @@
 # Summary only
 
-Summary only changes output detail, not the telomere search, mismatch/TVR settings,
-filters, or KM assessment/reporting policy.
+Summary only changes saved detail, not telomere searches, mismatch/TVR settings,
+filtering, mapping or KM assessment/reporting policy.
 
-## Saved automatically
+## Shared dashboard
 
-- `nanotel_summary.xlsx` in the configured post-analysis results directory: combined barcode statistics, raw NanoTel read
-  summaries, R post-filter read tables, NanoTel final-filter read tables, numeric
-  analysis facts, and available KM barcode/run statistics.
-- KM retains its source status, confidence interval and pre-edge input population;
-  it is not substituted for the ordinary post-filter median. Withheld KM estimates
-  remain unavailable.
-- Execution logs, configuration, and outputs of separately selected mapping or
-  modification stages remain available in their normal locations.
+`dashboard_summary.html` is saved beside `nanotel_summary.xlsx`. Full and Summary
+use the same overview, barcode pages, graphs, styling, table controls and exports.
+Summary has no individual read screen: clicking a read point opens its barcode
+and locates/highlights the corresponding row in the read table.
 
-## Compact dashboard
+Each barcode has Key Statistics, the original NanoTel length distribution and
+per-read length plot, TVR patterns/positions when selected and available,
+chromosome comparison, and searchable/sortable before/after read tables.
+Overview selection can exclude barcodes from pooled statistics and graphs while
+keeping their individual results accessible.
 
-`dashboard_summary.html` is saved next to the workbook before intermediate files
-are removed. It includes key statistics, barcode length/count/short-telomere
-comparisons, non-human KM/completeness tables, and searchable, paginated barcode
-read tables before/after filtering. It opens offline and links to the workbook.
-There are no individual read pages or per-read track plots. The read columns
-follow the recorded TVR/mismatch mode, including TVR content, canonical content
-and block counts when those measurements were exported. The violin uses the same
-1 kb bandwidth as the full dashboard; single-value groups remain visible as points.
+## Saved sources
 
-The visible workbook layout matches the full export: barcode-level Key Statistics
-in `Barcode summary`, individual read Key Statistics in the barcode worksheets,
-and separate before-filter and KM sheets. Hidden `_source_` worksheets retain the
-original numeric source tables, settings, input counts and mapping facts so that
-re-importing the workbook after cleanup does not lose those measurements. CSV/JSON
-files, when present, remain authoritative over workbook fallbacks.
+The workbook contains barcode-level Key Statistics, per-barcode read tables,
+separate before-filter sheets, and relevant assessed KM statistics. Hidden
+`_source_` worksheets retain raw and filtered tables, settings, input counts,
+mapping facts, original barcode Plotly specifications, and motif evidence.
+Long figure/motif JSON is retained in ordered chunks, not truncated to Excel's
+cell limit. Native CSV/JSON sources, when present, take precedence on re-import.
 
-## Skipped
-- NanoTel per-read FASTA, read plots, density/motif track exports and read-ID lists.
-- Standalone NanoTel aggregate analysis plots (HTML, images and Plotly JSON).
-  Summary comparison charts are rendered directly inside the compact dashboard.
-- Detailed filter-audit exports and the extra R pipeline text report.
+The NanoTel workspace is removed only after the workbook and dashboard save
+successfully. Analysis failures retain the workspace for recovery. Outputs of
+separately selected mapping/modification stages and execution logs are retained.
 
-Numeric CSV/JSON/TXT files needed during analysis are temporary. The NanoTel
-workspace is removed only after the workbook is successfully saved. A failure
-keeps the workspace for diagnosis/recovery. No rerun of the detector is needed
-for the workbook, but summary-only results cannot reconstruct detailed tracks;
-run full mode if those are needed.
+## Skipped outputs
+
+- Individual read screens and read images.
+- Per-read FASTA and density arrays.
+- Detailed filter-audit files and the extra R pipeline text report.
+
+Barcode figures and motif evidence are retained because they supply the shared
+barcode graphs. They are not replaced by a second Summary chart implementation.
+Older Summary workbooks can lack original figure specifications or motif data.
+Such plots remain explicitly unavailable, or disclose their numeric fallback;
+missing original running medians are never inferred from another population.
 
 Before-filter tables contain imported NanoTel summary reads, not necessarily all
-input/basecalled reads. R post-filter, NanoTel final-filter and pre-edge KM are
-separate populations and are labelled separately in the workbook.
+input reads. R post-analysis, NanoTel final-filter and pre-edge KM populations
+remain distinct and explicitly labelled. No KM fits or filtering are repeated
+when rebuilding the dashboard.

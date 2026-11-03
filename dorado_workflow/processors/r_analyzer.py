@@ -296,13 +296,15 @@ class RAnalyzer(ProcessorBase):
         from dorado_workflow.reports.interactive.importers import import_results
         # Import current CSV/JSON sources before writing or cleaning the workbook.
         run = import_results(self.context.path_manager.get_results_dir_path()) if cleanup_sources else None
-        workbook_path = writer.write(run=run)
+        from dorado_workflow.reports.overview.comparisons import comparison_data
+        comparisons = comparison_data(run) if run is not None else None
+        workbook_path = writer.write(run=run, comparisons=comparisons)
         if cleanup_sources:
             # Render while numeric CSV/JSON sources still exist. No read-track
             # generation is requested; cleanup follows both successful saves.
-            from dorado_workflow.reports.overview.summary import write_summary_dashboard
+            from dorado_workflow.reports.overview.dashboard import write_summary_dashboard
             dashboard_path = write_summary_dashboard(
-                run, self.r_analysis_dir / "dashboard_summary.html"
+                run, self.r_analysis_dir / "dashboard_summary.html", comparisons=comparisons
             )
             self.context.logger.info(f"Summary dashboard saved to: {dashboard_path}")
             self._cleanup_summary_workspace()

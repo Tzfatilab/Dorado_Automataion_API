@@ -11,8 +11,12 @@ from pathlib import Path
 from dorado_workflow.reports.reads.density import read_track_data, READ_TRACK_SCRIPT
 
 
-def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_tracks=False):
-    """Join exported length records to reads without changing their population."""
+def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_tracks=False, exclude_ids=()):
+    """Join exported records without changing the scientific population.
+
+    Callers combining already formatted filtered rows with additional records
+    can skip those IDs instead of rebuilding their motif and mapping summaries.
+    """
     population = barcode.metrics.get('filtered_length_records')
     available = population and population.status == 'available'
     if not available and not include_unfiltered:
@@ -24,7 +28,10 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
                        for read in barcode.reads if read.id not in retained)
     reads = {read.id: read for read in barcode.reads}
     rows = []
+    already_formatted = set(exclude_ids)
     for record in records:
+        if record.get("read_id") in already_formatted:
+            continue
         read = reads.get(record.get('read_id'))
         length = read.metrics.get('read_length') if read else None
         serial = read.metrics.get('read_number') if read else None
@@ -130,22 +137,23 @@ def saved_filter_reasons(folder):
     return reasons
 
 
-def reads_section(barcode, results_root=None, show_completeness=True):
+def reads_section(barcode, results_root=None, show_completeness=True, summary_only=False):
     """Embed JSON safely; the browser inserts all source text with textContent."""
     folder = None
     if results_root is not None:
         root = Path(results_root)
         candidates = [root / 'nanotel' / barcode.label, root / barcode.label, root]
         folder = next((p for p in candidates if p.name == barcode.label and p.is_dir()), None)
-    rows = read_rows(barcode, plot_folder=folder, include_tracks=True)
+    rows = read_rows(barcode, plot_folder=folder, include_tracks=not summary_only)
     # Serial numbers belong to the source read, including reads excluded from
     # the table's population. Never substitute plot rank for the original number.
-    table_ids = {row['id'] for row in rows or []}
-    extra_rows = [row for row in read_rows(barcode, include_unfiltered=True) if row['id'] not in table_ids]
+    table_ids = {record['read_id'] for record in barcode.metrics['filtered_length_records'].value} if rows is not None else set()
+    extra_rows = read_rows(barcode, include_unfiltered=True, exclude_ids=table_ids)
     # Add heavy image/track payloads only once per source read.
     by_id = {read.id: read for read in barcode.reads}
     for row in extra_rows:
-        row['track_data'] = read_track_data(by_id.get(row['id']), folder)
+        if not summary_only:
+            row['track_data'] = read_track_data(by_id.get(row['id']), folder)
     # Keep images/coordinates out of the searchable table payload. Only the
     # selected read's track JSON is parsed, rather than every image at startup.
     completeness = saved_completeness(folder) if show_completeness else {}
@@ -168,7 +176,7 @@ def reads_section(barcode, results_root=None, show_completeness=True):
             labels[read.original_id] = f'Read {int(serial.value)}'
     label_payload = json.dumps(labels, ensure_ascii=True).replace('<', '\\u003c')
 
-    return '''<section class="read-browser"><div class="reads-toolbar">
+    return ('<section class="read-browser" data-summary-only="'+str(summary_only).lower()+'">')+'''<div class="reads-toolbar">
 <h2><span class="number">8</span>Reads <small class="read-total"></small></h2>
 <div class="read-controls"><label>Search <input class="read-search" type="search" placeholder="Search reads..."></label><label>Show <select class="read-limit"><option>10</option><option>25</option><option>50</option><option>100</option></select></label>
 </div></div><p class="note">Post-filtered telomeric reads. Canonical/TVR percentages use unique matched bases within the TVR-inclusive telomere interval. Categories may overlap; they need not sum to 100%. TVR blocks merge adjacent or overlapping TVR hits. Missing exports remain unavailable.</p>

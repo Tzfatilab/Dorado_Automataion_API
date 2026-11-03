@@ -126,3 +126,37 @@ def detected_chromosomes(run):
     return (Fact(A.AVAILABLE, len(names), evidence=evidence, origin="presentation_aggregate",
                  population="imported unambiguous mapped post-filtered reads") if names
             else unavailable("No unambiguous chromosome annotations in imported post-filtered reads"))
+
+
+def restore_summary_sources(importer,barcode):
+    figures={};figure_evidence=[]
+    for kind in ('histogram','plot'):
+        paths=[p for p in importer.files('*_telomere_'+kind+'.plotly.json') if p.name==barcode.label+'_telomere_'+kind+'.plotly.json']
+        if len(paths)==1:
+            obj=json.loads(paths[0].read_text(encoding='utf-8-sig'))
+            if isinstance(obj.get('data'),list) and isinstance(obj.get('layout'),dict):
+                figures[kind]=obj
+                figure_evidence.append(Evidence(importer.source(paths[0],'json').id))
+    table=importer.saved_statistics.get('Barcode figures')
+    if table:
+        for kind in ('histogram','plot'):
+            parts=sorted((int(r['Part']),r['Value']) for r,e in table[1] if r['barcode']==barcode.label and r['Kind']==kind)
+            if kind not in figures and parts and [i for i,_ in parts]==list(range(1,len(parts)+1)):
+                obj=json.loads(''.join(v for _,v in parts))
+                if isinstance(obj.get('data'),list) and isinstance(obj.get('layout'),dict):
+                    figures[kind]=obj
+                    figure_evidence.extend(e for r,e in table[1] if r['barcode']==barcode.label and r['Kind']==kind)
+    if figures:barcode.metrics['saved_barcode_figures']=Fact(A.AVAILABLE,figures,evidence=figure_evidence)
+    table=importer.saved_statistics.get('Read motifs')
+    if not table:return
+    groups={}
+    for row,evidence in table[1]:
+        if row['barcode']==barcode.label:
+            groups.setdefault(row['read_id'],[]).append((int(row['Part']),row['Value'],evidence))
+    for read in barcode.reads:
+        if read.tracks['motifs'].status=='available':continue
+        parts=sorted(groups.get(read.id,[]))
+        if parts and [i for i,_,_ in parts]==list(range(1,len(parts)+1)):
+            obj=json.loads(''.join(v for _,v,_ in parts))
+            if isinstance(obj.get('methods'),list) and isinstance(obj.get('matches'),list):
+                read.tracks['motifs']=Fact(A.AVAILABLE,obj,evidence=[parts[0][2]])

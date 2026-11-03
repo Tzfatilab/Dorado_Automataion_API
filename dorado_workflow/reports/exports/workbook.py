@@ -32,7 +32,7 @@ class NanoTelWorkbookWriter:
         self.results_dir = results_dir
         self.short_telomere_threshold_bp = short_telomere_threshold_bp
 
-    def write(self, run=None) -> Path:
+    def write(self, run=None, comparisons=None) -> Path:
         """Return the saved workbook path, preserving CSV values and sheet order.
 
         Raise if raw summaries are missing or duplicate barcode names exist.
@@ -117,7 +117,7 @@ class NanoTelWorkbookWriter:
             sheet.column_dimensions["C"].width = 42
         definitions = workbook.create_sheet("Definitions")
         for row in [
-            ["Output", "Summary-only numeric results with a separate compact dashboard. No per-read plots, FASTA or density/motif track exports."],
+            ["Output", "Summary-only numeric results with a separate compact dashboard. No per-read plots, FASTA or density tracks. Original barcode figures and motif evidence are retained for the shared dashboard."],
             ["NanoTel Statistics", "R post-analysis filtered population. Source column names and units are retained."],
             ["barcodeXX", "Imported NanoTel summary reads before post-analysis filtering; not every input/basecalled read."],
             ["filtered_barcodeXX", "R post-analysis filtered reads; an empty table means zero retained reads."],
@@ -147,6 +147,18 @@ class NanoTelWorkbookWriter:
                     for i in range(0,len(encoded),30000):
                         mappings.append([barcode.label,read.id,i//30000+1,encoded[i:i+30000]])
                         mappings.cell(mappings.max_row,4).data_type='s'
+            figures=workbook.create_sheet('Barcode figures');figures.append(['barcode','Kind','Part','Value'])
+            motifs=workbook.create_sheet('Read motifs');motifs.append(['barcode','read_id','Part','Value'])
+            for barcode in run.barcodes:
+                saved=barcode.metrics.get('saved_barcode_figures')
+                if saved and saved.status=='available':
+                    for kind,figure in saved.value.items():
+                        encoded=json.dumps(figure,ensure_ascii=True,allow_nan=False)
+                        for i in range(0,len(encoded),30000):figures.append([barcode.label,kind,i//30000+1,encoded[i:i+30000]])
+                for read in barcode.reads:
+                    if read.tracks['motifs'].status!='available':continue
+                    encoded=json.dumps(read.tracks['motifs'].value,ensure_ascii=True,allow_nan=False)
+                    for i in range(0,len(encoded),30000):motifs.append([barcode.label,read.id,i//30000+1,encoded[i:i+30000]])
             metadata = workbook.create_sheet('Run metadata')
             metadata.append(['Field', 'Part', 'Value'])
             payload = {'organism': run.organism.value if run.organism.status == 'available' else None,
@@ -163,7 +175,7 @@ class NanoTelWorkbookWriter:
                 source.title = '_source_' + source.title
                 source.sheet_state = 'hidden'
             from .dashboard_workbook import build_dashboard_workbook
-            workbook = build_dashboard_workbook(run, self.source_dir.parent, workbook)
+            workbook = build_dashboard_workbook(run, self.source_dir.parent, workbook, comparisons=comparisons)
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
         workbook_path = self.results_dir / "nanotel_summary.xlsx"

@@ -4,7 +4,7 @@ from html import escape
 from statistics import mean, median, quantiles
 import re
 from dorado_workflow.reports.shared.colors import motif_color
-from dorado_workflow.reports.barcode.composition import motif_base_counts, composition_section
+from dorado_workflow.reports.barcode.repeats import motif_base_counts, composition_section
 
 
 def comparison_data(run):
@@ -137,11 +137,11 @@ def overview_composition_section(data, requested=None):
     return section
 
 
-def comparison_figures(run):
+def comparison_figures(run, data=None):
     """Build charts 4/5; missing cells remain gaps, never zero-length telomeres."""
     import plotly.graph_objects as go
     from dorado_workflow.reports.reads.density import tvr_enabled
-    data = comparison_data(run)
+    data = comparison_data(run) if data is None else data
     heatmap = go.Figure()
     cells = data["cells"]
     if cells:

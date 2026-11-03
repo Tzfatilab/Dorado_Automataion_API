@@ -66,8 +66,12 @@ def motif_comparison(run):
     return result
 
 
-def dashboard_data(run):
-    """Build chart payloads with explicit populations and complete-data checks."""
+def dashboard_data(run, include_details=True):
+    """Build presentation payloads with explicit population/completeness rules.
+
+    Detailed reference/motif tables are optional when the caller uses another
+    shared adapter for those plots. The default export remains unchanged.
+    """
     # Create serializable chart payloads from imported facts. Aggregate only supported
     # populations and keep missing/invalid states available to the presentation layer.
     # Whole-run totals require complete barcode coverage; summing only known
@@ -101,6 +105,19 @@ def dashboard_data(run):
     all_lengths = [r["length_bp"] for d in distributions if d["lengths"]["status"] == A.AVAILABLE for r in d["lengths"]["value"]]
     evidence = [e for b in run.barcodes for e in b.metrics["filtered_length_records"].evidence]
     med = aggregate(median(all_lengths), evidence, "bp", population) if complete and all_lengths else unavailable("Complete filtered per-read lengths are required; barcode medians are not averaged")
+    result = {
+        "metrics": {
+            "barcode_count": asdict(run.metrics.get("barcode_count", unavailable("Barcode count was not exported"))),
+            "total_reads": asdict(total), "telomeric_reads": asdict(filtered),
+            "telomeric_percentage": asdict(pct), "median_telomere_length": asdict(med),
+            "detected_telomeric_reads": asdict(detected),
+        },
+        "distributions": distributions,
+    }
+    # The HTML renderer uses the shared chromosome/composition adapter instead.
+    # Keep these optional exports for callers that actually request them.
+    if not include_details:
+        return result
     # Build reference-by-barcode cells from mapped post-filtered read lengths.
     # These labels are references, not inferred chromosomes or chromosome arms.
     cells = []; references = set(); mapped_evidence = []
@@ -129,10 +146,7 @@ def dashboard_data(run):
     reference_count = aggregate(len(references), mapped_evidence, "references", "mapped post-filtered reads") if references else unavailable("No mapped post-filtered reference records available")
     # Convert Facts to plain dictionaries at the presentation boundary. Keep the
     # legacy unavailable TVR-coverage fact separate from motif match-count payloads.
-    return {"metrics": {"barcode_count": asdict(run.metrics.get("barcode_count", unavailable("Barcode count was not exported"))), "total_reads": asdict(total),
-             "telomeric_reads": asdict(filtered), "telomeric_percentage": asdict(pct),
-             "median_telomere_length": asdict(med), "mapped_references": asdict(reference_count),
-             "detected_telomeric_reads": asdict(detected)},
-            "distributions": distributions, "reference_cells": cells,
-            "motif_comparison": motif_comparison(run),
-            "tvr": asdict(unavailable("Exact motif composition was not exported. TVR-inclusive density is not TVR percentage."))}
+    result["metrics"]["mapped_references"] = asdict(reference_count)
+    result.update(reference_cells=cells, motif_comparison=motif_comparison(run),
+                  tvr=asdict(unavailable("Exact motif composition was not exported. TVR-inclusive density is not TVR percentage.")))
+    return result
