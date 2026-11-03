@@ -384,14 +384,13 @@ class AdvancedSection:
         body.setSpacing(8)
 
         body.addLayout(self._build_tvr_mode_controls())
+        body.addLayout(self._build_nanotel_fields())
         footer = QHBoxLayout()
         footer.setSpacing(8)
-        footer.addLayout(self._build_short_telomere_threshold())
         footer.addWidget(self._build_nanotel_mapping_option())
         footer.addWidget(self._build_tvr_mismatch_option())
         footer.addStretch()
         body.addLayout(footer)
-        body.addLayout(self._build_nanotel_fields())
 
         return body_widget
 
@@ -444,11 +443,8 @@ class AdvancedSection:
         return self.allow_mismatch
 
     def _build_short_telomere_threshold(self):
-        """Build the configurable short-telomere cutoff beside mismatch."""
+        """Build the short-telomere label and editor for the numeric grid."""
         defaults = ConfigManager().get_nanotel_params()
-        row = QHBoxLayout()
-        row.setSpacing(5)
-
         label = QLabel("Short telomere cutoff (bp)")
         label.setToolTip("Telomeres shorter than this value are counted as short.")
         label.setStyleSheet(
@@ -473,9 +469,7 @@ class AdvancedSection:
             "QToolTip { background-color: white; color: #162238; "
             "border: 1px solid #cbd5e1; font-size: 13px; padding: 5px 7px; }"
         )
-        row.addWidget(label)
-        row.addWidget(self.short_telomere_threshold)
-        return row
+        return label, self.short_telomere_threshold
 
     def _build_tvr_mode_controls(self):
         """Build optional TVR controls in one compact row."""
@@ -590,9 +584,6 @@ class AdvancedSection:
         grid.setColumnMinimumWidth(2, 20)
 
         self.read_length = QLineEdit(str(nanotel_defaults["min_read_length"]))
-        self.max_distance_edge = QLineEdit(
-            str(nanotel_defaults["display_max_edge_distance"])
-        )
         self.max_telomere_start = QLineEdit(
             str(nanotel_defaults["max_telomere_start"])
         )
@@ -601,14 +592,12 @@ class AdvancedSection:
         )
 
         self.read_length.setFixedWidth(54)
-        self.max_distance_edge.setFixedWidth(54)
         self.max_telomere_start.setFixedWidth(54)
         self.min_density_threshold.setFixedWidth(54)
 
         # Validators prevent invalid values before the options reach the
         # pipeline configuration layer.
         self.read_length.setValidator(QIntValidator(0, 10000))
-        self.max_distance_edge.setValidator(QIntValidator(0, 1000))
         self.max_telomere_start.setValidator(QIntValidator(0, 1000))
         validator = QDoubleValidator(0.0, 100.0, 4)
         validator.setNotation(QDoubleValidator.StandardNotation)
@@ -616,7 +605,6 @@ class AdvancedSection:
 
         for widget in [
             self.read_length,
-            self.max_distance_edge,
             self.max_telomere_start,
             self.min_density_threshold,
         ]:
@@ -638,26 +626,26 @@ class AdvancedSection:
             }
         """
         read_label = self._build_field_label("Minimum read length (bp)", 140, label_style)
-        edge_label = self._build_field_label("Minimum read margin (bp)", 140, label_style)
         start_label = self._build_field_label("Latest telomere start (bp)", 140, label_style)
         density_label = self._build_field_label("Minimum density (%)", 128, label_style)
 
         # Tooltips explain the filters while captions remain fully visible.
         read_label.setToolTip("Minimum total read length (bp)")
-        edge_label.setToolTip("Minimum read-length margin (bp): read length must exceed the running median telomere length by more than this value.")
-        self.max_distance_edge.setToolTip(edge_label.toolTip())
         start_label.setToolTip("The telomere must begin within this many bases of the read start.")
         self.max_telomere_start.setToolTip("The telomere must begin within this many bases of the read start.")
         density_label.setToolTip("Minimum telomeric repeat density (%)")
 
+        short_label, short_input = self._build_short_telomere_threshold()
+        short_label.setMinimumWidth(start_label.minimumWidth())
+
         grid.addWidget(read_label, 0, 0)
         grid.addWidget(self.read_length, 0, 1)
-        grid.addWidget(edge_label, 0, 3)
-        grid.addWidget(self.max_distance_edge, 0, 4)
-        grid.addWidget(start_label, 1, 0)
-        grid.addWidget(self.max_telomere_start, 1, 1)
-        grid.addWidget(density_label, 1, 3)
-        grid.addWidget(self.min_density_threshold, 1, 4)
+        grid.addWidget(start_label, 0, 3)
+        grid.addWidget(self.max_telomere_start, 0, 4)
+        grid.addWidget(density_label, 1, 0)
+        grid.addWidget(self.min_density_threshold, 1, 1)
+        grid.addWidget(short_label, 1, 3)
+        grid.addWidget(short_input, 1, 4)
         return grid
 
     @staticmethod

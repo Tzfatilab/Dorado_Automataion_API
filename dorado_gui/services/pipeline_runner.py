@@ -289,26 +289,20 @@ def _apply_gui_config_overrides(
         context.config_manager.update_basecalling_params(basecalling_overrides)
 
     nanotel_defaults = context.config_manager.get_nanotel_params()
-    displayed_edge_distance = nanotel_defaults["display_max_edge_distance"]
-    untrimmed_edge_distance = nanotel_defaults["untrimmed_max_edge_distance"]
     displayed_telomere_start = nanotel_defaults.get("max_telomere_start", 50)
     untrimmed_telomere_start = nanotel_defaults.get("untrimmed_max_telomere_start", 134)
 
-    # Keep the displayed value unchanged. Apply the untrimmed value only to
-    # the configuration passed to NanoTel.
+    # One GUI threshold controls both filters, including the untrimmed adjustment.
     if non_pod5_trim_status == "untrimmed":
-        max_distance_edge = str(untrimmed_edge_distance)
         max_telomere_start = str(untrimmed_telomere_start)
-    if (
-        non_pod5_trim_status == "trimmed"
-        and str(max_distance_edge).strip() == str(untrimmed_edge_distance)
-    ):
-        max_distance_edge = str(displayed_edge_distance)
-    if (
+    elif (
         non_pod5_trim_status == "trimmed"
         and str(max_telomere_start).strip() == str(untrimmed_telomere_start)
     ):
         max_telomere_start = str(displayed_telomere_start)
+    if not str(max_telomere_start).strip():
+        max_telomere_start = str(displayed_telomere_start)
+    max_distance_edge = max_telomere_start
 
     nanotel_overrides = _build_nanotel_overrides(
         context.config_manager,
@@ -532,9 +526,8 @@ def _build_nanotel_overrides(
     if max_start is not None:
         overrides["max_telomere_start"] = max_start
 
-    max_edge_distance = _parse_int(max_distance_edge)
-    if max_edge_distance is not None:
-        overrides["max_edge_distance"] = max_edge_distance
+    if max_start is not None:
+        overrides["max_edge_distance"] = max_start
 
     read_length_value = _parse_int(read_length)
     if read_length_value is not None:

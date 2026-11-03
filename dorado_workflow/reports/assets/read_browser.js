@@ -136,6 +136,22 @@
     const columnKeys=columns.map(c=>c.key);
     const exportHeaders=[...section.querySelectorAll('.reads-table thead th')].map(th=>th.textContent.replace(/\s*[▾↕]$/,'').trim());
     const columnValues=r=>columns.map(c=>c.format(r[c.key]));
+    const numericKeys=new Set(['label','telomere','exact_length','mismatch_length','tvr_length','length','canonical','tvr','blocks','exact_density','mismatch_density']);
+    // Compare unrounded values in the units displayed in the column heading.
+    const numericValue=(read,index)=>{
+      const c=columns[index];
+      if(c.key==='label'){
+        const match=String(read.label).match(/\d+/);
+        return match?Number(match[0]):null;
+      }
+      const value=c.exportValue(read[c.key]);
+      return typeof value==='number'&&Number.isFinite(value)?value:null;
+    };
+    const matchesColumnFilter=(read,index,filter)=>{
+      if(filter instanceof Set)return filter.has(columnValues(read)[index]);
+      const value=numericValue(read,index);
+      return value!==null&&(filter.operator==='above'?value>filter.threshold:value<filter.threshold);
+    };
     let openMenu=null;
     section.querySelectorAll('.reads-table thead th').forEach((th,index)=>{
       const title=th.textContent;th.textContent='';
@@ -145,12 +161,30 @@
         const menu=node('div','',document.body);menu.className='read-filter-menu';menu.setAttribute('role','dialog');menu.setAttribute('aria-label','Filter '+title);trigger.setAttribute('aria-expanded','true');
         const isStatus=columnKeys[index]==='read_status';
         const sortActions=node('div','',menu);sortActions.className='read-column-sort';if(isStatus)sortActions.hidden=true;
-        const numeric=['label','telomere','exact_length','mismatch_length','tvr_length','length','canonical','tvr','blocks','exact_density','mismatch_density'].includes(columnKeys[index]);
+        const numeric=numericKeys.has(columnKeys[index]);
         [['asc',numeric?'Sort smallest to largest':'Sort A to Z'],['desc',numeric?'Sort largest to smallest':'Sort Z to A']].forEach(([order,label])=>{
           const button=node('button',label,sortActions);button.type='button';
           button.setAttribute('aria-pressed',String(sort.value===columnKeys[index]&&direction.value===order));
           button.onclick=()=>{sort.value=columnKeys[index];direction.value=order;close();current=1;render();};
         });
+        let focusInput,applyFilter;
+        if(numeric){
+          const saved=columnFilters.get(index);
+          const label=node('label','Show values',menu);label.className='read-numeric-filter';
+          const operator=node('select','',label);operator.setAttribute('aria-label','Comparison for '+title);
+          [['above','Above'],['below','Below']].forEach(([value,text])=>{const option=node('option',text,operator);option.value=value;});
+          operator.value=saved?.operator||'above';
+          const input=node('input','',label);input.type='number';input.step='any';input.placeholder='Enter threshold';input.setAttribute('aria-label','Threshold for '+title);
+          if(saved&&!(saved instanceof Set))input.value=String(saved.threshold);
+          const note=node('p','Use the units shown in the column title. Values equal to the threshold and unavailable values are excluded.',menu);note.className='note';
+          const clear=node('button','Clear filter',menu);clear.type='button';clear.onclick=()=>{columnFilters.delete(index);close();current=1;render();};
+          applyFilter=()=>{
+            if(!input.value.trim()||!input.checkValidity()||!Number.isFinite(Number(input.value))){input.setCustomValidity('Enter a valid numeric threshold.');input.reportValidity();input.focus();return false;}
+            columnFilters.set(index,{operator:operator.value,threshold:Number(input.value)});return true;
+          };
+          input.oninput=()=>input.setCustomValidity('');
+          focusInput=input;
+        }else{
         const values=[...new Set(rows.map(r=>columnValues(r)[index]))].sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true}));
         const chosen=new Set(columnFilters.has(index)?columnFilters.get(index):values);
         const searchInput=node('input','',menu);searchInput.type='search';searchInput.placeholder='Search values';searchInput.setAttribute('aria-label','Search '+title);
@@ -161,16 +195,19 @@
           box.onchange=()=>box.checked?chosen.add(value):chosen.delete(value);
         });};
         [['Select all',true],['Clear',false]].forEach(([label,check])=>{const b=node('button',label,actions);b.type='button';b.onclick=()=>{values.filter(v=>String(v).toLowerCase().includes(searchInput.value.toLowerCase())).forEach(v=>check?chosen.add(v):chosen.delete(v));draw();};});
+          searchInput.oninput=draw;draw();
+          focusInput=isStatus?list.querySelector('input'):searchInput;
+          applyFilter=()=>{if(chosen.size===values.length)columnFilters.delete(index);else columnFilters.set(index,chosen);return true;};
+        }
         const close=()=>{menu.remove();trigger.setAttribute('aria-expanded','false');openMenu=null;document.removeEventListener('pointerdown',outside);window.removeEventListener('hashchange',close);window.removeEventListener('resize',close);};
         const outside=e=>{if(!th.contains(e.target)&&!menu.contains(e.target))close();};document.addEventListener('pointerdown',outside);window.addEventListener('hashchange',close);window.addEventListener('resize',close);openMenu=close;
-        const apply=node('button','Apply',menu);apply.type='button';apply.onclick=()=>{if(chosen.size===values.length)columnFilters.delete(index);else columnFilters.set(index,chosen);trigger.classList.toggle('active',columnFilters.has(index));close();current=1;render();};
+        const apply=node('button','Apply',menu);apply.type='button';apply.onclick=()=>{if(!applyFilter())return;close();current=1;render();};
         const cancel=node('button','Cancel',menu);cancel.type='button';cancel.onclick=close;
-        menu.onkeydown=e=>{if(e.key==='Escape'){close();trigger.focus();}};
-        searchInput.oninput=draw;draw();
+        menu.onkeydown=e=>{if(e.key==='Escape'){close();trigger.focus();}else if(e.key==='Enter'&&numeric){e.preventDefault();apply.click();}};
         const anchor=trigger.getBoundingClientRect();
         menu.style.left=Math.max(8,Math.min(anchor.left,window.innerWidth-menu.offsetWidth-8))+'px';
         menu.style.top=Math.max(8,Math.min(anchor.bottom+4,window.innerHeight-menu.offsetHeight-8))+'px';
-        if(isStatus) list.querySelector('input')?.focus();else searchInput.focus();
+        focusInput?.focus();
       };
     });
     let current = 1;
@@ -181,9 +218,10 @@
           'Before filtering: imported NanoTel summary reads, not necessarily all input reads. Overview statistics and plots retain their own stated populations.':
           'Post-filtered reads. Table search and filters do not change Key Statistics or overview plots.';
       }
-      const filtered = rows.filter(r => (summaryOnly?columnValues(r).join(' '):r.label+' '+r.header).toLowerCase().includes(search.value.toLowerCase()) && [...columnFilters].every(([index,values])=>values.has(columnValues(r)[index])));
+      const filtered = rows.filter(r => (summaryOnly?columnValues(r).join(' '):r.label+' '+r.header).toLowerCase().includes(search.value.toLowerCase()) && [...columnFilters].every(([index,filter])=>matchesColumnFilter(r,index,filter)));
       direction.disabled = sort.value === 'original';
       section.querySelectorAll('.reads-table thead th').forEach((th,index)=>{
+        th.querySelector('.read-column-filter').classList.toggle('active',columnFilters.has(index));
         th.setAttribute('aria-sort',sort.value===columnKeys[index]?(direction.value==='asc'?'ascending':'descending'):'none');
       });
       if (sort.value !== 'original') {

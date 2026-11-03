@@ -329,7 +329,7 @@ class AppWindow(
         """Keep run edits on ordinary saves; reset them on profile/organism changes."""
         defaults = organism_nanotel_settings(self.settings_store.snapshot(), self.organism.currentText())
         organism_changed = getattr(self, "_analysis_organism", None) != self.organism.currentText()
-        for name, key in (("read_length", "min_read_length"), ("max_distance_edge", "display_max_edge_distance"),
+        for name, key in (("read_length", "min_read_length"),
                           ("max_telomere_start", "max_telomere_start"), ("min_density_threshold", "min_density"),
                           ("short_telomere_threshold", "short_telomere_threshold_bp")):
             value = defaults.get(key)
@@ -448,7 +448,7 @@ class AppWindow(
             allow_mismatch=self.allow_mismatch.isChecked(),
 
             read_length=self.read_length.text().strip(),
-            max_distance_edge=self.max_distance_edge.text().strip(),
+            max_distance_edge=self.max_telomere_start.text().strip(),
             max_telomere_start=self.max_telomere_start.text().strip(),
             min_density_threshold=str(float(self.min_density_threshold.text()) / 100) if self.min_density_threshold.text().strip() else "",
             short_telomere_threshold=self.short_telomere_threshold.text().strip(),

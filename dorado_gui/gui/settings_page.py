@@ -256,7 +256,6 @@ class SettingsPage(QWidget):
         specs = (
             ("min_read_length", "Minimum total read length (bp)", -1),
             ("short_telomere_threshold_bp", "Short telomere cutoff (bp)", 1),
-            ("display_max_edge_distance", "Minimum read-length margin (bp)", 0),
             ("max_telomere_start", "Latest telomere start (bp)", 0),
             ("min_density", "Minimum telomeric repeat density (%)", 0),
         )
@@ -283,8 +282,6 @@ class SettingsPage(QWidget):
             fields.addWidget(self.label(title), row, 0)
             fields.addWidget(control, row, 1)
             self.analysis_fields[key] = control
-        self.analysis_fields["display_max_edge_distance"].setToolTip(
-            "Read length must exceed the running median telomere length by more than this value. The existing untrimmed-read adjustment still applies.")
         analysis_layout.addLayout(fields)
         # Absorb spare column height inside this card so both columns end together.
         analysis_layout.addStretch()
@@ -415,6 +412,9 @@ class SettingsPage(QWidget):
             if value != effective[key]:
                 overrides = c["organism_specific"][self.current_org].setdefault("nanotel", {})
                 overrides[key] = value
+                if key == "max_telomere_start":
+                    overrides["display_max_edge_distance"] = value
+                    overrides["max_edge_distance"] = value
                 if key == "min_density":
                     overrides["density_threshold"] = value
         return c

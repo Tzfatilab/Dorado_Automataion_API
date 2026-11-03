@@ -332,3 +332,5 @@ button.km-info{border:0;padding:0;vertical-align:middle;cursor:pointer}button.km
 :is(#run-overview,.barcode-page) .stats>.stat strong{grid-column:2;grid-row:2;text-align:center;align-self:center;min-width:0}
 :is(#run-overview,.barcode-page) .stats>.stat p{grid-column:1/-1;grid-row:3;text-align:center;align-self:start;margin:0}
 :is(#run-overview,.barcode-page) .stats>.stat>svg{grid-column:1;grid-row:2;width:28px;height:34px;justify-self:center;align-self:center}
+
+.read-numeric-filter{display:flex;flex-direction:column;gap:8px;margin:8px 0}.read-numeric-filter select,.read-numeric-filter input{width:100%;box-sizing:border-box;padding:8px;border:1px solid #ccd8e8;border-radius:5px;font:inherit}
