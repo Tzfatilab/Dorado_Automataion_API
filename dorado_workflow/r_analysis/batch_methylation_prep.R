@@ -20,6 +20,8 @@ source(file.path(script_dir, "functions", "utils.R"))
 source(file.path(script_dir, "functions", "methylation_functions.R"))
 
 # Main function for batch methylation analysis
+# Inputs: config_file (Saved JSON configuration path)
+# Outputs: Modified-base tables, plots and interactive outputs for the selected run.
 main_methylation_analysis <- function(config_file) {
 
   cat("Starting Methylation Batch Analysis\n")
@@ -150,6 +152,8 @@ main_methylation_analysis <- function(config_file) {
 }
 
 # Process all BED files
+# Inputs: bed_info (Pileup paths with barcode and cell-line annotations)
+# Outputs: Parsed pileup records for all successfully processed BED files.
 process_all_bed_files <- function(bed_info) {
 
   log_message("Processing all pileup BED files")
@@ -177,6 +181,9 @@ process_all_bed_files <- function(bed_info) {
 }
 
 # Create Shiny app for interactive visualization
+# Inputs: output_dir (Directory for generated outputs); interactive_data_file (Saved RDS file
+# consumed by the interactive application)
+# Outputs: Writes the Shiny application and associated data references.
 create_shiny_methylation_app <- function(output_dir, interactive_data_file) {
 
   log_message("Creating Shiny app for interactive visualization")

@@ -15,11 +15,13 @@ class ExecutionLogSection:
     """Keep message formatting, NanoTel summaries and progress state together."""
 
     def _open_execution_log_dialog(self):
-        """
-        Create or show the execution log dialog.
+        """Create or show the execution log dialog.
 
         Returns:
             None
+
+        Inputs:
+            None; uses instance state.
         """
         if self.log_dialog is None:
             self.log_dialog = QDialog(self)
@@ -52,19 +54,40 @@ class ExecutionLogSection:
         self.log_dialog.activateWindow()
 
     def _append_log_line(self, text):
-        """Append a visible log line and remember that the last line is not blank."""
+        """Append a visible log line and remember that the last line is not blank.
+
+        Args:
+            text: Text to parse, display or write.
+
+        Returns:
+            None.
+        """
         self.log.append(text)
         self._last_gui_log_blank = False
 
     def _append_log_blank(self):
-        """Append one blank line, but never stack multiple blank lines."""
+        """Append one blank line, but never stack multiple blank lines.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         if getattr(self, "_last_gui_log_blank", False):
             return
         self.log.append("")
         self._last_gui_log_blank = True
 
     def _append_log(self, message):
-        """Append a worker log message to the execution log widget."""
+        """Append a worker log message to the execution log widget.
+
+        Args:
+            message: Message to display or log.
+
+        Returns:
+            None.
+        """
         if message is None:
             return
 
@@ -77,7 +100,14 @@ class ExecutionLogSection:
             self._append_worker_log_line(raw_line)
 
     def _update_progress_from_log(self, line):
-        """Keep the progress panel moving from the worker's streamed messages."""
+        """Keep the progress panel moving from the worker's streamed messages.
+
+        Args:
+            line: One line of source or process output.
+
+        Returns:
+            None.
+        """
         if not line:
             return
 
@@ -131,13 +161,27 @@ class ExecutionLogSection:
             self._show_busy_progress("Running...")
 
     def _show_busy_progress(self, text):
-        """Show Qt's animated indeterminate bar for work with no known total."""
+        """Show Qt's animated indeterminate bar for work with no known total.
+
+        Args:
+            text: Text to parse, display or write.
+
+        Returns:
+            None.
+        """
         self.progress_label.setText(text)
         self.progress_percent_label.setText("")
         self.progress_bar.setRange(0, 0)
 
     def _append_worker_log_line(self, line):
-        """Normalize, filter, and render one worker log line."""
+        """Normalize, filter, and render one worker log line.
+
+        Args:
+            line: One line of source or process output.
+
+        Returns:
+            None.
+        """
         line = self._prepare_log_line(line)
         if line is None:
             return
@@ -163,7 +207,14 @@ class ExecutionLogSection:
         self._render_log_line(line)
 
     def _prepare_log_line(self, line):
-        """Clean status glyphs and rewrite verbose NanoTel phrases."""
+        """Clean status glyphs and rewrite verbose NanoTel phrases.
+
+        Args:
+            line: One line of source or process output.
+
+        Returns:
+            Display-ready log text, or None when the line should be hidden.
+        """
         line = line.translate(str.maketrans("", "", "\u2705\u274c\u2713\u2717\u25b6\u2715\u2022\u21b3"))
         for bad_status in ("ג“", "ג—"):
             line = line.replace(bad_status, "")
@@ -200,6 +251,14 @@ class ExecutionLogSection:
         return line
 
     def _nanotel_km_log_enabled(self):
+        """True when the recorded organism permits KM log details.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            True when the recorded organism permits KM log details.
+        """
         organism = getattr(self, "_nanotel_log_organism", None)
         if organism is None:
             selector = getattr(self, "organism", None)
@@ -208,7 +267,14 @@ class ExecutionLogSection:
         return bool(name) and name not in {"human", "homo sapiens"}
 
     def _handle_nanotel_analysis_result(self, analysis_line):
-        """Present assessed KM output; do not refit or reapply reporting policy."""
+        """Present assessed KM output; do not refit or reapply reporting policy.
+
+        Args:
+            analysis_line: NanoTel or R process-output line being interpreted.
+
+        Returns:
+            True when the operation or check succeeds; False when it does not.
+        """
         prefix = "NanoTel analysis JSON saved to:"
         if not analysis_line.startswith(prefix):
             return False
@@ -252,7 +318,14 @@ class ExecutionLogSection:
         return True
 
     def _handle_nanotel_result_path(self, analysis_line):
-        """Collapse NanoTel output file paths into one result-directory line."""
+        """Collapse NanoTel output file paths into one result-directory line.
+
+        Args:
+            analysis_line: NanoTel or R process-output line being interpreted.
+
+        Returns:
+            True when the operation or check succeeds; False when it does not.
+        """
         if not (
             analysis_line.startswith("NanoTel summary CSV saved to:")
             or analysis_line.startswith("NanoTel read IDs saved to:")
@@ -276,14 +349,28 @@ class ExecutionLogSection:
         return True
 
     def _consume_next_nanotel_result_path(self):
-        """Hide wrapped NanoTel result paths emitted on the following line."""
+        """Hide wrapped NanoTel result paths emitted on the following line.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            True when the operation or check succeeds; False when it does not.
+        """
         if getattr(self, "_hide_next_nanotel_result_path", False):
             self._hide_next_nanotel_result_path = False
             return True
         return False
 
     def _handle_nanotel_state_line(self, analysis_line):
-        """Track NanoTel state while suppressing raw helper lines."""
+        """Track NanoTel state while suppressing raw helper lines.
+
+        Args:
+            analysis_line: NanoTel or R process-output line being interpreted.
+
+        Returns:
+            True when the operation or check succeeds; False when it does not.
+        """
         if analysis_line == "The input files:":
             self._hide_next_nanotel_input_path = True
             return True
@@ -303,7 +390,14 @@ class ExecutionLogSection:
         return False
 
     def _handle_nanotel_stats_line(self, analysis_line):
-        """Collect NanoTel stat-table lines and render one compact table."""
+        """Collect NanoTel stat-table lines and render one compact table.
+
+        Args:
+            analysis_line: NanoTel or R process-output line being interpreted.
+
+        Returns:
+            True when the operation or check succeeds; False when it does not.
+        """
         tvr_title = "Telomere length with 1 mismatch allowed + tvr patterns.:"
 
         if analysis_line == "Summary statistics of the sample reads length:":
@@ -334,7 +428,14 @@ class ExecutionLogSection:
         return False
 
     def _store_nanotel_stat_values(self, values):
-        """Store one NanoTel stats row and render when the table is complete."""
+        """Store one NanoTel stats row and render when the table is complete.
+
+        Args:
+            values: Values to display, aggregate or store.
+
+        Returns:
+            None.
+        """
         if len(values) != 6:
             return
         tables = getattr(self, "_nanotel_stat_tables", {})
@@ -350,11 +451,25 @@ class ExecutionLogSection:
         self._nanotel_stat_title = None
 
     def _nanotel_tvr_is_enabled(self):
-        """Return True when this NanoTel process confirmed TVR patterns."""
+        """Return True when this NanoTel process confirmed TVR patterns.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Boolean result.
+        """
         return bool(getattr(self, "_nanotel_actual_tvr_enabled", False))
 
     def _flush_pending_nanotel_stats_table(self):
-        """Render any collected NanoTel statistics once, then clear the buffer."""
+        """Render any collected NanoTel statistics once, then clear the buffer.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         tables = getattr(self, "_nanotel_stat_tables", {})
         if not tables:
             self._nanotel_pending_stats_render = False
@@ -364,7 +479,14 @@ class ExecutionLogSection:
         self._nanotel_pending_stats_render = False
 
     def _should_skip_log_detail(self, analysis_line):
-        """Skip duplicate or low-value details from verbose tools."""
+        """Skip duplicate or low-value details from verbose tools.
+
+        Args:
+            analysis_line: NanoTel or R process-output line being interpreted.
+
+        Returns:
+            True when the diagnostic line should be hidden in the GUI.
+        """
         if analysis_line.startswith("NanoTel completed for "):
             self._flush_pending_nanotel_stats_table()
         return (
@@ -379,7 +501,14 @@ class ExecutionLogSection:
         )
 
     def _handle_hidden_log_section(self, analysis_line):
-        """Hide workflow summaries and long R environment blocks."""
+        """Hide workflow summaries and long R environment blocks.
+
+        Args:
+            analysis_line: NanoTel or R process-output line being interpreted.
+
+        Returns:
+            True when the operation or check succeeds; False when it does not.
+        """
         if analysis_line in {"WORKFLOW COMPLETED SUCCESSFULLY", "=== WORKFLOW SUMMARY ==="}:
             self._hide_workflow_summary = True
             return True
@@ -402,7 +531,14 @@ class ExecutionLogSection:
         return False
 
     def _append_timestamped_text(self, text):
-        """Append escaped text with the standard GUI timestamp prefix."""
+        """Append escaped text with the standard GUI timestamp prefix.
+
+        Args:
+            text: Text to parse, display or write.
+
+        Returns:
+            None.
+        """
         timestamp_text = datetime.now().strftime("%H:%M:%S")
         self._append_log_line(
             f'<span style="color: #777;">[{timestamp_text}]</span> '
@@ -410,7 +546,14 @@ class ExecutionLogSection:
         )
 
     def _render_log_line(self, line):
-        """Render one normalized log line with timestamp and emphasis."""
+        """Render one normalized log line with timestamp and emphasis.
+
+        Args:
+            line: One line of source or process output.
+
+        Returns:
+            None.
+        """
         if not line:
             self._append_log_blank()
             return
@@ -447,6 +590,14 @@ class ExecutionLogSection:
 
     @staticmethod
     def _is_stage_title(line):
+        """True when the line matches a known workflow stage heading.
+
+        Args:
+            line: One line of source or process output.
+
+        Returns:
+            True when the line matches a known workflow stage heading.
+        """
         return line in {
             "Basecalling",
             "Demultiplexing",
@@ -458,6 +609,15 @@ class ExecutionLogSection:
 
     @staticmethod
     def _is_key_update(line, is_stage_title):
+        """True when the line is a user-facing progress update.
+
+        Args:
+            line: One line of source or process output.
+            is_stage_title: Whether the log line identifies a workflow stage.
+
+        Returns:
+            True when the line is a user-facing progress update.
+        """
         lower_line = line.lower()
         return (
             line == "Run started"
@@ -474,6 +634,15 @@ class ExecutionLogSection:
 
     @staticmethod
     def _is_section_title(line, is_stage_title):
+        """True when the line starts a new log section.
+
+        Args:
+            line: One line of source or process output.
+            is_stage_title: Whether the log line identifies a workflow stage.
+
+        Returns:
+            True when the line starts a new log section.
+        """
         return (
             line == "Run started"
             or line.endswith(" workflow")
@@ -484,6 +653,14 @@ class ExecutionLogSection:
 
     @staticmethod
     def _is_major_milestone(line):
+        """True when the line marks a workflow start, completion or failure.
+
+        Args:
+            line: One line of source or process output.
+
+        Returns:
+            True when the line marks a workflow start, completion or failure.
+        """
         lower_line = line.lower()
         return (
             line == "Run started"
@@ -494,6 +671,14 @@ class ExecutionLogSection:
 
     @staticmethod
     def _line_status_prefix(line):
+        """Status prefix for the displayed line, or an empty string.
+
+        Args:
+            line: One line of source or process output.
+
+        Returns:
+            Status prefix for the displayed line, or an empty string.
+        """
         if line == "Pipeline finished successfully":
             return ""
 
@@ -511,7 +696,14 @@ class ExecutionLogSection:
         return "ERROR " if is_failure else "OK " if is_success else ""
 
     def _append_nanotel_stats_table(self, tables):
-        """Render NanoTel read and telomere distributions in one compact table."""
+        """Render NanoTel read and telomere distributions in one compact table.
+
+        Args:
+            tables: Parsed summary tables to display.
+
+        Returns:
+            None.
+        """
         timestamp = datetime.now().strftime("%H:%M:%S")
         content_indent = self.log.fontMetrics().horizontalAdvance(f"[{timestamp}]     ")
         headers = ("Min.", "1st Qu.", "Median", "Mean", "3rd Qu.", "Max.")

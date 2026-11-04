@@ -9,7 +9,14 @@ from dorado_workflow.reports.shared.organism import show_km
 
 
 def _hide_completeness(figure):
-    """Hide completeness overlays in the embedded copy, retaining menu indexes."""
+    """Hide completeness overlays in the embedded copy, retaining menu indexes.
+
+    Args:
+        figure: Plotly figure to annotate or style.
+
+    Returns:
+        None.
+    """
     for trace in figure['data']:
         if 'censored' in str(trace.get('name', '')).casefold():
             # The rug repeats observations already counted in the histogram.
@@ -33,7 +40,14 @@ def _hide_completeness(figure):
 
 
 def _style_length_plot(layout):
-    """Remove the decorative rug box and align paired saved plot baselines."""
+    """Remove the decorative rug box and align paired saved plot baselines.
+
+    Args:
+        layout: Layout object to inspect or update.
+
+    Returns:
+        None.
+    """
     layout['shapes'] = [shape for shape in layout.get('shapes', []) if not (
         shape.get('type') == 'rect' and shape.get('xref') == 'paper'
         and shape.get('yref') == 'paper' and shape.get('y0') == 0
@@ -46,27 +60,68 @@ def _style_length_plot(layout):
 class _FigureParser(HTMLParser):
     """Read only NanoTel's saved JSON figure; never execute source HTML."""
     def __init__(self):
+        """Initialize the instance and its dependencies.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__()
         self.inside = False
         self.parts = []
         self.count = 0
 
     def handle_starttag(self, tag, attrs):
+        """Handle starttag.
+
+        Args:
+            tag: HTML element name reported by the parser.
+            attrs: HTML attributes reported by the parser.
+
+        Returns:
+            None.
+        """
         if tag == 'script' and dict(attrs).get('id') == 'figure':
             self.inside = True
             self.count += 1
 
     def handle_data(self, data):
+        """Handle data.
+
+        Args:
+            data: Source data or presentation records for this operation.
+
+        Returns:
+            None.
+        """
         if self.inside:
             self.parts.append(data)
 
     def handle_endtag(self, tag):
+        """Handle endtag.
+
+        Args:
+            tag: HTML element name reported by the parser.
+
+        Returns:
+            None.
+        """
         if tag == 'script':
             self.inside = False
 
 
 def histogram_sections(run, results_root=None):
-    """Section 2 uses the original histogram and its unit controls."""
+    """Section 2 uses the original histogram and its unit controls.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        results_root: Results directory used to resolve saved scientific exports. Default: None.
+
+    Returns:
+        Saved length-histogram section HTML indexed by barcode.
+    """
     return _saved_plot_sections(run, results_root, 'histogram', 3,
         'Telomere Length Distribution',
         'Saved NanoTel histogram; original count/percentage controls and population are preserved. '
@@ -74,7 +129,15 @@ def histogram_sections(run, results_root=None):
 
 
 def telomere_plot_sections(run, results_root=None):
-    """Section 3 preserves the original per-read plot, including its axes."""
+    """Section 3 preserves the original per-read plot, including its axes.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        results_root: Results directory used to resolve saved scientific exports. Default: None.
+
+    Returns:
+        Saved per-read length-plot section HTML indexed by barcode.
+    """
     return _saved_plot_sections(run, results_root, 'plot', 4,
         'Telomere and Read Length per Read',
         'Saved NanoTel per-read plot. Original traces, running median, axes and pre-final-filter population are preserved.')
@@ -85,6 +148,17 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
 
     Extract JSON, not executable HTML. The parent report supplies offline Plotly.
     Duplicate files and unsupported legacy HTML remain explicitly unavailable.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        results_root: Results directory used to resolve saved scientific exports.
+        kind: Artifact or entity kind to select.
+        number: Section number or numeric-source parser used by the enclosing adapter.
+        title: Displayed title.
+        note: Explanation displayed beside the chart.
+
+    Returns:
+        Rendered saved-plot sections indexed by barcode.
     """
     found = {}
     specifications = {}
@@ -179,6 +253,15 @@ def _summary_length_plot(barcode, settings, kind, heading):
 
     Explicitly uses imported populations; never reconstructs filter decisions or
     running medians from a different population.
+
+    Args:
+        barcode: Imported Barcode record containing reads, metrics and evidence.
+        settings: Recorded analysis settings and their availability.
+        kind: Artifact or entity kind to select.
+        heading: Prepared section heading HTML.
+
+    Returns:
+        HTML containing a regenerated length chart and its source-data payload.
     """
     import plotly.graph_objects as go
     from ..reads.browser import read_rows

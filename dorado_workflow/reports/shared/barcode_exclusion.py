@@ -6,11 +6,28 @@ from ..overview.comparisons import comparison_data
 
 
 def exclusion_payload(run, comparisons=None):
+    """Per-barcode source records used to rebuild overview statistics after exclusion.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        comparisons: Precomputed report comparisons; reused when supplied. Default: None.
+
+    Returns:
+        Per-barcode source records used to rebuild overview statistics after exclusion.
+    """
     comparisons = comparison_data(run) if comparisons is None else comparisons
     composition = {row['barcode']: row for row in comparisons['composition']}
     rows = []
     for barcode in run.barcodes:
         def value(key):
+            """Available metric value, otherwise the enclosing adapter's missing-value marker.
+
+            Args:
+                key: Lookup key or field name.
+
+            Returns:
+                Available metric value, otherwise the enclosing adapter's missing-value marker.
+            """
             fact = barcode.metrics.get(key)
             return fact.value if fact and fact.status == 'available' else None
 
@@ -36,5 +53,14 @@ def exclusion_payload(run, comparisons=None):
 
 
 def exclusion_data_html(run, comparisons=None):
+    """Exclusion data html.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        comparisons: Precomputed report comparisons; reused when supplied. Default: None.
+
+    Returns:
+        HTML markup for exclusion data html.
+    """
     payload = json.dumps(exclusion_payload(run, comparisons=comparisons), ensure_ascii=True, allow_nan=False).replace('<', '\\u003c')
     return '<script type="application/json" id="barcode-exclusion-data">' + payload + '</script>'

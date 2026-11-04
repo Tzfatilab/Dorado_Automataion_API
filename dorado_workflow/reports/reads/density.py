@@ -4,7 +4,14 @@ from dorado_workflow.reports.shared.colors import motif_color
 
 
 def mismatch_enabled(settings):
-    """Use the recorded option, not the existence of a duplicated export series."""
+    """Use the recorded option, not the existence of a duplicated export series.
+
+    Args:
+        settings: Recorded analysis settings and their availability.
+
+    Returns:
+        True or False for a recorded matching mode; None when the mode is unknown.
+    """
     if not settings or settings.status != 'available' or not isinstance(settings.value, dict):
         return None
     options = settings.value.get('nanotel_analysis', settings.value)
@@ -19,7 +26,14 @@ def mismatch_enabled(settings):
 
 
 def tvr_enabled(settings):
-    """Distinguish an explicit empty TVR selection from unknown legacy settings."""
+    """Distinguish an explicit empty TVR selection from unknown legacy settings.
+
+    Args:
+        settings: Recorded analysis settings and their availability.
+
+    Returns:
+        True or False for a recorded TVR selection; None when selection is unknown.
+    """
     if not settings or settings.status != 'available' or not isinstance(settings.value, dict):
         return None
     options = settings.value.get('nanotel_analysis', settings.value)
@@ -31,6 +45,15 @@ def saved_read_sequence(folder, serial, header, length):
     """Load NanoTel's analyzed-orientation FASTA, verifying identity and length.
 
     Do not fall back to raw FASTQ: its orientation may differ from the plots.
+
+    Args:
+        folder: Directory used to locate or store artifacts.
+        serial: Original NanoTel read number.
+        header: Original full read header.
+        length: Sequence or coordinate-space length in base pairs.
+
+    Returns:
+        Validated saved read sequence, or None when identity or length cannot be verified.
     """
     import gzip
     import re
@@ -68,6 +91,13 @@ def read_track_data(read, folder=None):
     duplicated into the dashboard. NanoTel's original plot files stay on disk.
     Internal coordinates are zero-based half-open; window starts are converted
     back to source positions by the browser when drawing the density curve.
+
+    Args:
+        read: Imported read record and its available measurements.
+        folder: Directory used to locate or store artifacts. Default: None.
+
+    Returns:
+        Saved density, motif and alignment track data, or None when unavailable.
     """
     if read is None:
         return None

@@ -18,7 +18,15 @@ def validate_input_directories(pod5, fastq, bam):
     errors = []
 
     def has_files(path, patterns):
-        """Check whether a directory recursively contains files matching patterns."""
+        """Check whether a directory recursively contains files matching patterns.
+
+        Args:
+            path: File or directory path.
+            patterns: Filename patterns or recorded search motifs for this operation.
+
+        Returns:
+            True when the selected path contains at least one matching input.
+        """
         if not path:
             return False
         p = Path(path)
@@ -41,8 +49,7 @@ def validate_input_directories(pod5, fastq, bam):
 
 
 def inspect_bam_directory(bam_path, max_files=3, methylation_read_limit=1000):
-    """
-    Inspect BAM files for alignment and modified-base tags.
+    """Inspect BAM files for alignment and modified-base tags.
 
     Returns:
         dict with:
@@ -50,6 +57,11 @@ def inspect_bam_directory(bam_path, max_files=3, methylation_read_limit=1000):
         - is_aligned: True/False/None
         - has_modifications: True/False/None
         - errors: non-fatal inspection errors
+
+    Args:
+        bam_path: Bam path.
+        max_files: Maximum number of files to inspect. Default: 3.
+        methylation_read_limit: Maximum number of reads inspected for modification tags. Default: 1000.
     """
     result = {
         "bam_files": 0,

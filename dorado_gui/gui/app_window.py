@@ -46,7 +46,14 @@ class AppWindow(
     """Main application window for pipeline configuration and execution."""
 
     def __init__(self, settings_path=None):
-        """Initialize the main window and construct the UI."""
+        """Initialize the main window and construct the UI.
+
+        Args:
+            settings_path: Settings path. Default: None.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__()
         if settings_path is None:
             settings_path = Path(QStandardPaths.writableLocation(QStandardPaths.GenericConfigLocation)) / "TelomereAnalyzer" / "profiles.json"
@@ -84,7 +91,14 @@ class AppWindow(
             QTimer.singleShot(0, lambda: QMessageBox.warning(self, "Saved profiles unavailable", self.settings_store.load_error))
 
     def show_initial_window(self, screen=None):
-        """Prepare layout and backing pixels before exposing the native window."""
+        """Prepare layout and backing pixels before exposing the native window.
+
+        Args:
+            screen: Qt screen supplying available display geometry. Default: None.
+
+        Returns:
+            None.
+        """
         screen = screen or self.screen() or QApplication.primaryScreen()
         available = screen.availableGeometry() if screen is not None else None
         if available is not None:
@@ -129,6 +143,12 @@ class AppWindow(
         Inspect actual widget geometry rather than a monitor-resolution cutoff,
         so system DPI, fonts and application scaling are taken into account.
         This runs only at startup; later manual resizing remains user controlled.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
         """
         self.layout().activate()
         scroll = self.pages.widget(0)
@@ -144,7 +164,15 @@ class AppWindow(
 
     @staticmethod
     def _screen_scale_factor(width, height):
-        """Return a restrained UI scale for screens larger than 1600x900."""
+        """Return a restrained UI scale for screens larger than 1600x900.
+
+        Args:
+            width: Available or requested width in pixels.
+            height: Available or requested height in pixels.
+
+        Returns:
+            Bounded display scale factor derived from screen dimensions.
+        """
         if width <= 0 or height <= 0:
             return 1.0
         size_ratio = min(width / 1600.0, height / 900.0)
@@ -152,11 +180,27 @@ class AppWindow(
 
     @staticmethod
     def _scale_stylesheet(stylesheet, factor):
-        """Scale pixel measurements in a Qt stylesheet."""
+        """Scale pixel measurements in a Qt stylesheet.
+
+        Args:
+            stylesheet: Qt stylesheet text.
+            factor: Scale multiplier applied to pixel dimensions.
+
+        Returns:
+            Stylesheet text with pixel sizes adjusted by the scale factor.
+        """
         if not stylesheet or factor == 1.0:
             return stylesheet
 
         def scaled_pixel(match):
+            """Scaled pixel.
+
+            Args:
+                match: Regular-expression match being transformed.
+
+            Returns:
+                Formatted text for the requested output.
+            """
             value = int(match.group(1))
             if value <= 1:
                 return match.group(0)
@@ -165,7 +209,14 @@ class AppWindow(
         return re.sub(r"(?<![\w.])(\d+)px\b", scaled_pixel, stylesheet)
 
     def _apply_screen_scaling(self):
-        """Enlarge the complete interface moderately on larger displays."""
+        """Enlarge the complete interface moderately on larger displays.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         screen = self.screen() or QApplication.primaryScreen()
         if screen is None:
             self.ui_scale = 1.0
@@ -216,12 +267,26 @@ class AppWindow(
                 layout.setSpacing(round(layout.spacing() * factor))
 
     def resizeEvent(self, event):
-        """Adapt long option text when the application window is resized."""
+        """Adapt long option text when the application window is resized.
+
+        Args:
+            event: Qt event delivered to this handler.
+
+        Returns:
+            None.
+        """
         super().resizeEvent(event)
         self._update_chromosome_mapping_text()
 
     def _update_chromosome_mapping_text(self):
-        """Keep the shortened chromosome-mapping label consistent."""
+        """Keep the shortened chromosome-mapping label consistent.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         checkbox = getattr(self, "chromosome_mapping", None)
         if checkbox is None:
             return
@@ -232,11 +297,13 @@ class AppWindow(
             checkbox.updateGeometry()
 
     def _build_ui(self):
-        """
-        Construct the main window layout using section mixins.
+        """Construct the main window layout using section mixins.
 
         Returns:
             None
+
+        Inputs:
+            None; uses instance state.
         """
         main_layout = QHBoxLayout()
 
@@ -297,7 +364,14 @@ class AppWindow(
         apply_global_style(self)  
 
     def _apply_saved_profile(self, initial=False):
-        """Use profile defaults for future runs without changing a running snapshot."""
+        """Use profile defaults for future runs without changing a running snapshot.
+
+        Args:
+            initial: Whether this is the initial GUI setup. Default: False.
+
+        Returns:
+            None.
+        """
         self._sync_profile_selector()
         config = self.settings_store.snapshot()
         profile_changed = initial or getattr(self, "_applied_profile", None) != self.settings_store.active
@@ -322,11 +396,25 @@ class AppWindow(
         self._applied_profile = self.settings_store.active
 
     def _run_organism_changed(self, *_):
-        """Switch numeric fields to the selected organism's saved defaults."""
+        """Switch numeric fields to the selected organism's saved defaults.
+
+        Args:
+            _: Event argument intentionally unused by this callback.
+
+        Returns:
+            None.
+        """
         self._apply_analysis_defaults(force=True)
 
     def _apply_analysis_defaults(self, force=False):
-        """Keep run edits on ordinary saves; reset them on profile/organism changes."""
+        """Keep run edits on ordinary saves; reset them on profile/organism changes.
+
+        Args:
+            force: Whether to apply values even when current settings exist. Default: False.
+
+        Returns:
+            None.
+        """
         defaults = organism_nanotel_settings(self.settings_store.snapshot(), self.organism.currentText())
         organism_changed = getattr(self, "_analysis_organism", None) != self.organism.currentText()
         for name, key in (("read_length", "min_read_length"),
@@ -342,6 +430,14 @@ class AppWindow(
         self._analysis_organism = self.organism.currentText()
 
     def _sync_profile_selector(self):
+        """Sync profile selector.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         self.run_profile.blockSignals(True)
         self.run_profile.clear()
         self.run_profile.addItems(self.settings_store.profiles)
@@ -349,6 +445,14 @@ class AppWindow(
         self.run_profile.blockSignals(False)
 
     def _select_run_profile(self, name):
+        """Select run profile.
+
+        Args:
+            name: Name used for lookup, display or storage.
+
+        Returns:
+            None.
+        """
         if not name or name == self.settings_store.active:
             return
         if not self.settings_page.confirm_pending():
@@ -364,6 +468,14 @@ class AppWindow(
         self._apply_saved_profile()
 
     def closeEvent(self, event):
+        """Closeevent.
+
+        Args:
+            event: Qt event delivered to this handler.
+
+        Returns:
+            None.
+        """
         if not self.settings_page.confirm_pending():
             event.ignore()
             return
@@ -400,11 +512,13 @@ class AppWindow(
         self.cancel_btn.setEnabled(True)
 
     def _is_workflow_running(self):
-        """
-        Check whether a background worker thread is active.
+        """Check whether a background worker thread is active.
 
         Returns:
             bool: True when a workflow thread is running.
+
+        Inputs:
+            None; uses instance state.
         """
         return self.worker_thread is not None and self.worker_thread.isRunning()
 
@@ -473,16 +587,28 @@ class AppWindow(
             return True
 
         # If NanoTel not running → no need
-        if not flags.get("do_nanotel", False):
+        if not (flags.get("do_nanotel", False) or flags.get("do_post_analysis", False)):
             self.non_pod5_trim_status = "auto"
             return True
+
+        if flags.get("do_post_analysis", False):
+            from dorado_workflow.processors.project_sources import ProjectSources
+            source = ProjectSources.inspect(inputs["project"])
+            saved_trim_status = source.params.get("input_trim_status")
+            if saved_trim_status in ("trimmed", "untrimmed"):
+                self.non_pod5_trim_status = saved_trim_status
+                return True
 
         # Ask user
         dialog = QMessageBox(self)
         dialog.setWindowTitle("Input Trimming")
         dialog.setIcon(QMessageBox.Question)
         dialog.setText("Were the reads trimmed for barcode removal?")
-        dialog.setInformativeText("Used to adjust read length in filtering.")
+        dialog.setInformativeText(
+            "Choose the trimming state of the original reads. "
+            "Untrimmed reads use the configured untrimmed telomere-start "
+            "and edge-distance threshold (134 bp by default)."
+        )
 
         trimmed_btn   = dialog.addButton("Trimmed",   QMessageBox.AcceptRole)
         untrimmed_btn = dialog.addButton("Untrimmed", QMessageBox.AcceptRole)
@@ -503,11 +629,17 @@ class AppWindow(
         return True
 
     def _detect_bam_metadata(self, inputs, flags):
-        """
-        Detect BAM alignment and modification state.
+        """Detect BAM alignment and modification state.
 
         Trim state remains a separate prompt because it affects NanoTel
         filtering thresholds and cannot be proven reliably from a BAM file.
+
+        Args:
+            inputs: Selected input paths keyed by input kind.
+            flags: Selected workflow steps and analysis options.
+
+        Returns:
+            True when the operation or check succeeds; False when it does not.
         """
         self.bam_is_aligned = None
         self.bam_has_modifications = None
@@ -589,7 +721,14 @@ class AppWindow(
         self.worker_thread.start()
 
     def _on_report_ready(self, path):
-        """Receive the generated path on the GUI thread before completion."""
+        """Receive the generated path on the GUI thread before completion.
+
+        Args:
+            path: File or directory path.
+
+        Returns:
+            None.
+        """
         self._completed_report_path = path
 
     def _on_workflow_done(self, success, message):
@@ -620,14 +759,16 @@ class AppWindow(
             # Let Qt measure the actual styled buttons before sizing this dialog.
             dialog.setOption(QMessageBox.Option.DontUseNativeDialog, True)
             dialog.setFont(self.font())
-            dialog.setWindowTitle("Run complete")
+            dialog.setWindowTitle(
+                "Results updated" if "post_analysis" in self.selected_workflows else "Run complete"
+            )
             dialog.setIcon(QMessageBox.Information)
             dialog.setText(message or "The run has finished successfully.")
             dialog.setStandardButtons(QMessageBox.Close)
             report = getattr(self, "_completed_report_path", None)
             open_button = None
             if report and Path(report).is_file():
-                open_button = dialog.addButton("Open HTML Report", QMessageBox.ActionRole)
+                open_button = dialog.addButton("Open Dashboard", QMessageBox.ActionRole)
             dialog.ensurePolished()
             for button in dialog.buttons():
                 button.ensurePolished()
@@ -639,21 +780,25 @@ class AppWindow(
                     QMessageBox.warning(self, "Could not open report", f"Open this file in your browser:\n{report}")
 
     def _cleanup_worker(self):
-        """
-        Clear worker references after the background thread stops.
+        """Clear worker references after the background thread stops.
 
         Returns:
             None
+
+        Inputs:
+            None; uses instance state.
         """
         self.worker = None
         self.worker_thread = None
 
     def _handle_cancel(self):
-        """
-        Cancel the currently running workflow or close the window.
+        """Cancel the currently running workflow or close the window.
 
         Returns:
             None
+
+        Inputs:
+            None; uses instance state.
         """
         if self.worker is not None:
             self.worker.stop()
@@ -661,11 +806,13 @@ class AppWindow(
         self.close()
 
     def show_log_dialog(self):
-        """
-        Validate the current selection and start workflow execution.
+        """Validate the current selection and start workflow execution.
 
         Returns:
             None
+
+        Inputs:
+            None; uses instance state.
         """
         if self._is_workflow_running():
             self._open_execution_log_dialog()
@@ -707,6 +854,14 @@ class AppWindow(
 
 
     def _get_selected_inputs(self):
+        """Input-path dictionary; unselected input kinds have empty paths.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Input-path dictionary; unselected input kinds have empty paths.
+        """
         return {
             "pod5": self.input_path.text() if self.selected_input == "pod5" else "",
             "fastq": self.input_path.text() if self.selected_input == "fastq" else "",

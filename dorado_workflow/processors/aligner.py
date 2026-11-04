@@ -33,11 +33,13 @@ class AlignmentProcessor(ProcessorBase):
     """
 
     def __init__(self, context: WorkflowContext):
-        """
-        Initialize alignment processor.
+        """Initialize alignment processor.
 
         Args:
             context: WorkflowContext with all shared resources
+
+        Returns:
+            None; initializes the instance.
         """
         super().__init__(context)
 
@@ -46,12 +48,12 @@ class AlignmentProcessor(ProcessorBase):
 
     def validate_inputs(self, input_dir: str, organism: str = "mouse",
                         use_existing_alignment: bool = False) -> bool:
-        """
-        Validate that all prerequisites for alignment are met.
+        """Validate that all prerequisites for alignment are met.
 
         Args:
             input_dir: Path to directory containing BAM or FASTQ files
             organism: Organism type ('mouse' or 'human') for reference selection
+            use_existing_alignment: bool; whether to reuse aligned BAMs instead of running minimap2. Default: False.
 
         Returns:
             True if validation passes, False otherwise
@@ -102,14 +104,16 @@ class AlignmentProcessor(ProcessorBase):
 
     def execute(self, input_dir: str, organism: str = "mouse",
                 input_type: str = "auto",
-                use_existing_alignment: bool = False) -> ProcessorResult:
-        """
-        Execute the alignment process.
+                use_existing_alignment: bool = False, link_inputs_only: bool = False) -> ProcessorResult:
+        """Execute the alignment process.
 
         Args:
             input_dir: Path to directory containing BAM or FASTQ files
             organism: Organism type ('mouse' or 'human') for reference selection
             input_type: 'bam', 'fastq', or 'auto' (auto-detect)
+            link_inputs_only: Reject copying existing BAMs if linking fails;
+                used by recalculation to avoid duplicating saved inputs.
+            use_existing_alignment: bool; whether to reuse aligned BAMs instead of running minimap2. Default: False.
 
         Returns:
             ProcessorResult with success status, output directory, and statistics
@@ -133,7 +137,7 @@ class AlignmentProcessor(ProcessorBase):
 
             if use_existing_alignment:
                 self.context.logger.info("Preparing existing aligned BAM files")
-                aligned_bams = self._stage_existing_aligned_bams(Path(input_dir))
+                aligned_bams = self._stage_existing_aligned_bams(Path(input_dir), link_inputs_only=link_inputs_only)
             else:
                 prepared_input = self._prepare_alignment_input(Path(input_dir), input_type)
 
@@ -173,8 +177,15 @@ class AlignmentProcessor(ProcessorBase):
             return result
 
     def _run_minimap2_alignment(self, input_dir: Path, organism: str, input_type: str) -> list[Path]:
-        """
-        Align all input files with minimap2 and return sorted BAM paths.
+        """Align all input files with minimap2 and return sorted BAM paths.
+
+        Args:
+            input_dir: Path; directory containing input files.
+            organism: str; organism label selecting reference and analysis defaults.
+            input_type: str; selected input kind, such as BAM, FASTQ or auto.
+
+        Returns:
+            Ordered paths to the sorted and indexed aligned BAM files.
         """
         config = self.context.config_manager
         alignment_params = config.get_alignment_params()
@@ -195,9 +206,18 @@ class AlignmentProcessor(ProcessorBase):
 
         return aligned_bams
 
-    def _stage_existing_aligned_bams(self, input_dir: Path) -> list[Path]:
-        """
-        Link or copy already-aligned BAM files into the workflow aligned directory.
+    def _stage_existing_aligned_bams(self, input_dir: Path, *, link_inputs_only=False) -> list[Path]:
+        """Stage existing BAMs and create indexes only in the new run directory.
+
+        Recalculation sets link_inputs_only so large BAMs never silently fall
+        back to a full copy when filesystem links are unavailable.
+
+        Args:
+            input_dir: Path; directory containing input files.
+            link_inputs_only: Whether to reject copying if source-file linking fails. Default: False.
+
+        Returns:
+            Paths to existing BAMs staged in the new aligned directory.
         """
         bam_files = self._find_barcode_bams(input_dir)
         if not bam_files:
@@ -207,7 +227,11 @@ class AlignmentProcessor(ProcessorBase):
         for index, bam_file in enumerate(bam_files, 1):
             barcode = self._extract_barcode(bam_file) or f"bam{index:02d}"
             destination = self.output_dir / f"aligned_{barcode}_{index}.bam"
-            self._link_or_copy_bam(bam_file, destination)
+            if link_inputs_only:
+                from dorado_workflow.utils.source_links import link_source
+                link_source(bam_file, destination)
+            else:
+                self._link_or_copy_bam(bam_file, destination)
             self._index_bam(destination)
             staged_bams.append(destination)
 
@@ -217,6 +241,15 @@ class AlignmentProcessor(ProcessorBase):
         return staged_bams
 
     def _find_alignment_inputs(self, input_dir: Path, input_type: str) -> list[Path]:
+        """Find alignment inputs.
+
+        Args:
+            input_dir: Path; directory containing input files.
+            input_type: str; selected input kind, such as BAM, FASTQ or auto.
+
+        Returns:
+            list[Path]: Sorted list of matching values.
+        """
         if input_type == "bam":
             return self._find_barcode_bams(input_dir)
 
@@ -233,6 +266,18 @@ class AlignmentProcessor(ProcessorBase):
 
     def _align_one_file(self, input_file: Path, output_bam: Path,
                         reference: Path, preset: str, input_type: str) -> None:
+        """Align one file.
+
+        Args:
+            input_file: Path; one source file to process.
+            output_bam: Path; destination for the generated BAM.
+            reference: Path; reference path or exported reference label.
+            preset: str; minimap2 alignment preset.
+            input_type: str; selected input kind, such as BAM, FASTQ or auto.
+
+        Returns:
+            None.
+        """
         temporary_bam = output_bam.with_name(f"{output_bam.name}.tmp.bam")
         if input_type == "bam":
             # Carry modification tags through FASTQ comments; soft clipping
@@ -258,10 +303,26 @@ class AlignmentProcessor(ProcessorBase):
                 temporary_bam.unlink()
 
     def _index_bam(self, bam_path: Path) -> None:
+        """Index bam.
+
+        Args:
+            bam_path: Path; bam path.
+
+        Returns:
+            None.
+        """
         command = format_command(["samtools", "index", str(bam_path)])
         self.context.command_executor.execute(command, capture_output=True)
 
     def _write_alignment_summary(self, bam_paths: list[Path]) -> Path:
+        """Path to the tab-separated alignment summary.
+
+        Args:
+            bam_paths: list[Path]; aligned BAM paths included in the exported summary.
+
+        Returns:
+            Path to the tab-separated alignment summary.
+        """
         summary_path = self.output_dir / "alignment_summary.txt"
         header = [
             "read_id",
@@ -348,6 +409,13 @@ class AlignmentProcessor(ProcessorBase):
         SAM stores reverse-strand CIGAR in reference-facing orientation. Return
         original-read coordinates so NanoTel's own orientation can be applied
         explicitly later. Insertions consume query bases; deletions do not.
+
+        Args:
+            cigar: str; sAM CIGAR string describing aligned and clipped spans.
+            reverse: bool; whether the alignment is on the reverse strand. Default: False.
+
+        Returns:
+            Tuple containing `start`, `end`, `length`. May be None when no usable result is available.
         """
         if not cigar or not re.fullmatch(r'(?:[1-9]\d*[MIDNSHP=X])+', cigar):
             return None
@@ -367,6 +435,14 @@ class AlignmentProcessor(ProcessorBase):
 
     @staticmethod
     def _cigar_reference_length(cigar: str) -> int:
+        """Cigar reference length.
+
+        Args:
+            cigar: str; sAM CIGAR string describing aligned and clipped spans.
+
+        Returns:
+            int: Integer value.
+        """
         if not cigar or cigar == "*":
             return 0
         length = 0
@@ -376,6 +452,15 @@ class AlignmentProcessor(ProcessorBase):
         return length
 
     def _prepare_alignment_input(self, input_path: Path, input_type: str) -> Path:
+        """Flatten barcode BAM paths for alignment without changing their contents.
+
+        Args:
+            input_path: Path; input path.
+            input_type: str; selected input kind, such as BAM, FASTQ or auto.
+
+        Returns:
+            Directory containing FASTQ inputs or staged barcode BAM files.
+        """
         if input_type != "bam":
             return input_path
 
@@ -404,6 +489,14 @@ class AlignmentProcessor(ProcessorBase):
         return staging_dir
 
     def _find_barcode_bams(self, input_path: Path) -> list[Path]:
+        """Find barcode bams.
+
+        Args:
+            input_path: Path; input path.
+
+        Returns:
+            list[Path]: Sorted list of matching values.
+        """
         bam_files = [
             path for path in input_path.rglob("*")
             if path.is_file()
@@ -415,6 +508,14 @@ class AlignmentProcessor(ProcessorBase):
 
     @staticmethod
     def _extract_barcode(path: Path) -> Optional[str]:
+        """Extract barcode.
+
+        Args:
+            path: Path; file or directory path.
+
+        Returns:
+            Optional[str]: Formatted text for the requested output.
+        """
         match = re.search(r"(?:barcode|bc)(\d+)", str(path), re.IGNORECASE)
         if not match:
             return None
@@ -422,11 +523,28 @@ class AlignmentProcessor(ProcessorBase):
 
     @staticmethod
     def _is_skipped_bam(path: Path) -> bool:
+        """True for BAMs belonging to unclassified or mixed barcode folders.
+
+        Args:
+            path: Path; file or directory path.
+
+        Returns:
+            True for BAMs belonging to unclassified or mixed barcode folders.
+        """
         lowered = str(path).lower()
         return "unclassified" in lowered or "/mix/" in lowered or "\\mix\\" in lowered
 
     @staticmethod
     def _link_or_copy_bam(source: Path, destination: Path) -> None:
+        """Link or copy bam.
+
+        Args:
+            source: Path; existing source artifact or source data.
+            destination: Path; path where the new output is written.
+
+        Returns:
+            None.
+        """
         try:
             destination.symlink_to(source)
         except OSError:
@@ -502,22 +620,26 @@ class AlignmentProcessor(ProcessorBase):
         return stats
 
     def get_output_paths(self) -> Dict[str, Path]:
-        """
-        Get the expected output paths for this processor.
+        """Get the expected output paths for this processor.
 
         Returns:
             Dictionary with 'output_dir' key
+
+        Inputs:
+            None; uses instance state.
         """
         return {
             'output_dir': self.output_dir
         }
 
     def get_aligned_files(self) -> list[Path]:
-        """
-        Get all aligned BAM files.
+        """Get all aligned BAM files.
 
         Returns:
             List of aligned BAM file paths
+
+        Inputs:
+            None; uses instance state.
         """
         if not self.output_dir.exists():
             return []
@@ -526,6 +648,14 @@ class AlignmentProcessor(ProcessorBase):
 
     @staticmethod
     def _show_minimap_gui_line(line: str) -> bool:
+        """True when the minimap2 diagnostic is suitable for GUI display.
+
+        Args:
+            line: str; one line of source or process output.
+
+        Returns:
+            True when the minimap2 diagnostic is suitable for GUI display.
+        """
         lower = line.lower()
         return (
             "[error]" in lower

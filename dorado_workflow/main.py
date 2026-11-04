@@ -48,13 +48,16 @@ def setup_context(
         log_level: str = "INFO",
         config_data: Optional[dict] = None,
 ) -> WorkflowContext:
-    """
-    Initialize and setup workflow context with all dependencies.
+    """Initialize and setup workflow context with all dependencies.
 
     Args:
         trial_name: Name of the trial (e.g., "Trial_75")
         base_output_dir: Base output directory (optional)
         config_path: Path to config file (optional, uses default if not provided)
+        organism: Optional[str]; organism label selecting reference and analysis defaults. Default: None.
+        log_callback: Optional[Callable[[str], None]]; callback receiving workflow log messages. Default: None.
+        log_level: str; minimum severity included in logging. Default: 'INFO'.
+        config_data: Optional[dict]; configuration snapshot supplied for this run. Default: None.
 
     Returns:
         WorkflowContext with all initialized dependencies
@@ -96,7 +99,14 @@ def setup_context(
 
 
 def cmd_pod5_workflow(args) -> int:
-    """Execute POD5 complete workflow."""
+    """Execute POD5 complete workflow.
+
+    Args:
+        args: Command-line arguments or forwarded positional arguments.
+
+    Returns:
+        Exit status: zero for success and nonzero for failure.
+    """
     context = setup_context(args.trial_name, args.output_dir, args.config, organism=args.organism)
     operator = WorkflowOperator(context)
 
@@ -109,7 +119,14 @@ def cmd_pod5_workflow(args) -> int:
 
 
 def cmd_fastq_workflow(args) -> int:
-    """Execute FASTQ workflow."""
+    """Execute FASTQ workflow.
+
+    Args:
+        args: Command-line arguments or forwarded positional arguments.
+
+    Returns:
+        Exit status: zero for success and nonzero for failure.
+    """
     context = setup_context(args.trial_name, args.output_dir, args.config, organism=args.organism)
     operator = WorkflowOperator(context)
 
@@ -123,7 +140,14 @@ def cmd_fastq_workflow(args) -> int:
 
 
 def cmd_nanotel_only(args) -> int:
-    """Execute NanoTel analysis only."""
+    """Execute NanoTel analysis only.
+
+    Args:
+        args: Command-line arguments or forwarded positional arguments.
+
+    Returns:
+        Exit status: zero for success and nonzero for failure.
+    """
     context = setup_context(args.trial_name, args.output_dir, args.config)
     operator = WorkflowOperator(context)
 
@@ -133,7 +157,14 @@ def cmd_nanotel_only(args) -> int:
 
 
 def cmd_alignment_only(args) -> int:
-    """Execute alignment only."""
+    """Execute alignment only.
+
+    Args:
+        args: Command-line arguments or forwarded positional arguments.
+
+    Returns:
+        Exit status: zero for success and nonzero for failure.
+    """
     context = setup_context(args.trial_name, args.output_dir, args.config, organism=args.organism)
     operator = WorkflowOperator(context)
 
@@ -146,7 +177,14 @@ def cmd_alignment_only(args) -> int:
 
 
 def cmd_r_analysis_only(args) -> int:
-    """Execute R analysis only."""
+    """Execute R analysis only.
+
+    Args:
+        args: Command-line arguments or forwarded positional arguments.
+
+    Returns:
+        Exit status: zero for success and nonzero for failure.
+    """
     context = setup_context(args.trial_name, args.output_dir, args.config)
     operator = WorkflowOperator(context)
 
@@ -160,7 +198,14 @@ def cmd_r_analysis_only(args) -> int:
 
 
 def main():
-    """Main entry point with argument parsing."""
+    """Main entry point with argument parsing.
+
+    Inputs:
+        None.
+
+    Returns:
+        None.
+    """
     parser = argparse.ArgumentParser(
         description="Dorado Workflow - Nanopore sequencing data processing pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,

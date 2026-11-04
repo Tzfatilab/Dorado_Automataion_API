@@ -223,6 +223,16 @@ class SelectOption(QFrame):
 class SelectionGrid(QWidget):
     """Keep selection cards in-place, wrapping rows before captions are squeezed."""
     def __init__(self, maximum_columns, spacing=16, minimum_card_width=300):
+        """Initialize the instance and its dependencies.
+
+        Args:
+            maximum_columns: Maximum number of cards in one row.
+            spacing: Gap between cards in pixels. Default: 16.
+            minimum_card_width: Minimum readable card width in pixels. Default: 300.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__()
         self.maximum_columns = maximum_columns
         self.minimum_card_width = minimum_card_width
@@ -235,20 +245,53 @@ class SelectionGrid(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
     def minimumSizeHint(self):
+        """Minimum suggested widget size as QSize.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Minimum suggested widget size as QSize.
+        """
         return QSize(0, max((card.minimumHeight() for card in self.cards), default=83))
 
     def add_card(self, card):
+        """Add card.
+
+        Args:
+            card: Option card to enable, disable or insert.
+
+        Returns:
+            None.
+        """
         card.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.cards.append(card)
         self._reflow()
 
     def resizeEvent(self, event):
+        """Resizeevent.
+
+        Args:
+            event: Qt event delivered to this handler.
+
+        Returns:
+            None.
+        """
         super().resizeEvent(event)
         self._reflow()
 
     def _reflow(self):
+        """Wrap cards at their readable width and reserve the resulting height.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         card_width = max(self.minimum_card_width, max((card.minimumSizeHint().width() for card in self.cards), default=0))
         columns = min(self.maximum_columns, max(1, (self.width()+self.grid.spacing()) // (card_width+self.grid.spacing())))
+        # Four input cards should wrap into two balanced rows, not a 3+1 layout.
         if self.maximum_columns == 4 and columns == 3: columns = 2
         height = max((card.minimumHeight() for card in self.cards), default=83)
         rows = (len(self.cards)+columns-1)//columns

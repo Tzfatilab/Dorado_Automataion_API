@@ -25,11 +25,13 @@ class InputSection:
     """
 
     def _build_inputs(self):
-        """
-        Construct the Input Data card containing selection cards and path row.
+        """Construct the Input Data card containing selection cards and path row.
 
         Returns:
             QWidget: a styled card widget (from make_card) containing the input UI.
+
+        Inputs:
+            None; uses instance state.
         """
         self.selected_input = "pod5"
         self.cards = {}
@@ -102,11 +104,13 @@ class InputSection:
         return box
 
     def _select_input(self, key):
-        """
-        Mark the given input card as selected and update visuals.
+        """Mark the given input card as selected and update visuals.
 
         Args:
             key (str): one of "pod5", "bam", "fastq".
+
+        Returns:
+            None.
         """
         self.selected_input = key
         if key != "project":
@@ -126,11 +130,13 @@ class InputSection:
 
 
     def _browse_input(self, edit=None):
-        """
-        Open a directory picker and place the chosen path into the provided QLineEdit.
+        """Open a directory picker and place the chosen path into the provided QLineEdit.
 
         Args:
             edit (QLineEdit|None): widget to fill; if None uses self.input_path.
+
+        Returns:
+            None.
         """
         if edit is None:
             edit = self.input_path
@@ -140,11 +146,13 @@ class InputSection:
             self._load_post_analysis_source()
 
     def get_selected_inputs(self):
-        """
-        Return the selected input paths according to the current UI selection.
+        """Return the selected input paths according to the current UI selection.
 
         Returns:
             dict: keys: 'pod5', 'fastq', 'bam', 'nanotel' with path strings (empty if not selected).
+
+        Inputs:
+            None; uses instance state.
         """
         return {
             "pod5": self.input_path.text() if self.selected_input == "pod5" else "",
@@ -194,7 +202,14 @@ class InputSection:
         return btn
 
     def _load_post_analysis_source(self):
-        """Preview original detection settings without editing the project."""
+        """Preview original detection settings without editing the project.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         if self.selected_input != "project" or not hasattr(self, "nanotel_mapping"):
             return
         path = self.input_path.text().strip()

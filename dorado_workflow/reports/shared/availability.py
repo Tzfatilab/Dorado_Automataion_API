@@ -8,6 +8,12 @@ def availability_html(run):
 
     Rows count imported records, not all input reads. Existing importer warnings
     explain invalid exports and skipped joins. No scientific filters run here.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+
+    Returns:
+        HTML markup for availability html.
     """
     rows, stats, coverage_warnings = [], [], []
     summary = run.stages.get("summary_only")

@@ -3,6 +3,17 @@ from statistics import mean, median
 
 
 def add_group_statistics(figure, groups, *, include_median=True, short_cutoffs=None):
+    """Add group statistics.
+
+    Args:
+        figure: Plotly figure to annotate or style.
+        groups: Plotted group positions paired with their length observations.
+        include_median: Whether to include median annotations alongside count and mean. Default: True.
+        short_cutoffs: Short-telomere cutoffs keyed by plotted group. Default: None.
+
+    Returns:
+        None.
+    """
     for x, values in groups:
         if not values:
             continue

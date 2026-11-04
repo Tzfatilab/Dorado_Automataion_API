@@ -28,7 +28,14 @@ class BarcodeManager:
     BARCODE_PATTERN = re.compile(r'(bc|barcode)(\d+)', re.IGNORECASE)
 
     def __init__(self):
-        """Initialize the barcode manager."""
+        """Initialize the barcode manager.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None; initializes the instance.
+        """
         # Track barcode status: {barcode: {process_name: {'status': 'success/failed', 'error': '...'}}}
         self.barcode_status: Dict[str, Dict[str, Dict]] = defaultdict(dict)
 
@@ -180,12 +187,14 @@ class BarcodeManager:
     # ==================== Status Tracking ====================
 
     def register_success(self, barcode: str, process_name: str) -> None:
-        """
-        Register successful processing for a barcode.
+        """Register successful processing for a barcode.
 
         Args:
             barcode: Barcode name
             process_name: Name of the process (e.g., "basecalling", "nanotel")
+
+        Returns:
+            None.
         """
         normalized = self.normalize_barcode(barcode)
         self.barcode_status[normalized][process_name] = {
@@ -194,13 +203,15 @@ class BarcodeManager:
         self.discovered_barcodes.add(normalized)
 
     def register_failure(self, barcode: str, process_name: str, error: str = "") -> None:
-        """
-        Register failed processing for a barcode.
+        """Register failed processing for a barcode.
 
         Args:
             barcode: Barcode name
             process_name: Name of the process
             error: Error message or reason for failure
+
+        Returns:
+            None.
         """
         normalized = self.normalize_barcode(barcode)
         self.barcode_status[normalized][process_name] = {
@@ -289,11 +300,13 @@ class BarcodeManager:
         return self._sort_barcodes(failed)
 
     def get_barcode_summary(self) -> Dict[str, Dict]:
-        """
-        Get complete summary of all barcodes and their statuses.
+        """Get complete summary of all barcodes and their statuses.
 
         Returns:
             Dictionary with summary statistics
+
+        Inputs:
+            None; uses instance state.
         """
         summary = {
             'total_barcodes': len(self.discovered_barcodes),
@@ -321,11 +334,13 @@ class BarcodeManager:
         return summary
 
     def generate_barcode_report(self) -> List[str]:
-        """
-        Generate a detailed barcode report for logging/display.
+        """Generate a detailed barcode report for logging/display.
 
         Returns:
             List of report lines
+
+        Inputs:
+            None; uses instance state.
         """
         report_lines = [
             "=" * 60,
@@ -395,6 +410,14 @@ class BarcodeManager:
         """
 
         def extract_number(barcode):
+            """Numeric barcode suffix, or zero when no number can be extracted.
+
+            Args:
+                barcode: Barcode label or record used by this operation.
+
+            Returns:
+                Numeric barcode suffix, or zero when no number can be extracted.
+            """
             match = re.search(r'(\d+)', barcode)
             return int(match.group(1)) if match else 0
 
@@ -414,7 +437,14 @@ class BarcodeManager:
         return self.barcode_files.get(normalized, [])
 
     def __repr__(self) -> str:
-        """String representation of BarcodeManager."""
+        """String representation of BarcodeManager.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Readable string describing the instance.
+        """
         return (
             f"BarcodeManager("
             f"barcodes={len(self.discovered_barcodes)}, "

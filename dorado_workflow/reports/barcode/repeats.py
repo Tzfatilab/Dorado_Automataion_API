@@ -5,7 +5,16 @@ from dorado_workflow.reports.shared.colors import motif_color
 
 
 def motif_base_counts(start, end, hits):
-    """Partition bases once, matching the read dashboard's interval sweep."""
+    """Partition bases once, matching the read dashboard's interval sweep.
+
+    Args:
+        start: Interval start in the declared coordinate convention.
+        end: Interval end in the declared coordinate convention.
+        hits: Exported motif matches; this function does not search sequences.
+
+    Returns:
+        Base counts partitioned by motif, overlap and unassigned spans.
+    """
     events = defaultdict(Counter)
     events[start]; events[end]
     for label, a, b in hits:
@@ -15,6 +24,7 @@ def motif_base_counts(start, end, hits):
             events[b][label] -= 1
     counts, active = Counter(), Counter()
     previous = start
+    # Sweep disjoint spans so overlapping hits do not count the same base twice.
     for position in sorted(events):
         label = ('Unassigned bases' if not active else
                  next(iter(active)) if len(active) == 1 else 'Overlapping motifs')
@@ -26,6 +36,19 @@ def motif_base_counts(start, end, hits):
 
 
 def composition_section(row, number=5, title="TVR patterns", requested=None):
+    """Show base composition in the ring and read prevalence in its center.
+
+    These use different denominators: covered telomere bases versus reads.
+
+    Args:
+        row: Source row or output row values.
+        number: Number displayed in the report section heading. Default: 5.
+        title: Displayed title. Default: 'TVR patterns'.
+        requested: Whether the corresponding analysis was explicitly requested. Default: None.
+
+    Returns:
+        HTML markup for composition section.
+    """
     attribute = ' data-tvr-requested="false"' if requested is False else ''
     heading = f'<section{attribute}><h2><span class="number">{number}</span>{escape(title)}</h2>'
     if requested is False:
@@ -53,6 +76,14 @@ def composition_section(row, number=5, title="TVR patterns", requested=None):
             text=f'Reads with TVRs<br><b>{prevalence:.1f}%</b><br>{row["with_tvr"]:,} / {row["total"]:,} reads',font=dict(size=15))])
     payload = figure.to_json().replace('<', '\\u003c')
     def percent(value):
+        """Formatted percentage text, retaining a visible marker for very small positive values.
+
+        Args:
+            value: Value to inspect, convert or format.
+
+        Returns:
+            Formatted percentage text, retaining a visible marker for very small positive values.
+        """
         return '&lt;0.1%' if 0 < 100*value/total < .1 else f'{100*value/total:.1f}%'
     legend = ''.join(f'<li><span class="motif-swatch" style="background:{color}"></span><span>{escape(label)}</span><strong>{percent(value)}</strong></li>' for label,color,value in zip(labels,colors,values))
     return (heading + '<p class="note">Base composition within TVR-inclusive telomeres of post-filtered reads</p>'
@@ -69,6 +100,13 @@ def positions_section(row, requested=None):
 
     Each tick is one match start, pooled across reads. The analyzed sequence
     orientation is not known to establish distal/proximal biological direction.
+
+    Args:
+        row: Source row or output row values.
+        requested: Whether the corresponding analysis was explicitly requested. Default: None.
+
+    Returns:
+        HTML markup for positions section.
     """
     heading = '<section><div class="report-section-heading"><h2><span class="number">6</span>TVR Position Along Telomeres</h2></div>'
     if requested is False:

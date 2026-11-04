@@ -25,6 +25,15 @@ class ResultImporter:
     def __init__(self, root, metadata_path=None):
         # Resolve the selected results root once; all discovery and provenance paths
         # are relative to this directory. Explicit metadata can override saved settings.
+        """Initialize the instance and its dependencies.
+
+        Args:
+            root: Root directory or root data object for this operation.
+            metadata_path: Metadata path. Default: None.
+
+        Returns:
+            None; initializes the instance.
+        """
         self.root = Path(root).resolve()
         if not self.root.is_dir():
             raise ValueError("Results directory does not exist")
@@ -69,6 +78,16 @@ class ResultImporter:
     def source(self, path, fmt, sheet=None):
         # Register an artifact once per path/sheet identity. SHA-256 records the exact
         # bytes read; separate workbook sheets keep distinct source IDs.
+        """Registered Source record with stable identity and file digest.
+
+        Args:
+            path: File or directory path.
+            fmt: Source artifact format, such as CSV, XLSX or JSON.
+            sheet: Worksheet or worksheet name. Default: None.
+
+        Returns:
+            Registered Source record with stable identity and file digest.
+        """
         path = Path(path)
         label = path.relative_to(self.root).as_posix() if path.is_relative_to(self.root) else path.name
         key = safe_id("s", label, sheet or "")
@@ -86,6 +105,14 @@ class ResultImporter:
         # is excluded so generated files do not become scientific inputs.
         # Cache discovery once instead of rescanning large read/plot folders
         # for every barcode and every detail adapter.
+        """Deterministically ordered source paths matching the filename pattern.
+
+        Args:
+            pattern: Filename pattern or recorded search motif for this operation.
+
+        Returns:
+            Deterministically ordered source paths matching the filename pattern.
+        """
         if not hasattr(self, "_file_index"):
             self._file_index = sorted(p for p in self.root.rglob("*")
                 if "report" not in p.relative_to(self.root).parts and p.is_file())
@@ -94,6 +121,14 @@ class ResultImporter:
     def csv_table(self, path):
         # Read a header-based table with UTF-8 BOM support. Evidence row numbers
         # start at 2 because row 1 is the CSV header; malformed tables raise errors.
+        """Tuple of column names, rows with Evidence, and the registered Source.
+
+        Args:
+            path: File or directory path.
+
+        Returns:
+            Tuple of column names, rows with Evidence, and the registered Source.
+        """
         source = self.source(path, "csv")
         opener = gzip.open if path.name.endswith(".gz") else open
         with opener(path, "rt", encoding="utf-8-sig", newline="") as handle:
@@ -109,7 +144,14 @@ class ResultImporter:
             return headers, rows, source
 
     def detail_table(self, path):
-        """Expand version-2 identities/method aliases without recalculating hits."""
+        """Expand version-2 identities/method aliases without recalculating hits.
+
+        Args:
+            path: File or directory path.
+
+        Returns:
+            Tuple of headers, identity-expanded detail rows with Evidence, and Source.
+        """
         headers, rows, source = self.csv_table(path)
         if "schema_version" not in headers:
             return headers, rows, source
@@ -137,6 +179,14 @@ class ResultImporter:
     def workbook_tables(self, path):
         # Read only recognized summary sheets, using stored cell values rather than
         # evaluating Excel formulas. Always close the workbook, including on errors.
+        """Recognized workbook tables keyed by source-sheet name.
+
+        Args:
+            path: File or directory path.
+
+        Returns:
+            Recognized workbook tables keyed by source-sheet name.
+        """
         workbook = load_workbook(path, read_only=True, data_only=True)
         tables = {}
         try:
@@ -162,12 +212,28 @@ class ResultImporter:
     def unavailable_stage(self, stage, reason):
         # Distinguish a disabled stage from a requested-but-missing export. If the
         # request status itself is unknown, record not_exported instead of guessing.
+        """Fact distinguishing a disabled stage from a missing or unexported result.
+
+        Args:
+            stage: Analysis stage whose availability is being reported.
+            reason: Explanation attached to unavailable data or a failure.
+
+        Returns:
+            Fact distinguishing a disabled stage from a missing or unexported result.
+        """
         requested = self.metadata.get("stages", {}).get(stage)
         status = A.NOT_REQUESTED if requested is False else A.MISSING if requested is True else A.NOT_EXPORTED
         return unavailable(reason, status)
 
     def motif_details(self, barcode):
-        """Read preserved R search hits, never search sequences or call regions."""
+        """Read preserved R search hits, never search sequences or call regions.
+
+        Args:
+            barcode: Imported Barcode record containing reads, metrics and evidence.
+
+        Returns:
+            None.
+        """
         # Join preserved search hits to one unambiguous full read ID within a barcode.
         # Completion markers distinguish a valid zero-match search from absent data.
         # Invalid or incomplete exports invalidate the track rather than showing partial hits.
@@ -239,7 +305,14 @@ class ResultImporter:
                 read.evidence.extend(Evidence(sid) for sid in {e.source_id for e in evidence[read.id]})
 
     def density_details(self, barcode):
-        """Import exported plot samples; never reconstruct density from sequence."""
+        """Import exported plot samples; never reconstruct density from sequence.
+
+        Args:
+            barcode: Imported Barcode record containing reads, metrics and evidence.
+
+        Returns:
+            None.
+        """
         # Import existing window densities without recomputing them from sequence.
         # Each method retains its own samples; invalid coordinates, fractions or duplicate
         # window starts invalidate the entire affected read track.
@@ -302,6 +375,14 @@ class ResultImporter:
         # Assemble source tables first, then barcode/read models, and finally run metadata.
         # CSV sources take precedence over workbook fallbacks. Detail adapters enrich
         # existing reads; they do not run telomere detection or scientific filtering.
+        """Assemble a run model from saved tables, read details and metadata.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Run instance.
+        """
         raw, filtered, stats = {}, {}, None
         for pattern, target in (("barcode*_summary.csv", raw), ("filtered_summary*.csv", filtered)):
             for path in self.files(pattern):
@@ -499,7 +580,17 @@ class ResultImporter:
         return run
 
     def filtered_lengths(self, barcode, table, length_field="Telomere_length_mismatch", population="post_filtered_telomeres"):
-        """Use already-filtered lengths; reject inconsistent partial distributions."""
+        """Use already-filtered lengths; reject inconsistent partial distributions.
+
+        Args:
+            barcode: Imported Barcode record containing reads, metrics and evidence.
+            table: Table data used by this operation.
+            length_field: Exported column containing the selected telomere length. Default: 'Telomere_length_mismatch'.
+            population: Label identifying the measurement population. Default: 'post_filtered_telomeres'.
+
+        Returns:
+            None.
+        """
         # Accept the exported filtered population as-is. Validate every row and compare
         # its size with the source summary before exposing a complete distribution.
         key = "filtered_length_records"
@@ -538,7 +629,14 @@ class ResultImporter:
             evidence=[Evidence(table[2].id, fields=["read_id", length_field])])
 
     def log_counts(self, barcode):
-        """Read exact labels emitted by NanoTel, not guessed read counts."""
+        """Read exact labels emitted by NanoTel, not guessed read counts.
+
+        Args:
+            barcode: Imported Barcode record containing reads, metrics and evidence.
+
+        Returns:
+            None.
+        """
         # Use one completed barcode log and exact NanoTel labels. Ambiguous or unfinished
         # logs cannot establish reliable totals and leave existing availability unchanged.
         paths = [p for p in self.files("nanotel_barcode*.log") if barcode_from_summary_filename(p.name) == barcode.label]
@@ -570,6 +668,17 @@ class ResultImporter:
                     evidence=[Evidence(self.source(path, "log").id, row)])
 
     def read(self, row, ev, barcode_id, ordinal):
+        """Adapt one exported row without selecting or recomputing telomere calls.
+
+        Args:
+            row: Source row or output row values.
+            ev: Evidence linking the value to its source artifact and row.
+            barcode_id: Stable internal barcode identifier.
+            ordinal: Source row ordinal used to disambiguate internal identity.
+
+        Returns:
+            Read model retaining the original ID, exported calls, metrics and source evidence.
+        """
         # Construct one source-row record, retaining exact, mismatch and TVR-inclusive
         # calls separately. Ordinals distinguish duplicate IDs without silently merging them.
         rid = identity(row)
@@ -609,6 +718,17 @@ class ResultImporter:
             self.unavailable_stage("mapping", "No unambiguous mapping record available"), tracks, [ev], warnings)
 
     def mapping(self, barcode):
+        """Join saved alignments by read identity and preserve ambiguous matches.
+
+        Native mapping tables take precedence over workbook fallbacks. Query
+        intervals are displayed only when their coordinate convention is known.
+
+        Args:
+            barcode: Imported Barcode record containing reads, metrics and evidence.
+
+        Returns:
+            None.
+        """
         # Prefer a single combined mapping export over its component files. Join cleaned
         # read IDs only when unique, retain all alignments, and never infer arms from labels.
         candidates = [p for p in self.mapping_paths
@@ -638,6 +758,14 @@ class ResultImporter:
                         saved=json.loads(''.join(r['Value'] for r,_ in parts))
                         ev=parts[0][1]
                         def restored(f):
+                            """Restored.
+
+                            Args:
+                                f: Serialized Fact being restored.
+
+                            Returns:
+                                Fact instance.
+                            """
                             status=A(f['status'])
                             return Fact(status,f.get('value') if status==A.AVAILABLE else None,
                                 reason=f.get('reason',''),unit=f.get('unit'),population=f.get('population'),
@@ -717,6 +845,14 @@ class ResultImporter:
 def identity(row):
     # Support both known source identifier columns; preserve full header text
     # apart from surrounding whitespace so original source identity remains inspectable.
+    """Normalized original read identifier, or an empty string when absent.
+
+    Args:
+        row: Source row or output row values.
+
+    Returns:
+        Normalized original read identifier, or an empty string when absent.
+    """
     value = row.get("sequence_ID") or row.get("read_id")
     return str(value).strip() if value is not None else ""
 
@@ -724,6 +860,19 @@ def identity(row):
 def number(row, key, ev, *, unit=None, population=None, maximum=None):
     # Normalize one numeric source cell into a Fact, preserving field-level evidence.
     # Missing cells are unavailable; invalid values are invalid, never coerced to zero.
+    """Import one numeric source field with availability and evidence.
+
+    Args:
+        row: Source row or output row values.
+        key: Lookup key or field name.
+        ev: Evidence linking the value to its source artifact and row.
+        unit: Measurement or display unit. Default: None.
+        population: Label identifying the measurement population. Default: None.
+        maximum: Largest accepted numeric value, when specified. Default: None.
+
+    Returns:
+        Numeric Fact with source evidence, or an unavailable/invalid Fact.
+    """
     value = row.get(key)
     if value is None or str(value).strip() in {"", "NA", "NaN", "nan"}:
         return unavailable(f"{key} not exported or unavailable")
@@ -744,12 +893,30 @@ def number(row, key, ev, *, unit=None, population=None, maximum=None):
 def text_fact(row, key, ev):
     # Keep source text literal and attach the originating field; absent text stays
     # unavailable. HTML escaping belongs to the rendering layer.
+    """Text Fact with source evidence, or an unavailable Fact.
+
+    Args:
+        row: Source row or output row values.
+        key: Lookup key or field name.
+        ev: Evidence linking the value to its source artifact and row.
+
+    Returns:
+        Text Fact with source evidence, or an unavailable Fact.
+    """
     value = row.get(key)
     return Fact(A.AVAILABLE, str(value), evidence=[Evidence(ev.source_id, ev.row, [key])]) if value not in (None, "") else unavailable(f"{key} missing")
 
 
 def import_results(root, metadata_path=None) -> Run:
-    """Read one results directory without modifying any scientific artifact."""
+    """Read one results directory without modifying any scientific artifact.
+
+    Args:
+        root: Root directory or root data object for this operation.
+        metadata_path: Metadata path. Default: None.
+
+    Returns:
+        Run model assembled from saved scientific exports.
+    """
     # Public read-only entry point: create fresh importer state for each run so
     # source registries and warnings cannot leak between report builds.
     from dorado_workflow.reports.storage.archive import available_details

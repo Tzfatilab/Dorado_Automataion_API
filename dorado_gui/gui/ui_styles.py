@@ -11,6 +11,14 @@ def ask_unsaved_settings(parent, title, message):
 
     Use a Qt dialog so native Windows button sizing cannot clip translated text
     such as 'Close without Saving' after the application's font is scaled.
+
+    Args:
+        parent: Parent Qt widget, when supplied.
+        title: Displayed title.
+        message: Message to display or log.
+
+    Returns:
+        Dialog result identifying the selected save/discard/cancel action.
     """
     dialog = QMessageBox(QMessageBox.Question, title, message,
                          QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, parent)
@@ -37,6 +45,14 @@ class _ReadableTooltips(QObject):
     """Show help once after a short hover, avoiding competing native popups."""
 
     def __init__(self, parent):
+        """Initialize the instance and its dependencies.
+
+        Args:
+            parent: Parent Qt widget, when supplied.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__(parent)
         self.target = None
         self.timer = QTimer(self)
@@ -44,6 +60,14 @@ class _ReadableTooltips(QObject):
         self.timer.timeout.connect(self.show_help)
 
     def show_help(self):
+        """Show help.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         watched = self.target
         try:
             if watched is None or not watched.isVisible() or not watched.underMouse():
@@ -58,6 +82,15 @@ class _ReadableTooltips(QObject):
             self.target = None
 
     def eventFilter(self, watched, event):
+        """True when the event is consumed; False to continue normal event handling.
+
+        Args:
+            watched: QObject receiving the filtered event.
+            event: Qt event delivered to this handler.
+
+        Returns:
+            True when the event is consumed; False to continue normal event handling.
+        """
         if isinstance(watched, QWidget) and watched.toolTip():
             if event.type() == QEvent.Enter:
                 self.target = watched
@@ -74,6 +107,14 @@ class _ReadableTooltips(QObject):
 def apply_global_style(widget):
     # Tooltips are top-level windows on some platforms, so style them on the
     # application rather than relying on the main window's stylesheet.
+    """Apply global style.
+
+    Args:
+        widget: Qt widget to configure or insert.
+
+    Returns:
+        None.
+    """
     app = QApplication.instance()
     if app is not None:
         if not hasattr(app, '_readable_tooltips'):
@@ -270,9 +311,17 @@ def apply_global_style(widget):
 
 
 # =========================================================
-# FIXED CARD (compatible with your existing GUI)
+# Shared section-card styling for settings and workflow panels.
 # =========================================================
 def make_card(title):
+    """Make card.
+
+    Args:
+        title: Displayed title.
+
+    Returns:
+        QGroupBox instance.
+    """
     box = QGroupBox(title)
     box.setAttribute(Qt.WA_StyledBackground, True)
 
@@ -300,12 +349,30 @@ class _HelpButtonPositioner(QObject):
     """Place help at the right end of a subtitle line without layout changes."""
 
     def __init__(self, parent, button, anchor):
+        """Initialize the instance and its dependencies.
+
+        Args:
+            parent: Parent Qt widget, when supplied.
+            button: Button associated with this action or popup.
+            anchor: Widget used to position the associated control or popup.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__(parent)
         self.card = parent
         self.button = button
         self.anchor = anchor
 
     def place(self):
+        """Place.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         anchor_pos = self.anchor.mapTo(self.card, QPoint(0, 0))
         x = max(0, self.card.width() - self.button.width() - 12)
         y = anchor_pos.y() + (self.anchor.height() - self.button.height()) // 2
@@ -313,6 +380,15 @@ class _HelpButtonPositioner(QObject):
         self.button.raise_()
 
     def eventFilter(self, watched, event):
+        """True when the event is consumed; False to continue normal event handling.
+
+        Args:
+            watched: QObject receiving the filtered event.
+            event: Qt event delivered to this handler.
+
+        Returns:
+            True when the event is consumed; False to continue normal event handling.
+        """
         if event.type() in (QEvent.Resize, QEvent.Move, QEvent.Show,
                             QEvent.FontChange, QEvent.StyleChange):
             self.place()
@@ -320,7 +396,17 @@ class _HelpButtonPositioner(QObject):
 
 
 def make_help_button(parent, title, message, anchor):
-    """Overlay section help on the subtitle line without changing geometry."""
+    """Overlay section help on the subtitle line without changing geometry.
+
+    Args:
+        parent: Parent Qt widget, when supplied.
+        title: Displayed title.
+        message: Message to display or log.
+        anchor: Widget used to position the associated control or popup.
+
+    Returns:
+        QToolButton instance.
+    """
     from PySide6.QtWidgets import QToolButton
 
     button = QToolButton(parent)
@@ -348,7 +434,16 @@ def make_help_button(parent, title, message, anchor):
 
 
 def _show_help_dialog(parent, title, message):
-    """Show section guidance in a readable, scrollable window."""
+    """Show section guidance in a readable, scrollable window.
+
+    Args:
+        parent: Parent Qt widget, when supplied.
+        title: Displayed title.
+        message: Message to display or log.
+
+    Returns:
+        None.
+    """
     from PySide6.QtWidgets import QDialog, QDialogButtonBox, QTextBrowser
 
     dialog = QDialog(parent)

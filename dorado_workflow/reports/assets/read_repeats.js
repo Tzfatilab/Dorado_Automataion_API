@@ -1,9 +1,16 @@
 /* Presentation aggregates of exported hits; no repeat search or new calling. */
+// Function: window.readRepeatSummary.
+// Inputs: data (source/presentation data)
+// Outputs: Base composition and merged region summaries, or null without a usable interval.
 window.readRepeatSummary = data => {
   const interval = data?.intervals?.tvr_inclusive;
   if (!interval || !Array.isArray(data.motifs)) return null;
   const [start, end] = interval, groups = [], events = new Map();
   if (!(end > start)) return null;
+  // Function: event.
+  // Inputs: position (coordinate-label position); index (zero-based index); delta (change in active
+  // match count)
+  // Outputs: Registers an interval-edge event used by the motif-coverage sweep.
   const event = (position, index, delta) => {
     if (!events.has(position)) events.set(position, []);
     events.get(position).push([index, delta]);
@@ -56,7 +63,14 @@ window.readRepeatSummary = data => {
   return {start, end, regions, unassignedRegions, composition: groups.filter(g => g.bases > 0)};
 };
 
+// Function: window.renderReadRepeats.
+// Inputs: parent (parent element); read (embedded read record)
+// Outputs: Renders the composition and region table from saved repeat data.
 window.renderReadRepeats = (parent, read) => {
+  // Function: add.
+  // Inputs: tag (HTML tag name); text (displayed text); target (destination element or navigation
+  // target)
+  // Outputs: Created DOM element, appended to its target.
   const add = (tag, text, target) => {const e = document.createElement(tag); e.textContent = text; target.appendChild(e); return e;};
   let data = read.track_data;
   if (!data) {
@@ -86,17 +100,26 @@ window.renderReadRepeats = (parent, read) => {
   const selectedMotifs=new Set(byMotif.keys());
   const filterActions=add('div','',filter),filterValues=add('div','',filter);
   const filterBoxes=[];
+  // Function: updateFilter.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Applies the selected motif categories to the region table.
   const updateFilter=()=>{
     filterTitle.textContent='Filter motifs / categories ('+selectedMotifs.size+' of '+byMotif.size+')';
     page=0;render();
   };
   [['Select all',true],['Clear',false]].forEach(([label,checked])=>{
     const button=add('button',label,filterActions);button.type='button';
+    // Function: button.onclick.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Handles the UI action and updates the associated report controls.
     button.onclick=()=>{filterBoxes.forEach(([motif,box])=>{box.checked=checked;checked?selectedMotifs.add(motif):selectedMotifs.delete(motif);});updateFilter();};
   });
   byMotif.forEach((regions,motif)=>{
     const label=add('label','',filterValues),box=add('input','',label);box.type='checkbox';box.checked=true;
     add('span',motif+' ('+regions.length+')',label);filterBoxes.push([motif,box]);
+    // Function: box.onchange.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Handles the UI action and updates the associated report controls.
     box.onchange=()=>{box.checked?selectedMotifs.add(motif):selectedMotifs.delete(motif);updateFilter();};
   });
   const scroll = add('div', '', detected); scroll.className = 'reads-scroll';
@@ -107,16 +130,25 @@ window.renderReadRepeats = (parent, read) => {
   columns.forEach(([label,key])=>{
     const th=add('th','',heading),button=add('button',label+' \u2195',th);button.type='button';button.className='read-column-filter';
     button.title='Sort '+label;
+    // Function: button.onclick.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Handles the UI action and updates the associated report controls.
     button.onclick=()=>{ascending=sortKey===key?!ascending:true;sortKey=key;page=0;render();};
     th.dataset.sortKey=key;
   });
   const body = add('tbody', '', table), nav = add('nav', '', detected); nav.className = 'read-pagination';
   nav.setAttribute('aria-label', 'Detected TVR regions');
   let page = 0;
+  // Function: render.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Rebuilds the visible table/page using the current filters, sort and pagination.
   const render = () => {
     body.replaceChildren(); nav.replaceChildren();
     const sorted=tableRegions.filter(region=>selectedMotifs.has(region.motif));
     if(sortKey) sorted.sort((a,b)=>{
+      // Function: value.
+      // Inputs: r (r)
+      // Outputs: Selected measurement or table value for the current row.
       const value=r=>sortKey==='length'?r.end-r.start:r[sortKey];
       const av=value(a),bv=value(b);
       if(av==null||bv==null)return av==null&&bv==null?0:av==null?1:-1;
@@ -124,6 +156,9 @@ window.renderReadRepeats = (parent, read) => {
       return (ascending?1:-1)*comparison;
     });
     heading.querySelectorAll('th').forEach(th=>th.setAttribute('aria-sort',th.dataset.sortKey===sortKey?(ascending?'ascending':'descending'):'none'));
+    // Function: table.reportExportData.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Headers and current filtered/sorted table rows for export.
     table.reportExportData=()=>({name:'TVR and unassigned regions',
       headers:columns.map(([label],index)=>index===6?label+' (%)':label),
       rows:sorted.map(region=>[region.motif,'Region '+region.number,region.start+1,region.end,
@@ -144,6 +179,9 @@ window.renderReadRepeats = (parent, read) => {
       const regionCell=add('td','',row);
       const zoom=add('button','Region '+region.number,regionCell);zoom.type='button';zoom.className='read-region-zoom';
       zoom.title='Zoom to '+(region.start+1).toLocaleString()+' - '+region.end.toLocaleString()+' bp';
+      // Function: zoom.onclick.
+      // Inputs: None; uses the current report/browser state.
+      // Outputs: Handles the UI action and updates the associated report controls.
       zoom.onclick=()=>{
         const chart=parent.querySelector('.read-density-chart');
         if (chart?._fullLayout) {
@@ -158,6 +196,9 @@ window.renderReadRepeats = (parent, read) => {
     if (sorted.length > 25) {
       [['Previous', -1, page === 0], ['Next', 1, (page + 1) * 25 >= sorted.length]].forEach(([label, change, disabled]) => {
         const button = add('button', label, nav); button.type = 'button'; button.disabled = disabled;
+        // Function: button.onclick.
+        // Inputs: None; uses the current report/browser state.
+        // Outputs: Handles the UI action and updates the associated report controls.
         button.onclick = () => {page += change; render();};
       });
     }

@@ -32,6 +32,9 @@
   `;
   document.head.appendChild(style);
   const parked=document.createDocumentFragment();let names=null,pending=false;
+  // Function: compact.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Moves the existing barcode controls into the compact toolbar.
   const compact=()=>{
     pending=false;
     if(!names)names=document.querySelector('.barcode-names');
@@ -65,7 +68,13 @@
     if(controls&&!controls.dataset.compact){controls.dataset.compact='true';controls.open=false;}
     if(names&&names.parentNode!==parked)parked.appendChild(names);
   };
+  // Function: schedule.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Schedules one layout update on the next animation frame.
   const schedule=()=>{if(!pending){pending=true;requestAnimationFrame(compact);}};
+  // Function: start.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Initializes this report feature and registers its event listeners.
   const start=()=>{
     compact();
     new MutationObserver(records=>{

@@ -30,22 +30,39 @@ class CommandExecutor:
     """
 
     def __init__(self, logger):
-        """
-        Initialize the command executor.
+        """Initialize the command executor.
 
         Args:
             logger: WorkflowLogger instance for logging commands
+
+        Returns:
+            None; initializes the instance.
         """
         self.logger = logger
         self.stop_callback = None
 
     def check_cancelled(self):
+        """Check cancelled.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         if self.stop_callback and self.stop_callback():
             raise WorkflowCancelled()
 
     @staticmethod
     def _terminate_tree(process):
-        """Stop the command and its children, including shell pipelines."""
+        """Stop the command and its children, including shell pipelines.
+
+        Args:
+            process: Running subprocess handle.
+
+        Returns:
+            None.
+        """
         if os.name == "nt":
             subprocess.run(
                 ["taskkill", "/PID", str(process.pid), "/T", "/F"],
@@ -59,13 +76,30 @@ class CommandExecutor:
                 pass
 
     def popen(self, command, **kwargs):
-        """Start a process with a cancellation watcher independent of its output."""
+        """Start a process with a cancellation watcher independent of its output.
+
+        Args:
+            command: Command to execute.
+            kwargs: Keyword arguments forwarded to the underlying operation.
+
+        Returns:
+            Popen handle monitored for cancellation.
+        """
         self.check_cancelled()
         if os.name != "nt":
+            # A dedicated process group lets cancellation stop child tools too.
             kwargs["start_new_session"] = True
         process = subprocess.Popen(command, **kwargs)
         if self.stop_callback:
             def watch():
+                """Watch.
+
+                Inputs:
+                    None.
+
+                Returns:
+                    None.
+                """
                 while process.poll() is None:
                     if self.stop_callback():
                         self._terminate_tree(process)
@@ -79,7 +113,18 @@ class CommandExecutor:
 
     def run_process(self, command, *, check=False, capture_output=False,
                     timeout=None, **kwargs):
-        """Cancellation-aware subprocess.run for commands with redirected files."""
+        """Cancellation-aware subprocess.run for commands with redirected files.
+
+        Args:
+            command: Command to execute.
+            check: Whether a nonzero exit status raises an exception. Default: False.
+            capture_output: Whether to retain standard output and standard error. Default: False.
+            timeout: Maximum process wait time in seconds. Default: None.
+            kwargs: Keyword arguments forwarded to the underlying operation.
+
+        Returns:
+            CompletedProcess containing exit status and any captured output.
+        """
         if capture_output:
             kwargs.update(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         with self.popen(command, **kwargs) as process:
@@ -217,6 +262,13 @@ class CommandExecutor:
 
         The final tool writes its own output file. Drain stderr concurrently so
         a verbose tool cannot block the pipeline while another tool is waiting.
+
+        Args:
+            commands: Ordered commands connected by a subprocess pipeline.
+            gui_output_filter: Callback selecting streamed lines for the GUI. Default: None.
+
+        Returns:
+            CompletedProcess for the pipeline; failed tools raise an exception.
         """
         if not commands:
             raise ValueError("Pipeline must contain at least one command")
@@ -228,6 +280,15 @@ class CommandExecutor:
         diagnostics = [[] for _ in commands]
 
         def read_diagnostics(process, index):
+            """Read diagnostics.
+
+            Args:
+                process: Running subprocess handle.
+                index: Zero-based process or record index.
+
+            Returns:
+                None.
+            """
             for raw_line in iter(process.stderr.readline, b''):
                 line = raw_line.decode('utf-8', errors='replace').rstrip()
                 if line:
@@ -397,5 +458,12 @@ class CommandExecutor:
         return (True, [])
 
     def __repr__(self) -> str:
-        """String representation of CommandExecutor."""
+        """String representation of CommandExecutor.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Readable string describing the instance.
+        """
         return f"CommandExecutor(logger={self.logger})"

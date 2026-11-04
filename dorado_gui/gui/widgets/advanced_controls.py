@@ -8,6 +8,14 @@ class LockedTVRControls(QWidget):
     """Keep locked controls visible and explain clicks during recalculation."""
 
     def __init__(self, controls_layout):
+        """Initialize the instance and its dependencies.
+
+        Args:
+            controls_layout: Layout containing the TVR controls to lock together.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__()
         self.locked = False
         self.controls = QWidget(self)
@@ -18,11 +26,27 @@ class LockedTVRControls(QWidget):
         layout.addWidget(self.controls)
 
     def setLocked(self, locked):
+        """Setlocked.
+
+        Args:
+            locked: Whether the original settings must remain uneditable.
+
+        Returns:
+            None.
+        """
         self.locked = locked
         self.controls.setEnabled(not locked)
         self.controls.setAttribute(Qt.WA_TransparentForMouseEvents, locked)
 
     def mousePressEvent(self, event):
+        """Mousepressevent.
+
+        Args:
+            event: Qt event delivered to this handler.
+
+        Returns:
+            None.
+        """
         if self.locked and event.button() == Qt.LeftButton:
             QMessageBox.warning(
                 self.window(),
@@ -39,6 +63,15 @@ class HoverHelpLabel(QLabel):
     """Label with a consistently styled cross-platform help popup."""
 
     def __init__(self, text, help_text):
+        """Initialize the instance and its dependencies.
+
+        Args:
+            text: Text to parse, display or write.
+            help_text: Explanation displayed in the tooltip.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__(text)
         self.setToolTip(help_text)
 
@@ -47,12 +80,29 @@ class MappingCheckBox(QCheckBox):
     """Checkbox that can block unchecking when mapping is required."""
 
     def __init__(self, text, can_uncheck):
+        """Initialize the instance and its dependencies.
+
+        Args:
+            text: Text to parse, display or write.
+            can_uncheck: Callback deciding whether the checked option may be cleared.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__(text)
         self.can_uncheck = can_uncheck
 
     def nextCheckState(self):
         # Intercept the click before Qt visually unchecks the box. Restoring the
         # state from a clicked handler would cause a short unchecked flicker.
+        """Nextcheckstate.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         if self.isChecked() and not self.can_uncheck():
             QMessageBox.warning(
                 self.window(),
@@ -68,15 +118,39 @@ class ToggleSwitch(QCheckBox):
     """Small switch control with a sliding knob."""
 
     def __init__(self):
+        """Initialize the instance and its dependencies.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__()
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedSize(42, 22)
         self.toggled.connect(lambda _: self.update())
 
     def sizeHint(self):
+        """Preferred widget size as QSize.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Preferred widget size as QSize.
+        """
         return QSize(42, 22)
 
     def mouseReleaseEvent(self, event):
+        """Mousereleaseevent.
+
+        Args:
+            event: Qt event delivered to this handler.
+
+        Returns:
+            None.
+        """
         if event.button() == Qt.LeftButton and self.isEnabled():
             self.setChecked(not self.isChecked())
             event.accept()
@@ -84,6 +158,14 @@ class ToggleSwitch(QCheckBox):
         super().mouseReleaseEvent(event)
 
     def paintEvent(self, event):
+        """Paintevent.
+
+        Args:
+            event: Qt event delivered to this handler.
+
+        Returns:
+            None.
+        """
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 

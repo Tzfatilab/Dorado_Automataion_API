@@ -4,6 +4,17 @@ from .models import Availability as A, Fact, unavailable
 
 
 def query_alignment(row, read_length, reversed_read, evidence):
+    """Query interval and strand Facts expressed on the NanoTel analyzed-read axis.
+
+    Args:
+        row: Source row or output row values.
+        read_length: Read-length value in base pairs.
+        reversed_read: Whether NanoTel analyzed the reverse complement of the read.
+        evidence: Source references supporting the returned measurement.
+
+    Returns:
+        Query interval and strand Facts expressed on the NanoTel analyzed-read axis.
+    """
     missing = unavailable('Aligned query coordinates were not exported in a supported coordinate system')
     result = {'query_interval': missing, 'query_strand': missing}
     if (row.get('alignment_query_convention') != 'zero_based_half_open'
@@ -20,6 +31,7 @@ def query_alignment(row, read_length, reversed_read, evidence):
         if length != read_length or not 0 <= start < end <= length or strand not in {'+', '-'}:
             raise ValueError('Query coordinates or length disagree with the analyzed read')
         if reversed_read:
+            # Mirror both half-open endpoints and strand onto NanoTel's axis.
             start, end = length-end, length-start
             strand = '+' if strand == '-' else '-'
         result['query_interval'] = Fact(A.AVAILABLE, dict(start=start, end=end,

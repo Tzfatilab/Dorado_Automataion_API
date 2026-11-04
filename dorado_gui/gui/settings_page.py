@@ -50,7 +50,11 @@ class SettingsPage(QWidget):
 
         The header, organism selector and save actions remain outside the scroll
         area. The central cards switch between two columns and a vertical stack.
-        Signal handlers ignore programmatic field updates while loading is true."""
+        Signal handlers ignore programmatic field updates while loading is true.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__(parent)
         # Share compact body typography across both settings tabs.
         font = self.font()
@@ -315,7 +319,17 @@ class SettingsPage(QWidget):
 
     @staticmethod
     def label(text, muted=False, bold=False, size=13):
-        """Return a wrapping label with optional muted color, bold weight and pixel size."""
+        """Return a wrapping label with optional muted color, bold weight and pixel size.
+
+        Args:
+            text: Text to parse, display or write.
+            muted: Whether to use secondary text color. Default: False.
+            bold: Whether to use bold text. Default: False.
+            size: Requested font size. Default: 13.
+
+        Returns:
+            QLabel instance.
+        """
         label = QLabel(text)
         label.setWordWrap(True)
         label.setProperty("muted", muted)
@@ -327,7 +341,17 @@ class SettingsPage(QWidget):
 
     @staticmethod
     def button(text, callback, primary=False, link=False):
-        """Return a styled action button connected to callback; flags select its appearance."""
+        """Return a styled action button connected to callback; flags select its appearance.
+
+        Args:
+            text: Text to parse, display or write.
+            callback: Callable invoked for the associated action.
+            primary: Whether to apply primary-action styling. Default: False.
+            link: Whether to style the action as a text link. Default: False.
+
+        Returns:
+            QPushButton instance.
+        """
         button = QPushButton(text)
         button.setProperty("primary", primary)
         button.setProperty("link", link)
@@ -336,7 +360,15 @@ class SettingsPage(QWidget):
         return button
 
     def card(self, title="", subtitle=""):
-        """Return a white card widget and its vertical layout, optionally with headings."""
+        """Return a white card widget and its vertical layout, optionally with headings.
+
+        Args:
+            title: Displayed title. Default: ''.
+            subtitle: Secondary displayed text. Default: ''.
+
+        Returns:
+            Tuple containing `widget`, `layout`.
+        """
         widget = QWidget()
         widget.setProperty("card", True)
         layout = QVBoxLayout(widget)
@@ -349,7 +381,16 @@ class SettingsPage(QWidget):
         return widget, layout
 
     def field(self, layout, title, widget):
-        """Append a label and horizontally expanding, fixed-height control to layout."""
+        """Append a label and horizontally expanding, fixed-height control to layout.
+
+        Args:
+            layout: Layout object to inspect or update.
+            title: Displayed title.
+            widget: Qt widget to configure or insert.
+
+        Returns:
+            None.
+        """
         layout.addWidget(self.label(title, bold=True))
         widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addWidget(widget)
@@ -359,7 +400,14 @@ class SettingsPage(QWidget):
 
         Rebuild saved profile/kit choices, reset transient TVR entry and undo state,
         then recompute whether the displayed draft differs from the saved state.
-        This does not read the settings file or replace the draft itself."""
+        This does not read the settings file or replace the draft itself.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         self.loading = True
         is_default = self.profile_name == "Lab default"
         self.delete_button.setText("Restore profile defaults" if is_default else "Delete profile")
@@ -394,7 +442,14 @@ class SettingsPage(QWidget):
 
         Preserve configuration keys that have no visible editor, including motifs.
         Translate the minimum-length Disabled sentinel to None.
-        This method neither validates the entire configuration nor persists it."""
+        This method neither validates the entire configuration nor persists it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Current editor values as a configuration or path dictionary.
+        """
         c = copy.deepcopy(self.draft)
         c["demuxing"]["kit_name"] = self.kit.currentText().strip() or None
         c["lab_info"]["default_organism"] = self.current_org
@@ -420,7 +475,14 @@ class SettingsPage(QWidget):
         return c
 
     def refresh_path_scope(self):
-        """Show preserved resource exceptions without mixing shared fields into profiles."""
+        """Show preserved resource exceptions without mixing shared fields into profiles.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         custom = self.draft["paths"] != self.store.app_paths
         self.custom_paths_card.setVisible(custom)
         paths = self.draft["paths"]
@@ -431,14 +493,28 @@ class SettingsPage(QWidget):
         self.app_settings.refresh_legacy_note()
 
     def use_app_paths(self):
-        """Stage removal of this profile's custom paths; Save profile applies it."""
+        """Stage removal of this profile's custom paths; Save profile applies it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         self.draft["paths"] = copy.deepcopy(self.store.app_paths)
         self._using_app_paths = True
         self.refresh_path_scope()
         self.mark_dirty()
 
     def app_paths_saved(self):
-        """Refresh shared paths in the profile draft without saving its analysis edits."""
+        """Refresh shared paths in the profile draft without saving its analysis edits.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         if self._using_app_paths:
             self.draft["paths"] = copy.deepcopy(self.store.app_paths)
         self.refresh_path_scope()
@@ -446,7 +522,14 @@ class SettingsPage(QWidget):
         self.saved.emit()
 
     def load_analysis_defaults(self):
-        """Display the current organism's defaults; caller suppresses dirty signals."""
+        """Display the current organism's defaults; caller suppresses dirty signals.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         defaults = organism_nanotel_settings(self.draft, self.current_org)
         for key, control in self.analysis_fields.items():
             value = defaults[key]
@@ -458,11 +541,25 @@ class SettingsPage(QWidget):
         """Return whether edits, pending sequence input or profile activation need saving.
 
         Merely choosing a different saved profile in this editor is a pending
-        activation until Save profile commits it to the store."""
+        activation until Save profile commits it to the store.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            True when current editor values differ from the saved state.
+        """
         return bool(self.sequence.text().strip()) or self.profile_name != self.store.active or self.collect() != self.store.profiles.get(self.profile_name)
 
     def mark_dirty(self, *_):
-        """Refresh the save/discard state; ignore loading updates and Qt signal arguments."""
+        """Refresh the save/discard state; ignore loading updates and Qt signal arguments.
+
+        Args:
+            _: Event argument intentionally unused by this callback.
+
+        Returns:
+            None.
+        """
         if self.loading:
             return
         dirty = self.is_dirty()
@@ -474,7 +571,14 @@ class SettingsPage(QWidget):
         """Return the mutable TVR list for the currently edited organism.
 
         Initialize a missing organism list from the profile-wide fallback using
-        a copy. An explicitly empty organism list remains empty."""
+        a copy. An explicitly empty organism list remains empty.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Editable TVR motif list for the current organism preset.
+        """
         organism = self.draft["organism_specific"][self.current_org]
         return organism.setdefault("tvr_patterns", list(self.draft["nanotel"]["tvr_patterns"]))
 
@@ -482,7 +586,14 @@ class SettingsPage(QWidget):
         """Rebuild sequence chips, organism labels, count and Undo availability.
 
         Each chip captures its own sequence for removal. Existing widgets are
-        hidden immediately and scheduled for deletion through the Qt event loop."""
+        hidden immediately and scheduled for deletion through the Qt event loop.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         while self.pattern_grid.count():
             widget = self.pattern_grid.takeAt(0).widget()
             if widget:
@@ -516,7 +627,15 @@ class SettingsPage(QWidget):
         arguments from Qt signals are ignored. Invalid or entirely duplicate input
         displays an inline error without changing the preset. Successful additions
         save an undo snapshot. Only an inline addition clears the inline entry;
-        bulk paste preserves any separate unfinished input."""
+        bulk paste preserves any separate unfinished input.
+
+        Args:
+            text: Text to parse, display or write. Default: None.
+            _: Event argument intentionally unused by this callback.
+
+        Returns:
+            None.
+        """
         try:
             patterns = parse_patterns(self.sequence.text() if text is None else text, canonical_patterns(self.draft))
             if not patterns:
@@ -536,7 +655,14 @@ class SettingsPage(QWidget):
             self.error.show()
 
     def remove_pattern(self, pattern):
-        """Remove an existing sequence from this organism, preserving an undo snapshot."""
+        """Remove an existing sequence from this organism, preserving an undo snapshot.
+
+        Args:
+            pattern: Filename pattern or recorded search motif for this operation.
+
+        Returns:
+            None.
+        """
         self.undo_patterns.append(list(self.patterns()))
         self.patterns().remove(pattern)
         self.render_patterns()
@@ -546,20 +672,41 @@ class SettingsPage(QWidget):
         """Restore the previous TVR-list snapshot for the current organism.
 
         Despite the historical method name, Undo also reverses additions and
-        restoring defaults. History is cleared when the organism or draft reloads."""
+        restoring defaults. History is cleared when the organism or draft reloads.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         if self.undo_patterns:
             self.draft["organism_specific"][self.current_org]["tvr_patterns"] = self.undo_patterns.pop()
             self.render_patterns()
             self.mark_dirty()
 
     def paste_multiple(self):
-        """Collect multiline sequence input and pass it through the shared add validation."""
+        """Collect multiline sequence input and pass it through the shared add validation.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         text, ok = QInputDialog.getMultiLineText(self, "Add TVR patterns", "Paste sequences separated by lines, spaces, commas or semicolons:")
         if ok:
             self.add_patterns(text=text)
 
     def restore_patterns(self):
-        """Stage the bundled defaults for this organism, preserving the previous list for Undo."""
+        """Stage the bundled defaults for this organism, preserving the previous list for Undo.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         self.undo_patterns.append(list(self.patterns()))
         self.draft["organism_specific"][self.current_org]["tvr_patterns"] = list(self.store.defaults["organism_specific"][self.current_org]["tvr_patterns"])
         self.render_patterns()
@@ -571,7 +718,14 @@ class SettingsPage(QWidget):
         current_org still identifies the previous organism when the combo signal
         fires, so collect stores its analysis defaults before
         switching keys. Load the new organism's numeric defaults, keep profile-wide
-        controls intact, and reset sequence undo history."""
+        controls intact, and reset sequence undo history.
+
+        Args:
+            _: Event argument intentionally unused by this callback.
+
+        Returns:
+            None.
+        """
         if self.loading:
             return
         # Resolve inline input against its original organism before switching.
@@ -594,7 +748,14 @@ class SettingsPage(QWidget):
         self.mark_dirty()
 
     def confirm_pending(self):
-        """Resolve both independent drafts before leaving the settings screen."""
+        """Resolve both independent drafts before leaving the settings screen.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            True to continue; False when the user cancels or saving fails.
+        """
         return self.confirm_profile_pending() and self.app_settings.confirm_pending()
 
     def confirm_profile_pending(self):
@@ -602,7 +763,14 @@ class SettingsPage(QWidget):
 
         Save returns the persistence result, Discard restores the active saved
         profile, and Cancel returns False. Called before navigation, import,
-        profile switching and application close by this page or its owner."""
+        profile switching and application close by this page or its owner.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            True to continue; False when the user cancels or saving fails.
+        """
         if not self.is_dirty():
             return True
         answer = ask_unsaved_settings(self, "Unsaved settings", "Save profile changes before continuing?")
@@ -617,7 +785,14 @@ class SettingsPage(QWidget):
         """Stage the named saved profile after resolving edits to the current draft.
 
         Cancel restores the previous combo selection without emitting another
-        selection signal. Choosing a profile here does not immediately activate it."""
+        selection signal. Choosing a profile here does not immediately activate it.
+
+        Args:
+            name: Name used for lookup, display or storage.
+
+        Returns:
+            None.
+        """
         if self.loading or not name:
             return
         if not self.confirm_profile_pending():
@@ -634,7 +809,14 @@ class SettingsPage(QWidget):
 
         Process pending inline sequence input first. The store performs complete
         validation and atomic persistence. On failure the draft remains editable;
-        on success reload and notify the main window through saved."""
+        on success reload and notify the main window through saved.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            True when saving succeeds; False when validation or persistence fails.
+        """
         try:
             if self.sequence.text().strip():
                 self.add_patterns()
@@ -650,13 +832,27 @@ class SettingsPage(QWidget):
             return False
 
     def discard(self):
-        """Restore the active saved profile and clear staged edits and transient TVR state."""
+        """Restore the active saved profile and clear staged edits and transient TVR state.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         self.profile_name = self.store.active
         self.draft = self.store.snapshot()
         self.reload()
 
     def profile_action(self):
-        """Restore the protected default profile, or delete a selected custom profile."""
+        """Restore the protected default profile, or delete a selected custom profile.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         if self.profile_name == "Lab default":
             self.restore_profile_defaults()
         else:
@@ -667,6 +863,12 @@ class SettingsPage(QWidget):
 
         Save profile applies the reset; Discard restores the saved profile.
         Shared app settings and custom resource paths are outside this action.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
         """
         if self.profile_name != "Lab default":
             return
@@ -680,7 +882,14 @@ class SettingsPage(QWidget):
 
         The confirmation includes pending-edit loss and active-profile fallback.
         Persistence failure leaves the editor intact. After success, reload the
-        active profile and notify the main window to refresh its profile choices."""
+        active profile and notify the main window to refresh its profile choices.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         name = self.profile_name
         if name == "Lab default" or name not in self.store.profiles:
             return
@@ -705,7 +914,14 @@ class SettingsPage(QWidget):
         """Create and activate a uniquely named profile from the current form values.
 
         Reuse save for validation and persistence. If saving fails, restore the
-        previous editor name so further edits still refer to the original draft."""
+        previous editor name so further edits still refer to the original draft.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         name, ok = QInputDialog.getText(self, "Create new profile", "New profile name:")
         if not ok:
             return
@@ -723,7 +939,14 @@ class SettingsPage(QWidget):
 
         Missing configuration fields inherit bundled defaults. Existing names
         cannot be overwritten by import. The imported draft is added to the combo
-        temporarily and requires Save profile before it becomes persistent."""
+        temporarily and requires Save profile before it becomes persistent.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         if not self.confirm_profile_pending():
             return
         path, _ = QFileDialog.getOpenFileName(self, "Import configuration", "", "JSON configuration (*.json)")
@@ -757,7 +980,14 @@ class SettingsPage(QWidget):
 
         Export includes staged form edits and TVR patterns already added to the
         list, but not unsubmitted sequence text. It does not activate or save the
-        profile in the profile store."""
+        profile in the profile store.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         try:
             config = self.collect()
             validate_config(config)
@@ -768,7 +998,14 @@ class SettingsPage(QWidget):
             QMessageBox.warning(self, "Could not export configuration", str(exc))
 
     def resizeEvent(self, event):
-        """Reposition existing cards only when crossing the 1000-pixel page-width breakpoint."""
+        """Reposition existing cards only when crossing the 1000-pixel page-width breakpoint.
+
+        Args:
+            event: Qt event delivered to this handler.
+
+        Returns:
+            None.
+        """
         super().resizeEvent(event)
         stacked = self.width() < 1000
         if getattr(self, "_stacked", None) != stacked:

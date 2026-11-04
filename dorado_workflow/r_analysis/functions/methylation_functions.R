@@ -29,6 +29,9 @@ if (!exists("log_message", mode = "function")) {
 }
 
 # Read and process a single pileup BED file
+# Inputs: bed_file_path (One modkit pileup BED file); barcode_name (Original barcode label);
+# cell_line_name (Cell-line annotation from the saved configuration)
+# Outputs: Parsed pileup measurements annotated with barcode and cell line.
 process_pileup_bed_file <- function(bed_file_path, barcode_name, cell_line_name) {
 
   log_message(paste("Processing pileup BED file for:", barcode_name))
@@ -65,6 +68,8 @@ process_pileup_bed_file <- function(bed_file_path, barcode_name, cell_line_name)
 }
 
 # Process and standardize methylation data
+# Inputs: bed_data_list (Parsed pileup tables indexed by barcode)
+# Outputs: Combined pileup table with standardized names and value types.
 standardize_methylation_data <- function(bed_data_list) {
 
   log_message("Standardizing methylation data across all samples")
@@ -98,6 +103,9 @@ standardize_methylation_data <- function(bed_data_list) {
 }
 
 # Filter methylation data for telomeric regions
+# Inputs: methylation_data (Standardized modified-base measurements); head_max_pos (Head max pos);
+# tail_min_pos (Tail min pos); reference_length (Reference length)
+# Outputs: Measurements retained in the selected reference-end regions.
 filter_telomeric_regions <- function(methylation_data,
                                      head_max_pos = 5000,
                                      tail_min_pos = 145000,
@@ -126,6 +134,8 @@ filter_telomeric_regions <- function(methylation_data,
 }
 
 # Create summary statistics for methylation data
+# Inputs: methylation_data (Standardized modified-base measurements); output_file (Output file)
+# Outputs: Grouped methylation statistics, also written to CSV.
 create_methylation_summary <- function(methylation_data, output_file) {
 
   log_message("Creating methylation summary statistics")
@@ -152,6 +162,9 @@ create_methylation_summary <- function(methylation_data, output_file) {
 }
 
 # Create static methylation plots
+# Inputs: methylation_data (Standardized modified-base measurements); output_dir (Directory for
+# generated outputs); plot_width (Plot width); plot_height (Plot height)
+# Outputs: Writes static modified-base figures to the output directory.
 create_static_methylation_plots <- function(methylation_data, output_dir,
                                             plot_width = 12, plot_height = 8) {
 
@@ -243,6 +256,8 @@ create_static_methylation_plots <- function(methylation_data, output_dir,
 }
 
 # Prepare data for interactive visualization
+# Inputs: methylation_data (Standardized modified-base measurements); output_file (Output file)
+# Outputs: Compact interactive-data table, also saved as RDS.
 prepare_interactive_data <- function(methylation_data, output_file) {
 
   log_message("Preparing data for interactive visualization")
@@ -265,6 +280,8 @@ prepare_interactive_data <- function(methylation_data, output_file) {
 }
 
 # Create the original-style interactive methylation visualization
+# Inputs: methylation_data (Standardized modified-base measurements); output_file (Output file)
+# Outputs: Writes the interactive modified-base visualization.
 create_original_interactive_plot <- function(methylation_data, output_file) {
 
   log_message("Creating original-style interactive methylation plot")
@@ -413,6 +430,10 @@ create_original_interactive_plot <- function(methylation_data, output_file) {
 }
 
 # Generate methylation analysis report
+# Inputs: methylation_data (Standardized modified-base measurements); summary_stats (Statistics
+# already calculated for the selected population); output_file (Output file); analysis_params
+# (Analysis params)
+# Outputs: Writes the modified-base analysis report.
 generate_methylation_report <- function(methylation_data, summary_stats,
                                         output_file, analysis_params = list()) {
 
@@ -484,6 +505,8 @@ generate_methylation_report <- function(methylation_data, summary_stats,
 }
 
 # Find pileup BED files for processing
+# Inputs: input_dir (Directory containing input files); barcode_mapping (Barcode mapping)
+# Outputs: Pileup BED paths with barcode/cell-line metadata.
 find_pileup_bed_files <- function(input_dir, barcode_mapping = NULL) {
 
   log_message(paste("Looking for pileup BED files in:", input_dir))

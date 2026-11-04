@@ -1,5 +1,8 @@
 /* Length distributions lead; counts/composition share a row; heatmap follows. */
 (() => {
+  // Function: start.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Initializes this report feature and registers its event listeners.
   const start=()=>{
     const grid=document.querySelector('#run-overview>.charts');if(!grid)return;
     grid.classList.add('overview-chart-grid');
@@ -66,6 +69,9 @@
         graph.reportBarcodeResizeObserver?.disconnect();
         graph.reportHeatmapResize?.disconnect();graph.reportOverviewResize?.disconnect();
         let lastWidth=0;
+        // Function: fit.
+        // Inputs: None; uses the current report/browser state.
+        // Outputs: Fits the comparison plot to its current layout container.
         const fit=()=>{
           const width=Math.floor(graph.getBoundingClientRect().width);
           if(width<200||(width===lastWidth&&graph.layout.width===width&&graph.layout.height===height))return;lastWidth=width;
@@ -77,6 +83,9 @@
         };
         graph.reportOverviewResize=new ResizeObserver(()=>requestAnimationFrame(fit));
         if(graph.reportOverviewAfterPlot)graph.removeListener('plotly_afterplot',graph.reportOverviewAfterPlot);
+        // Function: graph.reportOverviewAfterPlot.
+        // Inputs: None; uses the current report/browser state.
+        // Outputs: Resizes the overview chart after Plotly redraws it.
         graph.reportOverviewAfterPlot=()=>requestAnimationFrame(fit);
         graph.on('plotly_afterplot',graph.reportOverviewAfterPlot);
         graph.reportOverviewResize.observe(graph);requestAnimationFrame(fit);

@@ -30,6 +30,9 @@ source(file.path(script_dir, "functions", "utils.R"))
 
 library(jsonlite)
 # Main pipeline function
+# Inputs: config_file (Saved JSON configuration path); trial_name (Run name used for output
+# directories and logs)
+# Outputs: Selected stage results and the combined pipeline report.
 main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
 
   cat("Starting Complete R Analysis Pipeline\n")
@@ -75,7 +78,8 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
       }
       nanotel_config_file <- create_temp_config(nanotel_config, "nanotel_temp_config.json")
 
-      # Run NanoTel analysis as subprocess instead of sourcing
+      # Run post-detection filtering in a subprocess to isolate script globals;
+      # this stage consumes saved NanoTel summaries and does not rerun detection.
       cmd <- paste("Rscript batch_nanotel_analysis.R", shQuote(nanotel_config_file))
       cat("DEBUG: Running command:", cmd, "\n")
 
@@ -288,6 +292,8 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
   return(results)
 }
 
+# Inputs: mapping_result (Result returned by the mapping stage)
+# Outputs: TRUE when the mapping result contains successful barcode outputs.
 mapping_has_successful_results <- function(mapping_result) {
   if (is.null(mapping_result) || is.null(mapping_result$successful_results)) {
     return(FALSE)
@@ -295,6 +301,8 @@ mapping_has_successful_results <- function(mapping_result) {
   length(mapping_result$successful_results) > 0
 }
 
+# Inputs: mapping_result (Result returned by the mapping stage)
+# Outputs: TRUE when mapping produced usable methylation pileup outputs.
 mapping_has_methylation_results <- function(mapping_result) {
   if (is.null(mapping_result) || is.null(mapping_result$methylation_barcodes)) {
     return(FALSE)
@@ -302,6 +310,8 @@ mapping_has_methylation_results <- function(mapping_result) {
   length(mapping_result$methylation_barcodes) > 0
 }
 
+# Inputs: paths (Path configuration or artifact paths for this operation)
+# Outputs: Normalized unique barcode labels from the supplied paths.
 extract_barcode_names <- function(paths) {
   if (length(paths) == 0) {
     return(character())
@@ -314,6 +324,9 @@ extract_barcode_names <- function(paths) {
 
 # Create temporary configuration file
 # Create temporary configuration file
+# Inputs: config_section (One analysis section serialized for a subprocess); filename (Source
+# filename used to extract a barcode label)
+# Outputs: Path to a temporary JSON configuration file.
 create_temp_config <- function(config_section, filename) {
   cat("DEBUG: Creating temp config for:", filename, "\n")
   cat("DEBUG: Config section type:", class(config_section), "\n")
@@ -347,6 +360,9 @@ create_temp_config <- function(config_section, filename) {
 }
 
 # Generate comprehensive pipeline report
+# Inputs: results (Results directory or collected processing results); config (Configuration values
+# to read or update); duration (Elapsed pipeline time)
+# Outputs: Writes the combined report for completed pipeline stages.
 generate_pipeline_report <- function(results, config, duration) {
 
   log_message("Generating comprehensive pipeline report")

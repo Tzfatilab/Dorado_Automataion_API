@@ -1,14 +1,29 @@
 /* Reversible overview selection. Individual barcode pages and source calls stay intact. */
 (() => {
   if(window.reportBarcodeExclusion)return;
+  // Function: start.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Initializes this report feature and registers its event listeners.
   const start=()=>{
     if(window.reportBarcodeExclusion)return;
     const overview=document.getElementById('run-overview');
     const pages=[...document.querySelectorAll('.barcode-page')];
     if(!overview||!pages.length)return;
+    // Function: clone.
+    // Inputs: v (value to inspect or format)
+    // Outputs: Independent JSON-compatible copy of the value.
     const clone=v=>JSON.parse(JSON.stringify(v));
+    // Function: numeric.
+    // Inputs: v (value to inspect or format)
+    // Outputs: True for a finite nonnegative number; false otherwise.
     const numeric=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0;
+    // Function: countText.
+    // Inputs: el (el)
+    // Outputs: Parsed integer count, or null when the element has no valid count.
     const countText=el=>{const s=el?.textContent.trim().replace(/,/g,'');return s&&/^\d+$/.test(s)?Number(s):null;};
+    // Function: card.
+    // Inputs: root (DOM/data root); title (displayed heading)
+    // Outputs: Matching statistic card element, or undefined when absent.
     const card=(root,title)=>[...root.querySelectorAll('.stats>.stat')].find(c=>c.querySelector('h3')?.textContent.trim()===title);
     let supplied=[];
     try{supplied=JSON.parse(document.getElementById('barcode-exclusion-data')?.textContent||'[]');}catch{}
@@ -42,8 +57,17 @@
     const originals=[...overview.querySelectorAll('.stats>.stat')].map(el=>({el,strong:el.querySelector('strong')?.textContent,strongClass:el.querySelector('strong')?.className,note:el.querySelector('p')?.textContent||'',title:el.title}));
     const heading=overview.querySelector('.stats')?.closest('section')?.querySelector('h2');
     const headingText=heading?[...heading.childNodes].find(n=>n.nodeType===3):null,originalHeading=headingText?.textContent;
+    // Function: label.
+    // Inputs: id (stable barcode/read identity)
+    // Outputs: Current barcode display label.
     const label=id=>document.getElementById(id)?.dataset.label||facts.get(id).barcode_id;
+    // Function: safe.
+    // Inputs: s (source text)
+    // Outputs: HTML-escaped text.
     const safe=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    // Function: resolve.
+    // Inputs: value (value to inspect or format)
+    // Outputs: Resolved stable identity, or no match when the source is ambiguous.
     const resolve=value=>{
       if(typeof value!=='string')return null;
       if(facts.has(value))return value;
@@ -55,9 +79,21 @@
       }
       return null;
     };
+    // Function: included.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Source records for the currently included barcodes.
     const included=()=>pages.filter(p=>!excluded.has(p.id)).map(p=>facts.get(p.id));
+    // Function: totals.
+    // Inputs: rows (source records)
+    // Outputs: Comparable pooled counts, lengths and short-telomere statistics.
     const totals=rows=>{
+      // Function: sum.
+      // Inputs: k (k)
+      // Outputs: Sum of complete numeric inputs, or null when any required value is missing.
       const sum=k=>rows.length&&rows.every(r=>numeric(r[k]))?rows.reduce((n,r)=>n+r[k],0):null;
+      // Function: compatible.
+      // Inputs: k (k)
+      // Outputs: True when the selected records use at most one nonmissing value for this field.
       const compatible=k=>new Set(rows.map(r=>r[k]).filter(v=>v!=null)).size<=1;
       const total=sum('total'),filtered=compatible('population')?sum('filtered'):null;
       const lengths=rows.length&&compatible('length_population')&&rows.every(r=>Array.isArray(r.lengths)&&r.lengths.every(numeric))?rows.flatMap(r=>r.lengths).sort((a,b)=>a-b):null;
@@ -69,10 +105,17 @@
         percent:numeric(total)&&total>0&&numeric(filtered)&&filtered<=total?100*filtered/total:null,
         chromosomes:new Set(rows.flatMap(r=>r.chromosomes||[])).size};
     };
+    // Function: updateStats.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Updates overview statistics for the current barcode selection.
     const updateStats=()=>{
       if(headingText)headingText.textContent=excluded.size?'Key Statistics (Included Barcodes)':originalHeading;
       if(!excluded.size){for(const {el,strong,strongClass,note,title} of originals){el.querySelector('strong').textContent=strong;el.querySelector('strong').className=strongClass;let p=el.querySelector('p');if(p)p.textContent=note;el.title=title;}return;}
       const rows=included(),t=totals(rows);
+      // Function: format.
+      // Inputs: v (value to inspect or format); suffix (display-unit suffix); digits (decimal
+      // precision)
+      // Outputs: Formatted value with the selected precision and suffix, or Unavailable.
       const format=(v,suffix='',digits=0)=>v==null?'Unavailable':v.toLocaleString('en-US',{minimumFractionDigits:digits,maximumFractionDigits:digits})+suffix;
       for(const {el} of originals){
         const title=el.querySelector('h3').textContent.trim();let value=null,note='Included barcodes only.';
@@ -90,12 +133,18 @@
         if(value!==null){el.querySelector('strong').textContent=value;el.querySelector('strong').classList.toggle('missing',value==='Unavailable'||value==='No barcodes selected');let p=el.querySelector('p');if(!p){p=document.createElement('p');el.querySelector('strong').after(p);}p.textContent=note;el.title=note;}
       }
     };
+    // Function: snapshotsFor.
+    // Inputs: graph (Plotly graph element)
+    // Outputs: Original figure snapshot cached for this graph.
     const snapshotsFor=graph=>{
       if(!snapshots.has(graph)&&graph.data){
         snapshots.set(graph,clone({data:graph.data,layout:graph.layout}));
         graph.on?.('plotly_afterplot',()=>{
           if(busy||!excluded.size)return;
           // Older view controls can rebuild traces from their own full-data cache.
+          // Function: containsExcluded.
+          // Inputs: value (value to inspect or format)
+          // Outputs: True when the inspected identity or nested array contains an excluded barcode.
           const containsExcluded=value=>Array.isArray(value)?value.some(containsExcluded):excluded.has(resolve(value));
           if(graph.data.some(t=>containsExcluded(t.name)||containsExcluded(t.x)||containsExcluded(t.y)||containsExcluded(t.customdata)))
             setTimeout(apply,0);
@@ -103,7 +152,14 @@
       }
       return snapshots.get(graph);
     };
+    // Function: filterGraph.
+    // Inputs: snapshot (original figure snapshot)
+    // Outputs: New figure with excluded barcodes removed consistently from point arrays.
     const filterGraph=(snapshot)=>{
+      // Start from the complete snapshot so re-including a barcode restores it.
+      // Function: keep.
+      // Inputs: id (stable barcode/read identity)
+      // Outputs: True when the identity is absent or belongs to an included barcode.
       const figure=clone(snapshot),keep=id=>!id||!excluded.has(id);
       figure.data=figure.data.filter(t=>!resolve(t.name)||keep(resolve(t.name))).map(t=>{
         if(t.type==='heatmap'){
@@ -115,6 +171,7 @@
             const identity=t.meta==='barcode-links'?resolve(t.customdata?.[i]):Array.isArray(t.customdata?.[i])?resolve(t.customdata[i][0]):null;
             return keep(identity||resolve(t.x?.[i])||resolve(t.y?.[i]));
           });
+          // Slice every point-aligned array together to preserve labels and links.
           for(const field of ['x','y','text','hovertext','customdata','ids'])if(Array.isArray(t[field])&&t[field].length===n)t[field]=indices.map(i=>t[field][i]);
           for(const parent of [t.marker,t.error_y,t.error_x])if(parent)for(const field of ['color','size','opacity','array','arrayminus'])if(Array.isArray(parent[field])&&parent[field].length===n)parent[field]=indices.map(i=>parent[field][i]);
         }
@@ -142,6 +199,9 @@
       });
       return figure;
     };
+    // Function: compositionGraph.
+    // Inputs: figure (figure data/layout); section (containing report section)
+    // Outputs: Updates the figure and legend from included-barcode composition counts.
     const compositionGraph=(figure,section)=>{
       const pie=figure.data.find(t=>t.type==='pie');if(!pie)return;
       const rows=included(),available=rows.filter(r=>r.composition),bases={};
@@ -167,11 +227,17 @@
     const status=document.createElement('p');status.setAttribute('role','status');controls.appendChild(status);
     const list=document.createElement('div');list.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin:12px 0';controls.appendChild(list);
     const help=document.createElement('p');help.className='note';help.textContent='Checked barcodes contribute to overview graphs and pooled statistics. Individual barcode and read pages remain available. Selection is saved in this browser.';controls.appendChild(help);
+    // Function: field.
+    // Inputs: page (barcode page element); parent (parent element)
+    // Outputs: Created barcode-control DOM element with its event listeners attached.
     const field=(page,parent)=>{
       const wrapper=document.createElement('label');wrapper.style.cssText='display:flex;gap:8px;align-items:center';
       const input=document.createElement('input');input.type='checkbox';input.checked=!excluded.has(page.id);input.dataset.barcodeId=page.id;
       const text=document.createElement('span');text.textContent=label(page.id);wrapper.append(input,text);parent.appendChild(wrapper);
       if(!inputs.has(page.id))inputs.set(page.id,[]);inputs.get(page.id).push({input,text});
+      // Function: input.onchange.
+      // Inputs: None; uses the current report/browser state.
+      // Outputs: Handles the UI action and updates the associated report controls.
       input.onchange=()=>set(page.id,!input.checked);return wrapper;
     };
     for(const page of pages){field(page,list);const banner=document.createElement('div');banner.className='barcode-exclusion-banner';banner.style.cssText='margin:10px 0;padding:10px;border:1px solid #e4c18d;border-radius:6px';
@@ -181,8 +247,14 @@
     }
     overview.querySelector('.barcode-navigation')?.after(controls);
     const style=document.createElement('style');style.textContent='.barcode-link[data-excluded="true"]{border-style:dashed;opacity:.75}.barcode-link[data-excluded="true"]::after{content:" · Excluded";font-weight:700;color:#9b4a16}.barcode-exclusion-controls button{padding:8px;margin:4px;border:1px solid #bdcde0;border-radius:6px;background:white;cursor:pointer}.barcode-exclusion-banner[data-excluded="true"]{background:#fff2de}.barcode-exclusion-banner span+span{margin-left:12px}';document.head.appendChild(style);
+    // Function: persist.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Saves excluded IDs to browser storage, or shows a storage-status note.
     const persist=()=>{try{localStorage.setItem(key,JSON.stringify([...excluded]));}catch{help.textContent='Browser storage is unavailable. Selection applies until this dashboard is closed.';}};
     let busy=false,again=false;
+    // Function: apply.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Promise completing after overview state and plots reflect barcode exclusions.
     const apply=async()=>{
       if(busy){again=true;return;}busy=true;
       try{
@@ -201,6 +273,10 @@
         for(const graph of overview.querySelectorAll('.js-plotly-plot')){
           const snapshot=snapshotsFor(graph);if(!snapshot)continue;
           const figure=excluded.size?filterGraph(snapshot):clone(snapshot),section=graph.closest('section');
+          // Function: currentLabel.
+          // Inputs: value (value to inspect or format)
+          // Outputs: Value with any recognized barcode identity replaced by its current display
+          // label.
           const currentLabel=value=>{
             if(Array.isArray(value))return value.map(currentLabel);
             const id=resolve(value);return id?safe(label(id)):value;
@@ -222,13 +298,28 @@
         }
       }finally{busy=false;if(again){again=false;await apply();}}
     };
+    // Function: set.
+    // Inputs: id (stable barcode/read identity); out (whether to exclude this barcode)
+    // Outputs: Overview-update promise after changing one barcode exclusion setting.
     const set=(id,out)=>{if(!facts.has(id))throw Error('Unknown barcode');if(out)excluded.add(id);else excluded.delete(id);persist();return apply();};
+    // Function: includeAll.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Clears barcode exclusions and returns the overview-update promise.
     window.reportBarcodeExclusion={set,includeAll:()=>{excluded.clear();persist();return apply();},
+      // Function: excluded.
+      // Inputs: None; uses the current report/browser state.
+      // Outputs: Array of excluded stable barcode identities.
+      // Function: statistics.
+      // Inputs: None; uses the current report/browser state.
+      // Outputs: Current pooled overview statistics for the included barcodes.
       excluded:()=>[...excluded],statistics:()=>totals(included()),refresh:apply};
     // Names may change independently; update labels without recapturing a filtered baseline.
     document.addEventListener('change',event=>{if(event.target.matches('.barcode-name-editor input,.barcode-names input[type="text"],.barcode-names input[type="file"]'))setTimeout(apply,0);});
     window.reportBarcodeExclusion.ready=apply();
   };
+  // Function: launch.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Promise completing after barcode-exclusion controls initialize.
   const launch=async()=>{
     if(!document.getElementById('barcode-exclusion-data')){
       // Previously exported reports may finish their corrections in deferred jobs.

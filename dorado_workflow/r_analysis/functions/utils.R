@@ -2,6 +2,8 @@
 # Shared utility functions for the R analysis pipeline
 
 # Load required libraries with error handling
+# Inputs: None; uses configured process state.
+# Outputs: Loads required analysis packages or stops with the missing package names.
 load_required_packages <- function() {
   required_packages <- c("dplyr", "readr", "tidyr", "purrr", "stringr",
                          "ggplot2", "plotly", "shiny", "htmlwidgets",
@@ -26,6 +28,8 @@ load_required_packages <- function() {
 }
 
 # Validate that input file exists
+# Inputs: file_path (File path); description (Human-readable source description for diagnostics)
+# Outputs: TRUE when the file exists; otherwise raises an error.
 validate_file_exists <- function(file_path, description = "File") {
   if (!file.exists(file_path)) {
     stop(paste(description, "does not exist:", file_path))
@@ -34,6 +38,8 @@ validate_file_exists <- function(file_path, description = "File") {
 }
 
 # Validate that directory exists, create if needed
+# Inputs: dir_path (Dir path)
+# Outputs: Directory path after creating missing parent directories.
 ensure_directory_exists <- function(dir_path) {
   if (!dir.exists(dir_path)) {
     dir.create(dir_path, recursive = TRUE)
@@ -43,6 +49,8 @@ ensure_directory_exists <- function(dir_path) {
 }
 
 # Read configuration from JSON file (passed from Python)
+# Inputs: config_file (Saved JSON configuration path)
+# Outputs: Parsed JSON configuration as an R list.
 read_config <- function(config_file) {
   if (!file.exists(config_file)) {
     stop("Configuration file not found: ", config_file)
@@ -54,6 +62,8 @@ read_config <- function(config_file) {
 }
 
 # Safe file reading with error handling
+# Inputs: file_path (File path); ... (Additional arguments forwarded to the underlying function)
+# Outputs: CSV records as a readr table; failures include the source path.
 safe_read_csv <- function(file_path, ...) {
   tryCatch({
     validate_file_exists(file_path, "CSV file")
@@ -66,6 +76,9 @@ safe_read_csv <- function(file_path, ...) {
 }
 
 # Safe file writing with error handling
+# Inputs: data (Read-level or measurement table for this operation); file_path (File path); ...
+# (Additional arguments forwarded to the underlying function)
+# Outputs: TRUE after the CSV has been written; failures raise an error.
 safe_write_csv <- function(data, file_path, ...) {
   tryCatch({
     ensure_directory_exists(dirname(file_path))
@@ -78,6 +91,9 @@ safe_write_csv <- function(data, file_path, ...) {
 }
 
 # Find files matching a pattern in a directory
+# Inputs: directory (Directory containing the selected inputs); pattern (Filename pattern or
+# recorded search motif for this operation); recursive (Whether to search subdirectories)
+# Outputs: Paths matching the selected filename pattern.
 find_files_by_pattern <- function(directory, pattern, recursive = TRUE) {
   if (!dir.exists(directory)) {
     warning("Directory does not exist: ", directory)
@@ -90,6 +106,8 @@ find_files_by_pattern <- function(directory, pattern, recursive = TRUE) {
 }
 
 # Enhanced barcode extraction
+# Inputs: file_path (File path)
+# Outputs: Normalized barcode label, or NA when not recognized.
 extract_barcode_from_path <- function(file_path) {
   # First try filename - look for barcode pattern with zero-padding
   barcode_match <- stringr::str_extract(basename(file_path),
@@ -115,6 +133,8 @@ extract_barcode_from_path <- function(file_path) {
 }
 
 # Normalize barcode names to handle zero-padding differences
+# Inputs: barcode_value (Barcode label or path text to normalize)
+# Outputs: Normalized barcode label, preserving an explicit missing result.
 normalize_barcode_name <- function(barcode_value) {
   if (is.function(barcode_value)) {
     stop("normalize_barcode_name expected a barcode string but received a function")
@@ -142,6 +162,9 @@ normalize_barcode_name <- function(barcode_value) {
 }
 
 # System command wrapper with error handling
+# Inputs: command (Command to execute); description (Human-readable source description for
+# diagnostics); timeout_seconds (Maximum subprocess runtime in seconds)
+# Outputs: Subprocess outcome after logging; command failures raise an error.
 run_system_command <- function(command, description = "Command", timeout_seconds = NULL) {
   cat("Running:", description, "\n")
   cat("Command:", command, "\n")
@@ -166,6 +189,9 @@ run_system_command <- function(command, description = "Command", timeout_seconds
 }
 
 # Progress indicator for long operations
+# Inputs: current (Current completed item count); total (Total scheduled items); prefix (Field-name
+# prefix for nested source facts)
+# Outputs: Prints the current processing progress.
 show_progress <- function(current, total, prefix = "Progress") {
   percent <- round((current / total) * 100, 1)
   cat("\r", prefix, ":", current, "/", total, "(", percent, "%)", sep = "")
@@ -173,12 +199,18 @@ show_progress <- function(current, total, prefix = "Progress") {
 }
 
 # Log message with timestamp
+# Inputs: message (Message to display or log); level (Severity used for diagnostic output)
+# Outputs: Prints a timestamped message at the selected severity.
 log_message <- function(message, level = "INFO") {
   timestamp <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
   cat("[", timestamp, "] [", level, "] ", message, "\n", sep = "")
 }
 
 # Create summary statistics data frame
+# Inputs: data (Read-level or measurement table for this operation); group_col (Column defining
+# summary groups); value_col (Numeric column to summarize); stats_name (Prefix used for generated
+# statistic fields)
+# Outputs: Grouped descriptive-statistics table for the selected value column.
 create_summary_stats <- function(data, group_col, value_col, stats_name = "value") {
   data %>%
     group_by(!!sym(group_col)) %>%
@@ -195,6 +227,8 @@ create_summary_stats <- function(data, group_col, value_col, stats_name = "value
 }
 
 # String repetition helper (R doesn't support "string" * number like Python)
+# Inputs: string (Text to repeat); times (Number of repetitions)
+# Outputs: Repeated text string.
 rep_str <- function(string, times) {
   paste(rep(string, times), collapse = "")
 }

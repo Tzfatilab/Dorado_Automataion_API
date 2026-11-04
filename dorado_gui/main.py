@@ -15,7 +15,14 @@ DISTRIBUTION_NAME = "package-name-pending"
 
 
 def _distribution_version():
-    """Return the installed package version."""
+    """Return the installed package version.
+
+    Inputs:
+        None.
+
+    Returns:
+        Installed distribution version, or the fallback version string.
+    """
     try:
         return version(DISTRIBUTION_NAME)
     except PackageNotFoundError:
@@ -24,7 +31,14 @@ def _distribution_version():
 
 
 def _build_parser():
-    """Create the public GUI launcher argument parser."""
+    """Create the public GUI launcher argument parser.
+
+    Inputs:
+        None.
+
+    Returns:
+        ArgumentParser defining the supported command-line options.
+    """
     parser = argparse.ArgumentParser(
         description="Launch the telomere analysis application."
     )
@@ -37,13 +51,28 @@ def _build_parser():
 
 
 def _show_initial_window(window, screen):
-    """Prefer centered 70% sizing, maximizing when setup controls need more room."""
+    """Prefer centered 70% sizing, maximizing when setup controls need more room.
+
+    Args:
+        window: Main application window.
+        screen: Qt screen supplying available display geometry.
+
+    Returns:
+        None.
+    """
     window.show_initial_window(screen)
 
 
 
 def main(argv=None):
-    """Launch the installed GUI application."""
+    """Launch the installed GUI application.
+
+    Args:
+        argv: Command-line argument sequence, or None to use process arguments. Default: None.
+
+    Returns:
+        Exit status for the application or command-line operation.
+    """
     args = sys.argv[1:] if argv is None else argv
     _build_parser().parse_args(args)
 

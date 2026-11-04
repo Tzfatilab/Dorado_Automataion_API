@@ -16,6 +16,16 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
 
     Callers combining already formatted filtered rows with additional records
     can skip those IDs instead of rebuilding their motif and mapping summaries.
+
+    Args:
+        barcode: Imported Barcode record containing reads, metrics and evidence.
+        include_unfiltered: Whether to include detected reads outside the filtered population. Default: False.
+        plot_folder: Barcode folder containing saved per-read plots and sequences. Default: None.
+        include_tracks: Whether to include saved per-read track data. Default: False.
+        exclude_ids: Stable read identifiers to omit. Default: ().
+
+    Returns:
+        Read-table records, or None when the required population is unavailable.
     """
     population = barcode.metrics.get('filtered_length_records')
     available = population and population.status == 'available'
@@ -47,6 +57,14 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
                     if fact and fact.status == 'available':
                         target.add(str(fact.value))
         def measurement(key):
+            """Available read metric value, or None when unavailable.
+
+            Args:
+                key: Lookup key or field name.
+
+            Returns:
+                Available read metric value, or None when unavailable.
+            """
             fact = read.metrics.get(key) if read else None
             return fact.value if fact and fact.status == 'available' else None
         # Show exported motif evidence even when an older coverage file cannot
@@ -63,9 +81,25 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
                             for motif, count in sorted(counts.items())]
         regions = read.tracks.get('tvr_regions') if read else None
         def call_length(method):
+            """Exported length for the selected calling method, or None when unavailable.
+
+            Args:
+                method: Exported telomere-calling method.
+
+            Returns:
+                Exported length for the selected calling method, or None when unavailable.
+            """
             fact = read.calls.get(method, {}).get('reported_length') if read else None
             return fact.value if fact and fact.status == 'available' else None
         def call_density(method):
+            """Exported density for the selected calling method, or None when unavailable.
+
+            Args:
+                method: Exported telomere-calling method.
+
+            Returns:
+                Exported density for the selected calling method, or None when unavailable.
+            """
             fact = read.calls.get(method, {}).get('density') if read else None
             return fact.value if fact and fact.status == 'available' else None
         rows.append(dict(source_note=('Saved NanoTel read details. This read is outside the displayed filtered population and is excluded from filtered summary statistics.' if include_unfiltered and record['read_id'] not in retained else None), motifs=motif_counts, exact_length=call_length('exact'), mismatch_length=call_length('mismatch'), exact_density=call_density('exact'), mismatch_density=call_density('mismatch'), tvr_length=call_length('tvr_inclusive'), regions=regions.value if regions and regions.status == 'available' else None, canonical=measurement('canonical_pct'), tvr=measurement('tvr_pct'),
@@ -86,6 +120,12 @@ def saved_completeness(folder):
 
     A zero unknown count plus the exhaustive censored list identifies complete
     reads, but only after IDs and all counts agree with the final summary.
+
+    Args:
+        folder: Directory used to locate or store artifacts.
+
+    Returns:
+        Read-ID/status dictionary for the verified saved histogram population.
     """
     import csv
     import re
@@ -120,7 +160,14 @@ def saved_completeness(folder):
 
 
 def saved_filter_reasons(folder):
-    """Join explicitly exported NanoTel reasons; reject ambiguous source IDs."""
+    """Join explicitly exported NanoTel reasons; reject ambiguous source IDs.
+
+    Args:
+        folder: Directory used to locate or store artifacts.
+
+    Returns:
+        Dictionary mapping saved read identities to their filtering reasons.
+    """
     import csv
     if folder is None:
         return {}
@@ -138,7 +185,17 @@ def saved_filter_reasons(folder):
 
 
 def reads_section(barcode, results_root=None, show_completeness=True, summary_only=False):
-    """Embed JSON safely; the browser inserts all source text with textContent."""
+    """Embed JSON safely; the browser inserts all source text with textContent.
+
+    Args:
+        barcode: Imported Barcode record containing reads, metrics and evidence.
+        results_root: Results directory used to resolve saved scientific exports. Default: None.
+        show_completeness: Whether the table includes read-completeness status. Default: True.
+        summary_only: Whether to omit individual-read pages from the report. Default: False.
+
+    Returns:
+        HTML markup for reads section.
+    """
     folder = None
     if results_root is not None:
         root = Path(results_root)

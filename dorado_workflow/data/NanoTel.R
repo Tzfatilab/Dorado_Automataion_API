@@ -150,6 +150,8 @@ if (!isNamespaceLoaded("purrr")) {
 # purrr removed compose() in v1.0.0 ׳’ג‚¬ג€ define it here as a compatibility shim
 # so the script works with any purrr version.
 if (!exists("compose", mode = "function")) {
+  # Inputs: ... (Additional arguments forwarded to the underlying function)
+  # Outputs: Composed callable applying the supplied functions in sequence.
   compose <- function(...) {
     fns <- rev(list(...))
     function(x) Reduce(function(v, f) f(v), fns, x)
@@ -177,6 +179,10 @@ KM_REPORT_MESSAGES <- list(
   rounding = "The unrounded width exceeds the reporting limit."
 )
 
+# Inputs: median (Estimated median telomere length in base pairs); lower (Lower confidence limit in
+# base pairs); upper (Upper confidence limit in base pairs); limit (Maximum accepted relative
+# confidence-interval width); warnings (Warnings); error (Error)
+# Outputs: Assessment list containing reportability, estimates and the reporting reason.
 assess_km_result <- function(median, lower, upper,
                              limit = KM_MAX_RELATIVE_CI_WIDTH_PCT,
                              warnings = character(), error = NULL) {
@@ -193,6 +199,8 @@ assess_km_result <- function(median, lower, upper,
     result$reason <- sprintf(KM_REPORT_MESSAGES$failed, detail)
     return(result)
   }
+  # Inputs: x (Value being checked or formatted)
+  # Outputs: TRUE for one finite numeric value; FALSE otherwise.
   valid_number <- function(x) is.numeric(x) && length(x) == 1L && is.finite(x)
   if (!all(vapply(list(median, lower, upper), valid_number, logical(1)))) return(result)
   if (median <= 0 || lower > median || median > upper) {
@@ -216,6 +224,10 @@ assess_km_result <- function(median, lower, upper,
   result
 }
 
+# Inputs: data (Read-level or measurement table for this operation); limit (Maximum accepted
+# relative confidence-interval width); fit_function (Fit function); summary_function (Summary
+# function)
+# Outputs: Assessed KM result; failure paths retain an unavailable/failed status.
 fit_km_result <- function(data, limit = KM_MAX_RELATIVE_CI_WIDTH_PCT,
                           fit_function = survival::survfit,
                           summary_function = summary) {
@@ -246,7 +258,11 @@ fit_km_result <- function(data, limit = KM_MAX_RELATIVE_CI_WIDTH_PCT,
                    estimates[["upper"]], limit, fit_warnings, fit_error)
 }
 
+# Inputs: result (Result produced by the preceding operation)
+# Outputs: Human-readable text describing the assessed KM result.
 format_km_report <- function(result) {
+  # Inputs: x (Value being checked or formatted)
+  # Outputs: Formatted base-pair value.
   fmt_bp <- function(x) paste0(format(round(x), big.mark = ",", scientific = FALSE,
                                      trim = TRUE), " bp")
   reportable <- identical(result$status, "reportable")
@@ -266,10 +282,17 @@ format_km_report <- function(result) {
 
 # Machine-readable equivalent of results.txt; never export withheld KM estimates.
 # Non-finite descriptive values become JSON null, not NaN/Infinity.
+# Inputs: barcode (Barcode label or record used by this operation); n_reads (Number of reads in the
+# recorded population); n_complete (Number of fully observed reads); n_censored (Number of censored
+# reads); censoring_rate (Censoring rate); med_telo (Med telo); pct_short (Pct short);
+# short_threshold (Short threshold); km_result (Already assessed KM result and reporting status)
+# Outputs: Machine-readable analysis fields with unavailable values represented explicitly.
 make_analysis_report <- function(barcode, n_reads, n_complete, n_censored,
                                  censoring_rate, med_telo, pct_short,
                                  short_threshold, km_result) {
   reportable <- identical(km_result$status, "reportable")
+  # Inputs: x (Value being checked or formatted)
+  # Outputs: The finite scalar input, otherwise NULL.
   finite_or_null <- function(x) if (length(x) == 1L && is.finite(x)) x else NULL
   list(
     barcode = barcode,
@@ -290,6 +313,9 @@ make_analysis_report <- function(barcode, n_reads, n_complete, n_censored,
 
 # KM censoring describes the pre-edge KM input, even when its median is withheld.
 # Store it silently in CSV; the visible TXT retains final-filter censoring only.
+# Inputs: barcode (Barcode label or record used by this operation); km_input (Population used by the
+# KM fit); km_result (Already assessed KM result and reporting status)
+# Outputs: One-row table of saved KM measurements and reporting status.
 make_km_statistics <- function(barcode, km_input, km_result) {
   margins <- km_input$sequence_length - km_input$telomere_end
   events <- as.integer(margins >= BUFFER)
@@ -314,6 +340,9 @@ make_km_statistics <- function(barcode, km_input, km_result) {
 
 # Plot inputs follow the selected canonical mode; never infer mode from a CSV name.
 # No sampling: retain every read in the supplied (pre-edge or final) population.
+# Inputs: data (Read-level or measurement table for this operation); columns (Exported measurement
+# columns selected for plotting); max_edge_distance (Max edge distance)
+# Outputs: Read-level plotting data selected from the supplied population.
 make_analysis_plot_data <- function(data, columns, max_edge_distance) {
   n <- nrow(data)
   margin <- data$sequence_length - data[[columns[["end"]]]]
@@ -328,6 +357,8 @@ make_analysis_plot_data <- function(data, columns, max_edge_distance) {
   )
 }
 
+# Inputs: barcode (Barcode label or record used by this operation)
+# Outputs: Formatted barcode title.
 analysis_barcode_title <- function(barcode) {
   if (grepl("^(barcode|bc)[_-]?[0-9]+$", barcode, ignore.case = TRUE)) {
     return(sprintf("Barcode %02d", as.integer(gsub("[^0-9]", "", barcode))))
@@ -335,6 +366,9 @@ analysis_barcode_title <- function(barcode) {
   barcode
 }
 
+# Inputs: data (Read-level or measurement table for this operation); barcode (Barcode label or
+# record used by this operation); mismatch_allowance (Recorded canonical mismatch allowance)
+# Outputs: Plotly per-read telomere/read-length figure.
 make_telomere_line_plot <- function(data, barcode, mismatch_allowance) {
   mode <- if (mismatch_allowance == 0L) "exact" else "mismatch"
   hover <- paste0(
@@ -371,6 +405,8 @@ make_telomere_line_plot <- function(data, barcode, mismatch_allowance) {
   p
 }
 
+# Inputs: data (Read-level or measurement table for this operation)
+# Outputs: Histogram bins and per-read completeness metadata.
 make_telomere_histogram_data <- function(data) {
   # Match BiModal's linear pretty(..., n=45) breaks and right-closed intervals.
   # Bars include censored reads; the rug marks them again, not an extra population.
@@ -400,6 +436,9 @@ make_telomere_histogram_data <- function(data) {
   list(reads = reads, bins = bins, trend = trend, excluded = excluded)
 }
 
+# Inputs: histogram (Previously calculated histogram bins and metadata); barcode (Barcode label or
+# record used by this operation); mismatch_allowance (Recorded canonical mismatch allowance)
+# Outputs: Plotly histogram with count/percentage controls.
 make_telomere_histogram_plot <- function(histogram, barcode, mismatch_allowance) {
   bins <- histogram$bins
   reads <- histogram$reads
@@ -468,6 +507,8 @@ make_telomere_histogram_plot <- function(histogram, barcode, mismatch_allowance)
   p
 }
 
+# Inputs: plot (Figure to save); prefix (Field-name prefix for nested source facts)
+# Outputs: Writes figure artifacts under prefix; callers use the saved files.
 save_analysis_plot <- function(plot, prefix) {
   plot <- plotly::config(plot, displaylogo = FALSE, responsive = TRUE,
     toImageButtonOptions = list(format = "png", filename = basename(prefix),
@@ -544,6 +585,8 @@ global_subseq_length <- 100
 # Print the GRanges object
 #print(ranges)
 
+# Inputs: dna_seq (DNAString sequence to analyze); sub_length (Window length in base pairs)
+# Outputs: IRanges windows covering the analyzed sequence.
 split_telo <- function(dna_seq, sub_length) {
   #' @title Splits a DNA sequence into subsequences.
   #' @description This function calculate the sequence len and creates IRanges
@@ -627,6 +670,10 @@ split_telo <- function(dna_seq, sub_length) {
 #calculate according to sum(width of the IRanges)
 # The calculation is on the full sequence and it is not fit for subsequences
 #' use purrr::map to replace the for loops code
+# Inputs: sequence (DNA sequence in the analyzed orientation); patterns (Canonical/search motifs
+# used by this analysis); with_mismatch (Whether canonical searching allows one mismatch);
+# tvr_patterns (Additional selected TVR motifs)
+# Outputs: List containing total density, unioned matched ranges and motif-specific matches.
 get_density_iranges <- function(sequence, patterns, with_mismatch = FALSE, tvr_patterns = NULL) {
   #' @title Pattern searching function.
   #' @description: get the density of a given pattern or a total density of a
@@ -650,6 +697,10 @@ get_density_iranges <- function(sequence, patterns, with_mismatch = FALSE, tvr_p
   # This extra return member never changes the density/ranges used for calling.
   motif_matches <- data.frame(motif=character(), matched_sequence=character(),
                               start=integer(), end=integer(), role=character(), max_mismatch=integer())
+  # Inputs: hits (Exported motif matches; this function does not search sequences); motif (Motif
+  # associated with the exported matches); role (Canonical or TVR role of the motif); allowance
+  # (Maximum allowed mismatches for this search)
+  # Outputs: Updates the enclosing motif-match table; no public return value.
   retain_hits <- function(hits, motif, role, allowance) {
     if (!length(hits)) return(invisible(NULL))
     motif_matches <<- rbind(motif_matches, data.frame(
@@ -739,8 +790,14 @@ get_density_iranges <- function(sequence, patterns, with_mismatch = FALSE, tvr_p
 
 # Versioned report measurements over existing calls/hits; no additional search,
 # boundary detection or filtering. Coordinates remain 1-based inclusive.
+# Inputs: read_id (Read identifier used for joins or navigation); boundary (Called telomere interval
+# in 1-based inclusive coordinates); hits (Exported motif matches; this function does not search
+# sequences)
+# Outputs: Versioned base-coverage record, or NULL when the boundary is unavailable.
 report_repeat_coverage <- function(read_id, boundary, hits) {
   if (length(boundary) != 1L || width(boundary) <= 0L) return(NULL)
+  # Inputs: role (Canonical or TVR role of the motif)
+  # Outputs: Unioned matched ranges clipped to the selected role and boundary.
   clipped_union <- function(role) {
     chosen <- hits[hits$role == role, , drop=FALSE]
     if (!nrow(chosen)) return(IRanges::IRanges())
@@ -770,6 +827,8 @@ report_repeat_coverage <- function(read_id, boundary, hits) {
 
 # Each parallel search group owns two buffered connections in the local temp
 # directory. Workers never append concurrently to a shared barcode file.
+# Inputs: folder (Directory used to locate or store artifacts)
+# Outputs: Named export connections used by the chunk writer.
 open_report_batch <- function(folder) {
   sink <- new.env(parent=emptyenv())
   sink$connections <- list(); sink$written <- list()
@@ -782,6 +841,8 @@ open_report_batch <- function(folder) {
 
 # Losslessly collapse identical method rows; method names are expanded by the
 # report adapter. Coverage/search results themselves are never changed.
+# Inputs: rows (Records included in this operation); serial (Original NanoTel read number)
+# Outputs: Detail rows using compact per-read identity fields.
 compact_report_rows <- function(rows, serial) {
   rows$read_id <- as.character(serial)
   rows$schema_version <- 2L
@@ -798,6 +859,9 @@ compact_report_rows <- function(rows, serial) {
   result
 }
 
+# Inputs: sink (Open batch-export connection collection); kind (Detail-export kind selecting the
+# output connection); rows (Records included in this operation)
+# Outputs: Appends detail rows to the selected batch connection.
 write_report_batch <- function(sink, kind, rows) {
   write.table(rows, sink$connections[[kind]], sep=",", row.names=FALSE,
               col.names=!sink$written[[kind]], na="", qmethod="double")
@@ -806,6 +870,9 @@ write_report_batch <- function(sink, kind, rows) {
 
 # Merge without loading barcode-sized tables into memory. Header-only/empty
 # workers contribute no extra headers; all read IDs and completion rows survive.
+# Inputs: folder (Directory used to locate or store artifacts); output_dir (Directory for generated
+# outputs); barcode (Barcode label or record used by this operation)
+# Outputs: Writes combined barcode detail exports from completed chunk batches.
 merge_report_batches <- function(folder, output_dir, barcode) {
   details <- file.path(output_dir, "report_details")
   dir.create(details, recursive=TRUE, showWarnings=FALSE)
@@ -839,6 +906,11 @@ merge_report_batches <- function(folder, output_dir, barcode) {
 # Export only already-computed windows and hits, in the analyzed read's native
 # 1-based inclusive coordinates. A completion row distinguishes zero hits from
 # a missing search. Summary-only runs intentionally omit these detailed files.
+# Inputs: read_id (Read identifier used for joins or navigation); serial (Original NanoTel read
+# number); analyses (Exact, mismatch and TVR-inclusive call results); output_dir (Directory for
+# generated outputs); tvr_boundary (TVR-inclusive called interval, when available); motifs_only
+# (Whether to omit per-window density output)
+# Outputs: Writes selected per-read density, motif and coverage artifacts.
 export_report_density <- function(read_id, serial, analyses, output_dir, tvr_boundary=NULL, motifs_only=FALSE) {
   folder <- file.path(output_dir, "report_details")
   dir.create(folder, recursive=TRUE, showWarnings=FALSE)
@@ -886,6 +958,9 @@ export_report_density <- function(read_id, serial, analyses, output_dir, tvr_bou
 #' use purrr::map to replace the for loops code
 
 
+# Inputs: sub_irange (Sequence interval whose covered fraction is requested); ranges (Matched
+# intervals used for density calculation)
+# Outputs: Fraction of the supplied interval covered by matched ranges.
 get_sub_density <- function(sub_irange, ranges) {
   #' @title Calculate density of a subsequnce.
   #' @details with a given IRanges of a subsequence and IRanges of patterns,
@@ -933,6 +1008,11 @@ get_sub_density <- function(sub_irange, ranges) {
 #' @param with_mismatches - If True, allow 1 mismatch.
 #' @tvr_patterns - Additional patterns that use the shared mismatch setting.
 #' @returns  - New index, or Inf if there is no updated start index.
+# Inputs: read (Imported read record and its available measurements); patterns (Canonical/search
+# motifs used by this analysis); subseq_start (Subsequence start on the analyzed-read axis);
+# subseq_end (Subsequence end on the analyzed-read axis); with_mismatches (Whether canonical
+# searching allows one mismatch); tvr_patterns (Additional selected TVR motifs)
+# Outputs: Candidate left boundary, preserving the search sentinel when no hit is found.
 multi_pattern_step_left <- function(read,patterns, subseq_start, subseq_end, with_mismatches = FALSE, tvr_patterns = NULL) {
   new_start <- Inf
 
@@ -984,6 +1064,11 @@ multi_pattern_step_left <- function(read,patterns, subseq_start, subseq_end, wit
 #' @param subseq_end - "               end ".
 #' @param with_mismatches - If True, allow 1 mismatch.
 #' @tvr_patterns - Additional patterns that use the shared mismatch setting.
+# Inputs: read (Imported read record and its available measurements); patterns (Canonical/search
+# motifs used by this analysis); subseq_start (Subsequence start on the analyzed-read axis);
+# subseq_end (Subsequence end on the analyzed-read axis); with_mismatches (Whether canonical
+# searching allows one mismatch); tvr_patterns (Additional selected TVR motifs)
+# Outputs: Candidate right boundary, preserving the search sentinel when no hit is found.
 multi_pattern_step_right <- function(read,patterns, subseq_start, subseq_end, with_mismatches = FALSE, tvr_patterns = NULL) {
   new_end <- -1
   if( (is.null(tvr_patterns) || with_mismatches) == FALSE &&
@@ -1019,6 +1104,12 @@ multi_pattern_step_right <- function(read,patterns, subseq_start, subseq_end, wi
 
   return(ifelse(new_end == -1, new_end, new_end + subseq_start - 1) )
 }
+# Inputs: read (Imported read record and its available measurements); start_index (Start index);
+# subseq_width (Search-window width in base pairs); step_size (Boundary-search step in base pairs);
+# max_steps (Maximum number of boundary-search steps); pattern (Filename pattern or recorded search
+# motif for this operation); with_mismatch (Whether canonical searching allows one mismatch);
+# tvr_patterns (Additional selected TVR motifs)
+# Outputs: Refined left search boundary.
 search_left_patterns <- function(read, start_index, subseq_width = 18, step_size = 10, max_steps = 4, pattern , with_mismatch = FALSE, tvr_patterns = NULL) {
   #' This function advance to the left to find more patterns for more accurate
   #' start index.
@@ -1078,6 +1169,12 @@ search_left_patterns <- function(read, start_index, subseq_width = 18, step_size
 
 }
 
+# Inputs: read (Imported read record and its available measurements); end_index (End index);
+# subseq_width (Search-window width in base pairs); step_size (Boundary-search step in base pairs);
+# max_steps (Maximum number of boundary-search steps); pattern (Filename pattern or recorded search
+# motif for this operation); with_mismatch (Whether canonical searching allows one mismatch);
+# tvr_patterns (Additional selected TVR motifs)
+# Outputs: Refined right search boundary.
 search_right_patterns <- function(read, end_index, subseq_width = 18, step_size = 10, max_steps = 4, pattern , with_mismatch = FALSE, tvr_patterns = NULL) {
   #' This function advance to the left to find more patterns for more accurate
   #' end index.
@@ -1160,6 +1257,11 @@ search_right_patterns <- function(read, end_index, subseq_width = 18, step_size 
 #'      m_list[["subtelos]] <- subtelos
 #'      ( see the course Foundations of Functional Programming with purrr)
 ###########3 My cahnge from prev - return a list 0f (df, total_density) ######
+# Inputs: dna_seq (DNAString sequence to analyze); patterns (Canonical/search motifs used by this
+# analysis); sub_length (Window length in base pairs); min_density (Minimum repeat density as a
+# fraction); with_mismatch (Whether canonical searching allows one mismatch); tvr_patterns
+# (Additional selected TVR motifs)
+# Outputs: List containing candidate windows and their pattern-density measurements.
 analyze_subtelos <- function(dna_seq, patterns, sub_length,
                        min_density, with_mismatch = FALSE, tvr_patterns = NULL) {
   # return list(subtelos, list_density_mp[1])
@@ -1217,6 +1319,9 @@ analyze_subtelos <- function(dna_seq, patterns, sub_length,
 
 
 # max_diff what is the max distance between the end of the read to the end of the telomere
+# Inputs: seq_length (Analyzed sequence length in base pairs); subtelos (Window-based telomere
+# candidates and densities); max_diff (Maximum allowed gap between candidate windows)
+# Outputs: Called IRanges interval, or the existing (-1, -1) missing-call sentinel.
 find_right_telo <- function(seq_length, subtelos, max_diff = 200) {
 
   classes <- list("CCCTAA" = -5, "NONE" = 1, "SKIP" = 0)
@@ -1280,6 +1385,9 @@ find_right_telo <- function(seq_length, subtelos, max_diff = 200) {
 
 
 # max_diff what is the max distance between the startof the read to the start of the telomere
+# Inputs: seq_length (Analyzed sequence length in base pairs); subtelos (Window-based telomere
+# candidates and densities); max_diff (Maximum allowed gap between candidate windows)
+# Outputs: Called IRanges interval, or the existing (-1, -1) missing-call sentinel.
 find_left_telo <- function(seq_length, subtelos, max_diff = 200) {
 
   classes <- list("CCCTAA" = -5, "NONE" = 1, "SKIP" = 0)
@@ -1347,6 +1455,10 @@ find_left_telo <- function(seq_length, subtelos, max_diff = 200) {
 #' First check if the low density is to the right or left.
 #' Then rerun with 15,10 only to one of start/end accordingly.
 #' Should solve problems like
+# Inputs: seq_length (Analyzed sequence length in base pairs); subtelos (Window-based telomere
+# candidates and densities); min_in_a_row (Minimum consecutive windows supporting a candidate);
+# min_density_score (Min density score)
+# Outputs: Called IRanges interval, or the existing (-1, -1) missing-call sentinel.
 find_telo_position <- function(seq_length, subtelos, min_in_a_row = 3,
                         min_density_score = 2) { # 15,10 for sub_length == 20
   #' @title: Find the position of the Telomere(subsequence) within the seuence.
@@ -1454,6 +1566,12 @@ find_telo_position <- function(seq_length, subtelos, min_in_a_row = 3,
 }
 
 # if right_edge is false then we check left edge instead
+# Inputs: read (Imported read record and its available measurements); patterns (Canonical/search
+# motifs used by this analysis); with_mismatch (Whether canonical searching allows one mismatch);
+# tvr_patterns (Additional selected TVR motifs); seq_length (Analyzed sequence length in base
+# pairs); subtelos (Window-based telomere candidates and densities); analyze_list (Intermediate
+# boundary-search results); right_edge (Whether to select the right-end candidate)
+# Outputs: Boundary-search result for the selected read end and matching mode.
 find_telo_position_wraper <- function(read, patterns, with_mismatch, tvr_patterns, seq_length, subtelos, analyze_list,right_edge = FALSE) {
 
 
@@ -1537,6 +1655,11 @@ find_telo_position_wraper <- function(read, patterns, with_mismatch, tvr_pattern
 # dna.seq is a DNAStringSet of length 1
 # This is version updated at 6.01.2022
 # add the posibility for the type of picture file (JPEGS, pdf, eps ....)
+# Inputs: x_length (X length); seq_length (Analyzed sequence length in base pairs); subs (Subs);
+# serial_num (Serial num); seq_start (Seq start); seq_end (Seq end); save_it (Save it); main_title
+# (Main title); w (W); h (H); output_jpegs (Output jpegs); eps (Eps); subs_tvr (Subs tvr); tvr_start
+# (Tvr start); tvr_end (Tvr end)
+# Outputs: Writes the individual-read density plot.
 plot_single_telo <- function(x_length, seq_length, subs, serial_num, seq_start,
                     seq_end, save_it = TRUE, main_title = "", w = 750, h = 300,
                     output_jpegs, eps = FALSE, subs_tvr = NULL,
@@ -1701,6 +1824,11 @@ plot_single_telo <- function(x_length, seq_length, subs, serial_num, seq_start,
 # This is version updated at 6.01.2022
 # add the posibility for the type of picture file (JPEGS, pdf, eps ....)
 # Change the function to return the plot instead
+# Inputs: x_length (X length); seq_length (Analyzed sequence length in base pairs); subs (Subs);
+# subs_mismatch (Subs mismatch); serial_num (Serial num); seq_start (Seq start); seq_end (Seq end);
+# gray_start (Gray start); gray_end (Gray end); save_it (Save it); main_title (Main title); w (W); h
+# (H); output_jpegs (Output jpegs); eps (Eps)
+# Outputs: Writes the read-density plot including the ambiguous boundary region.
 plot_single_telo_with_gray_area <- function(x_length, seq_length, subs,subs_mismatch,  serial_num, seq_start,
   seq_end,gray_start, gray_end, save_it = TRUE, main_title = "", w = 750, h = 300,
   output_jpegs, eps = FALSE) { # add output_jpegs as arg
@@ -1845,6 +1973,12 @@ plot_single_telo_with_gray_area <- function(x_length, seq_length, subs,subs_mism
 
 
 
+# Inputs: x_length (X length); seq_length (Analyzed sequence length in base pairs); subs (Subs);
+# subs_mismatch (Subs mismatch); subs_tvr (Subs tvr); serial_num (Serial num); seq_start (Seq
+# start); seq_end (Seq end); gray_start (Gray start); gray_end (Gray end); tvr_start (Tvr start);
+# tvr_end (Tvr end); save_it (Save it); main_title (Main title); w (W); h (H); output_jpegs (Output
+# jpegs); eps (Eps)
+# Outputs: Writes the read plot with exact, mismatch and TVR-inclusive tracks.
 plot_single_telo_with_tvr <- function(x_length, seq_length, subs,subs_mismatch, subs_tvr,  serial_num, seq_start,
          seq_end,gray_start, gray_end,tvr_start, tvr_end, save_it = TRUE, main_title = "", w = 750, h = 300,
          output_jpegs, eps = FALSE) { # add output_jpegs as arg
@@ -2069,6 +2203,9 @@ plot_single_telo_with_tvr <- function(x_length, seq_length, subs,subs_mismatch, 
 # get the telomere end index, with more accuracy
 # find_telo_position gives only the indices according to the subseqs
 # When using the package : give option for a function as argument for the end/start
+# Inputs: telo_end (Current telomere end in base pairs); irange_telo (Matched repeat intervals used
+# to refine the boundary)
+# Outputs: Refined repeat-supported end coordinate, or the existing missing sentinel.
 get_accurate_end <- function(telo_end, irange_telo) {
   #' try more accurate: take the max of which and also check new_end >=
   #' new_start before updating the IRange object
@@ -2103,6 +2240,9 @@ get_accurate_end <- function(telo_end, irange_telo) {
 #' This function adjust to a pattern of length ~6.
 #' @param telo_start - the start position according to subseqs
 #' @param irange_telo - The paterns iranges.
+# Inputs: telo_start (Current telomere start in base pairs); irange_telo (Matched repeat intervals
+# used to refine the boundary)
+# Outputs: Refined repeat-supported start coordinate.
 get_accurate_start <- function(telo_start, irange_telo) {
   if(telo_start == -1) {
     return(telo_start)
@@ -2151,6 +2291,13 @@ get_accurate_start <- function(telo_start, irange_telo) {
 #' with all the reads -> reaname all the files accoding to the final df.
 #' Also make dir for each different type of plot
 #' right_edge - if the telomere is expected to be to the right: NNNN...NNN(TTAGGG)n
+# Inputs: current_seq (Read sequence currently being analyzed); current_serial (Original read
+# number); pattern_list (Canonical and selected TVR search motifs); min_density (Minimum repeat
+# density as a fraction); output_dir (Directory for generated outputs); output_jpegs (Output jpegs);
+# output_jpegs_1 (Output jpegs 1); max_length (Max length); title (Displayed title); tvr_patterns
+# (Additional selected TVR motifs); right_edge (Whether to select the right-end candidate);
+# summary_only (Whether to omit individual-read pages from the report)
+# Outputs: Per-read summary row with measurements and boundary calls.
 analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
                          output_dir, output_jpegs, output_jpegs_1, max_length, title, tvr_patterns, right_edge = FALSE,
                          summary_only = FALSE ) {
@@ -2394,6 +2541,8 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
 } # End of analyze_read
 
 
+# Inputs: path (File or directory path)
+# Outputs: Opens the selected NanoTel log destination for the run.
 open_nanotel_log <- function(path) {
   logfile <- logr::log_open(path, logdir=FALSE)
   # logr installs recursive error/warning logging hooks. If logging itself
@@ -2404,6 +2553,8 @@ open_nanotel_log <- function(path) {
   logfile
 }
 
+# Inputs: path (File or directory path)
+# Outputs: Creates the destination when needed and returns its path invisibly.
 ensure_output_directory <- function(path) {
   # Another worker may create the same directory between the two checks.
   if (!dir.exists(path)) dir.create(path, recursive=TRUE, showWarnings=FALSE)
@@ -2414,6 +2565,9 @@ ensure_output_directory <- function(path) {
   invisible(path)
 }
 
+# Inputs: sequence (DNA sequence in the analyzed orientation); path (File or directory path); writer
+# (FASTA writer called with the prepared sequence)
+# Outputs: Writes the sequence and returns its path invisibly.
 write_read_fasta <- function(sequence, path, writer=Biostrings::writeXStringSet) {
   # Check in the worker that actually saves the read, not only in the parent.
   # Preserve the low-level warning (disk full, quota, permissions, etc.) that
@@ -2423,6 +2577,8 @@ write_read_fasta <- function(sequence, path, writer=Biostrings::writeXStringSet)
     ensure_output_directory(dirname(path))
     withCallingHandlers(
       writer(sequence, path, compress=TRUE),
+      # Inputs: w (W)
+      # Outputs: Handles the FASTA-writer warning without changing sequence data.
       warning=function(w) {
         warnings <<- c(warnings, conditionMessage(w))
       })
@@ -2435,6 +2591,9 @@ write_read_fasta <- function(sequence, path, writer=Biostrings::writeXStringSet)
   invisible(path)
 }
 
+# Inputs: output_dir (Directory for generated outputs); summary_only (Whether to omit
+# individual-read pages from the report); log_path (Log path)
+# Outputs: Creates the selected NanoTel output directories and log destination.
 create_dirs <- function(output_dir, summary_only = FALSE, log_path = NULL) {
   ensure_output_directory(output_dir)
 
@@ -2452,6 +2611,8 @@ create_dirs <- function(output_dir, summary_only = FALSE, log_path = NULL) {
   ensure_output_directory(log_dir)
 }
 
+# Inputs: input_path (Input path)
+# Outputs: Normalized barcode filename prefix.
 get_barcode_file_prefix <- function(input_path) {
   # Normalize the input folder name into a stable file prefix so every output
   # file can be traced back to its barcode, even when folder names vary
@@ -2468,6 +2629,8 @@ get_barcode_file_prefix <- function(input_path) {
   gsub("^_+|_+$", "", safe_name)
 }
 
+# Inputs: serial_num (Serial num)
+# Outputs: Read-artifact filename stem based on the original serial number.
 make_barcode_read_stem <- function(serial_num) {
   # Per-read outputs are created before the final summary files, so they use a
   # global prefix initialized from the input barcode before processing starts.
@@ -2478,6 +2641,13 @@ make_barcode_read_stem <- function(serial_num) {
 
 ############## Running functions ###############################################
 
+# Inputs: sample_telomeres (Candidate reads selected for detailed motif analysis); pattern_list
+# (Canonical and selected TVR search motifs); max_length (Max length); output_dir (Directory for
+# generated outputs); serial_start (Serial start); min_density (Minimum repeat density as a
+# fraction); title (Displayed title); tvr_patterns (Additional selected TVR motifs); right_edge
+# (Whether to select the right-end candidate); summary_only (Whether to omit individual-read pages
+# from the report); report_batch_dir (Report batch dir)
+# Outputs: Detailed candidate-read analysis table.
 search_patterns <- function(sample_telomeres, pattern_list, max_length = 1e5,
      output_dir, serial_start = 1, min_density,  title = "Telomeric repeat density", tvr_patterns, right_edge = FALSE,
      summary_only = FALSE, report_batch_dir = NULL) {
@@ -2567,6 +2737,9 @@ search_patterns <- function(sample_telomeres, pattern_list, max_length = 1e5,
 
 
 # need to create parApply for filter
+# Inputs: sequence (DNA sequence in the analyzed orientation); patterns (Canonical/search motifs
+# used by this analysis); min_density (Minimum repeat density as a fraction)
+# Outputs: TRUE when repeat density meets the supplied cutoff.
 filter_density <- function(sequence, patterns, min_density = 0.18) {
   #'
   total_density <- 0
@@ -2590,6 +2763,8 @@ filter_density <- function(sequence, patterns, min_density = 0.18) {
 }
 
 
+# Inputs: input_path (Input path); format (Input sequence format: FASTA or FASTQ)
+# Outputs: Sequence paths matching the selected FASTA/FASTQ format.
 list_sequence_files <- function(input_path, format = "fastq") {
   # Barcode directories may contain README and other non-sequence files.
   suffix <- switch(format,
@@ -2612,6 +2787,11 @@ list_sequence_files <- function(input_path, format = "fastq") {
 
 
 # update : 2023-02-10 change the function to use parallel::parLapply instead of mclapply for Windows compatibility
+# Inputs: samples (Read sequences and their source metadata); patterns (Canonical/search motifs used
+# by this analysis); do_rc (Whether to analyze reverse-complemented sequences); num_of_cores (Num of
+# cores); subread_width (Subread width); right_edge (Whether to select the right-end candidate);
+# trimm_length (Trimm length)
+# Outputs: Candidate sequence records, or the existing NA sentinel when none qualify.
 filter_reads <- function(samples, patterns, do_rc = TRUE,
                          num_of_cores = 10,
                          subread_width = 200,
@@ -2704,6 +2884,8 @@ filter_reads <- function(samples, patterns, do_rc = TRUE,
 
 ################## final function ######################################################
 
+# Inputs: workers (Number of parallel workers)
+# Outputs: Configures the future execution plan.
 set_nanotel_parallel_plan <- function(workers = 8) {
   if (future::supportsMulticore()) {
     plan(multicore, workers = workers)
@@ -2713,6 +2895,12 @@ set_nanotel_parallel_plan <- function(workers = 8) {
 }
 
 # run The future par search_pattern on small chunks inorder to save memory.
+# Inputs: input_path (Input path); output_path (Output path); format (Input sequence format: FASTA
+# or FASTQ); nrec (Maximum number of sequence records per chunk); patterns (Canonical/search motifs
+# used by this analysis); do_rc (Whether to analyze reverse-complemented sequences); use_filter (Use
+# filter); right_edge (Whether to select the right-end candidate); tvr_patterns (Additional selected
+# TVR motifs); summary_only (Whether to omit individual-read pages from the report)
+# Outputs: Collected chunk-worker results and saved barcode artifacts.
 run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta","fastq"), nrec = 10000,
                                       patterns, do_rc, use_filter = FALSE, right_edge = TRUE, tvr_patterns,
                                       summary_only = FALSE) {
@@ -3134,6 +3322,8 @@ if (isTRUE(opt$analysis)) {
   ), 1) else NA_real_
 
 
+  # Inputs: x (Value being checked or formatted)
+  # Outputs: Formatted integer text.
   fmt <- function(x) format(round(x), big.mark = ",", scientific = FALSE)
 
   results_lines <- c(

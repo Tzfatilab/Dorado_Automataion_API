@@ -6,6 +6,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from openpyxl import load_workbook, Workbook
+from dorado_workflow.utils.source_links import link_source
 
 
 @dataclass
@@ -19,6 +20,17 @@ class ProjectSources:
 
     @classmethod
     def inspect(cls, directory):
+        """Discover original populations, preferring native CSVs to workbook copies.
+
+        Detection settings are required to keep recalculation compatible with
+        the original measurements. Previously filtered tables are not sources.
+
+        Args:
+            directory: Directory containing the selected inputs.
+
+        Returns:
+            ProjectSources describing original populations, settings and supporting artifacts.
+        """
         root = Path(directory).expanduser().resolve()
         results = root / "results" if (root / "results").is_dir() else root
         if not results.is_dir():
@@ -73,10 +85,29 @@ class ProjectSources:
 
     @property
     def params(self):
+        """Params.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Selected stored value, or the supplied fallback when absent.
+        """
         return self.settings.get("nanotel_analysis", self.settings)
 
     def restore(self, context, check_cancelled):
-        """Write only raw populations and supporting evidence to a fresh run."""
+        """Stage immutable inputs as links and extract workbook-only populations.
+
+        Previous filtered results and aggregate figures are deliberately omitted:
+        the shared post-analysis workflow must regenerate them using new filters.
+
+        Args:
+            context: Shared workflow configuration, paths, logger and command executor.
+            check_cancelled: Callback raising when workflow cancellation is requested.
+
+        Returns:
+            None.
+        """
         target = context.path_manager.get_nanotel_output_dir_path()
         target.mkdir(parents=True, exist_ok=True)
         book = load_workbook(self.workbook, read_only=True, data_only=True) if self.workbook else None
@@ -85,12 +116,12 @@ class ProjectSources:
                 check_cancelled()
                 output = target / (label + "_summary.csv")
                 if isinstance(source, Path):
-                    shutil.copy2(source, output)
+                    link_source(source, output)
                     # Detailed source tracks remain useful; aggregate plots and
                     # old filtered populations must not be reused after refiltering.
                     details = source.parent / "report_details"
                     if details.is_dir():
-                        shutil.copytree(details, target / label / "report_details", dirs_exist_ok=True,
+                        shutil.copytree(details, target / label / "report_details", dirs_exist_ok=True, copy_function=link_source,
                                         ignore=shutil.ignore_patterns("*telomere*.plotly.json", "*.html"))
                     archive = source.parent / "report_details.zip"
                     if archive.is_file():
@@ -100,17 +131,21 @@ class ProjectSources:
                             for info in zipped.infolist():
                                 if info.is_dir() or "telomere" in info.filename or info.filename.endswith(".html"):
                                     continue
-                                dest = member_path(target / label / "report_details", info.filename)
-                                dest.parent.mkdir(parents=True, exist_ok=True)
-                                with zipped.open(info) as src, dest.open("wb") as dst:
-                                    shutil.copyfileobj(src, dst)
+                                extracted_path = member_path(target / label / "report_details", info.filename)
+                                # Loose exports take precedence over archived
+                                # versions. Never overwrite a linked source file.
+                                if extracted_path.exists():
+                                    continue
+                                extracted_path.parent.mkdir(parents=True, exist_ok=True)
+                                with zipped.open(info) as archive_stream, extracted_path.open("xb") as output_stream:
+                                    shutil.copyfileobj(archive_stream, output_stream)
                     if not context.config_manager.get_nanotel_params().get("summary_only", False):
                         reads = source.parent / "reads"
                         if reads.is_dir():
-                            shutil.copytree(reads, target / label / "reads", dirs_exist_ok=True)
+                            shutil.copytree(reads, target / label / "reads", dirs_exist_ok=True, copy_function=link_source)
                     for path in source.parent.glob(label + "_*.json"):
                         if not path.name.endswith(".plotly.json"):
-                            shutil.copy2(path, target / path.name)
+                            link_source(path, target / path.name)
                 else:
                     sheet = book[source]
                     with output.open("w", newline="", encoding="utf-8") as stream:
@@ -124,30 +159,33 @@ class ProjectSources:
                 dest = logs / path.name
                 if dest.exists():
                     raise ValueError("Ambiguous NanoTel source logs: " + path.name)
-                shutil.copy2(path, dest)
+                link_source(path, dest)
             for name in ("km_barcode_statistics.csv", "km_run_statistics.csv"):
                 path = self.results / "nanotel" / name
-                if path.is_file(): shutil.copy2(path, target / name)
+                if path.is_file(): link_source(path, target / name)
             # Keep motif/coverage provenance and input counts, never old filtered
             # rows, mappings, aggregate figures or summary statistics.
             evidence = Workbook()
             evidence.remove(evidence.active)
-            allowed = {"Read motifs", "Barcode source counts", "NanoTel analysis facts", "KM by barcode", "KM run statistics"}
+            evidence_sheet_names = {"Read motifs", "Barcode source counts", "NanoTel analysis facts", "KM by barcode", "KM run statistics"}
             if book:
                 for sheet in book:
                     name = sheet.title.removeprefix("_source_")
-                    if name in allowed:
+                    if name in evidence_sheet_names:
                         dest = evidence.create_sheet("_source_" + name)
                         for row in sheet.values:
                             dest.append(row)
             metadata = evidence.create_sheet("_source_Run metadata")
             metadata.append(["Field", "Part", "Value"])
-            current = dict(self.settings)
-            current["nanotel_analysis"] = context.config_manager.get_nanotel_params()
-            for key, value in {"settings": current, "organism": self.organism or context.config_manager.get_current_organism()}.items():
+            updated_settings = dict(self.settings)
+            updated_settings["nanotel_analysis"] = context.config_manager.get_nanotel_params()
+            for key, value in {"settings": updated_settings, "organism": self.organism or context.config_manager.get_current_organism()}.items():
                 encoded = json.dumps(value, ensure_ascii=True)
-                for i in range(0, len(encoded), 30000):
-                    metadata.append([key, i // 30000 + 1, encoded[i:i+30000]])
+                # Split JSON to stay below Excel's 32,767-character cell limit.
+                metadata_chunk_size = 30000
+                for offset in range(0, len(encoded), metadata_chunk_size):
+                    metadata.append([key, offset // metadata_chunk_size + 1,
+                                     encoded[offset:offset + metadata_chunk_size]])
             # Keep a visible placeholder until the real workbook replaces it.
             evidence.create_sheet("Post-analysis source")
             for sheet in evidence:
@@ -162,13 +200,21 @@ class ProjectSources:
             if book: book.close()
 
     def prepare_mapping(self, operator, check_cancelled):
-        """Reuse original alignment through the existing alignment processor."""
+        """Reuse original alignment through the existing alignment processor.
+
+        Args:
+            operator: WorkflowOperator coordinating the shared processors.
+            check_cancelled: Callback raising when workflow cancellation is requested.
+
+        Returns:
+            None.
+        """
         aligned = self.root / "processing" / "aligned"
         fastq = self.root / "processing" / "fastq"
         check_cancelled()
         if aligned.is_dir() and any(aligned.rglob("*.bam")):
             result = operator.aligner.execute(str(aligned), organism=operator.context.config_manager.get_current_organism(),
-                                              input_type="bam", use_existing_alignment=True)
+                                              input_type="bam", use_existing_alignment=True, link_inputs_only=True)
         elif fastq.is_dir() and any(fastq.rglob("*.fastq*")):
             result = operator.aligner.execute(str(fastq), organism=operator.context.config_manager.get_current_organism(), input_type="fastq")
         else:

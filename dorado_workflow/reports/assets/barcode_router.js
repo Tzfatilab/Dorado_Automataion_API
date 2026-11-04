@@ -3,8 +3,12 @@
   const pages = [...document.querySelectorAll('.barcode-page')];
   const title = document.querySelector('header h1');
   const missing = document.getElementById('unknown-barcode');
+  // Function: route.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Shows the page selected by the URL hash and lazily renders its figures.
   function route() {
     let hash = location.hash || '#/';
+    // Summary reports have barcode tables but no individual-read screens.
     const summaryRead=document.body.dataset.summaryOnly==='true'&&/^#\/barcode\/([^/]+)\/read\/([^/]+)$/.exec(hash);
     if(summaryRead){hash='#/barcode/'+summaryRead[1];history.replaceState(null,'',hash);}
 
@@ -67,7 +71,13 @@
             // against this barcode's actual read pages, never rank or length alone.
             const payload = page.querySelector('.read-data');
             const reads = window.reportReadRows ? window.reportReadRows(page.id) : (payload ? (JSON.parse(payload.textContent) || []) : []);
+            // Function: goRead.
+            // Inputs: read (embedded read record)
+            // Outputs: Navigates to the selected read using stable barcode and read identities.
             const goRead = read => { location.hash = '#/barcode/' + page.id + '/read/' + read.id; };
+            // Function: resolve.
+            // Inputs: identity (source read identity)
+            // Outputs: Resolved stable identity, or no match when the source is ambiguous.
             const resolve = identity => {
               const matches = reads.filter(r => r.header === identity || r.header.split(/\s+/)[0] === identity);
               return matches.length === 1 ? matches[0] : null;

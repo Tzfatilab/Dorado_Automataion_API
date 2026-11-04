@@ -3,7 +3,7 @@ BAM to FASTQ Converter Processor Module
 ========================================
 
 Converts demuxed per-barcode BAM files to FASTQ format using samtools.
-Required step between demuxing and NanoTel analysis.
+Used when demultiplexing produced BAM; direct FASTQ workflows skip conversion.
 """
 
 from pathlib import Path
@@ -26,10 +26,26 @@ class BamToFastqProcessor(ProcessorBase):
     """
 
     def __init__(self, context: WorkflowContext):
+        """Initialize the instance and its dependencies.
+
+        Args:
+            context: WorkflowContext; shared workflow configuration, paths, logger and command executor.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__(context)
         self.output_dir = self.context.path_manager.get_fastq_dir_path()
 
     def validate_inputs(self, demuxed_dir: str) -> bool:
+        """Require existing BAM inputs and samtools before scheduling conversions.
+
+        Args:
+            demuxed_dir: str; demuxed dir.
+
+        Returns:
+            bool: Boolean result.
+        """
         self.context.logger.info("Validating BAM to FASTQ conversion inputs...")
 
         demuxed_path = Path(demuxed_dir)
@@ -55,6 +71,14 @@ class BamToFastqProcessor(ProcessorBase):
         return True
 
     def execute(self, demuxed_dir: str) -> ProcessorResult:
+        """Execute.
+
+        Args:
+            demuxed_dir: str; demuxed dir.
+
+        Returns:
+            ProcessorResult: ProcessorResult instance.
+        """
         self.log_start()
 
         if not self.validate_inputs(demuxed_dir):
@@ -161,12 +185,29 @@ class BamToFastqProcessor(ProcessorBase):
             return result
 
     def _convert_parallel(self, tasks: list, max_workers: int = 4) -> Dict[str, str]:
+        """Dictionary of conversion outcomes keyed by the scheduled barcode task.
+
+        Args:
+            tasks: list; per-file tasks scheduled for processing.
+            max_workers: int; maximum number of concurrent worker threads. Default: 4.
+
+        Returns:
+            Dictionary of conversion outcomes keyed by the scheduled barcode task.
+        """
         results = {}
 
         if not tasks:
             return results
 
         def convert_single(task):
+            """Tuple of barcode/task identity and conversion error text; empty text indicates success.
+
+            Args:
+                task: One scheduled file-conversion task.
+
+            Returns:
+                Tuple of barcode/task identity and conversion error text; empty text indicates success.
+            """
             try:
                 has_output = self._run_samtools_fastq(
                     task["bam_file"],
@@ -206,6 +247,15 @@ class BamToFastqProcessor(ProcessorBase):
         return results
 
     def _run_samtools_fastq(self, bam_file: Path, output_fastq: Path) -> bool:
+        """Run samtools fastq.
+
+        Args:
+            bam_file: Path; input BAM file.
+            output_fastq: Path; destination FASTQ path.
+
+        Returns:
+            bool: Boolean result.
+        """
         command = self._build_samtools_command(bam_file)
         temp_fastq = output_fastq.with_name(f"{output_fastq.name}.tmp")
         command_text = f"{format_command(command)} > {quote_path(output_fastq)}"
@@ -257,13 +307,37 @@ class BamToFastqProcessor(ProcessorBase):
                 temp_fastq.unlink()
 
     def _build_samtools_command(self, bam_file: Path) -> list:
+        """Samtools argument list converting one BAM to FASTQ.
+
+        Args:
+            bam_file: Path; input BAM file.
+
+        Returns:
+            Samtools argument list converting one BAM to FASTQ.
+        """
         return ["samtools", "fastq", str(bam_file)]
 
 
     @staticmethod
     def _has_fastq_output(output_fastq: Path) -> bool:
+        """True when an expected FASTQ output exists.
+
+        Args:
+            output_fastq: Path; destination FASTQ path.
+
+        Returns:
+            True when an expected FASTQ output exists.
+        """
         return output_fastq.exists() and output_fastq.stat().st_size > 0
 
 
     def get_output_paths(self) -> Dict[str, Path]:
+        """Get output paths.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying output paths.
+        """
         return {"fastq_dir": self.output_dir}

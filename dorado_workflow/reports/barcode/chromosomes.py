@@ -5,7 +5,15 @@ from statistics import mean
 
 
 def chromosome_section(cells, *, cutoff_bp=None):
-    """Render means, descriptive statistics and quartiles without remapping."""
+    """Render means, descriptive statistics and quartiles without remapping.
+
+    Args:
+        cells: Chromosome summary records grouped by barcode.
+        cutoff_bp: Short-telomere cutoff in base pairs; lengths below it are short. Default: None.
+
+    Returns:
+        HTML markup for chromosome section.
+    """
     heading = '<section><h2><span class="number">7</span>Chromosome Comparison</h2>'
     if not cells:
         return heading + '<p class="note">Unavailable: no unambiguous chromosome mappings for post-filtered reads.</p></section>'

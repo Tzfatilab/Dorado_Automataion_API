@@ -9,16 +9,37 @@ class StreamToGui(QObject):
     text_written = Signal(str)
 
     def __init__(self, stream):
-        """Store the target stream to forward writes and flush calls."""
+        """Store the target stream to forward writes and flush calls.
+
+        Args:
+            stream: Underlying file-like text stream.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__()
         self.stream = stream
 
     def write(self, text):
-        """Write text to the underlying stream and emit it to the GUI."""
+        """Write text to the underlying stream and emit it to the GUI.
+
+        Args:
+            text: Text to parse, display or write.
+
+        Returns:
+            None.
+        """
         self.stream.write(text)
         self.text_written.emit(text)
 
     def flush(self):
-        """Flush the underlying stream to keep file-like behavior compatible."""
+        """Flush the underlying stream to keep file-like behavior compatible.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         self.stream.flush()
 

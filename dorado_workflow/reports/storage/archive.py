@@ -11,7 +11,14 @@ ARCHIVE = 'report_details.zip'
 
 
 def digest(path):
-    """Hash in bounded chunks, including large motif and density exports."""
+    """Hash in bounded chunks, including large motif and density exports.
+
+    Args:
+        path: File or directory path.
+
+    Returns:
+        SHA-256 digest bytes for the file contents.
+    """
     h = hashlib.sha256()
     with path.open('rb') as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b''):
@@ -20,7 +27,15 @@ def digest(path):
 
 
 def member_path(folder, name):
-    """Reject archive traversal before creating files or removing sources."""
+    """Reject archive traversal before creating files or removing sources.
+
+    Args:
+        folder: Directory used to locate or store artifacts.
+        name: Name used for lookup, display or storage.
+
+    Returns:
+        Validated destination path for one safe archive member.
+    """
     parts = PurePosixPath(name)
     if parts.is_absolute() or '..' in parts.parts or '\\' in name or ':' in name:
         raise ValueError('Unsafe report archive member: ' + name)
@@ -36,6 +51,12 @@ def available_details(root):
 
     Loose files from a newer analysis take precedence. Only files created by
     this context and still byte-identical are removed afterwards, even on failure.
+
+    Args:
+        root: Root directory or root data object for this operation.
+
+    Yields:
+        None while saved details are exposed; extracted files are cleaned up on exit.
     """
     created = []
     directories = set()
@@ -83,6 +104,12 @@ def pack_details(barcode):
 
     Existing archived files are retained unless superseded by a loose export.
     Single-read images and scientific summary files are outside this directory.
+
+    Args:
+        barcode: Imported Barcode record containing reads, metrics and evidence.
+
+    Returns:
+        Path to the validated archive, or None when there are no details to pack.
     """
     barcode = Path(barcode).resolve()
     folder = barcode / 'report_details'

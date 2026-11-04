@@ -7,6 +7,14 @@ from .importers import import_results
 
 
 def main(argv=None):
+    """Main.
+
+    Args:
+        argv: Command-line argument sequence, or None to use process arguments. Default: None.
+
+    Returns:
+        Exit status for the application or command-line operation.
+    """
     parser = argparse.ArgumentParser(description="Build an offline NanoTel report from existing results.")
     parser.add_argument("results", type=Path, help="One run's results directory")
     parser.add_argument("--output", type=Path, help="New or empty report directory; defaults to RESULTS/report")

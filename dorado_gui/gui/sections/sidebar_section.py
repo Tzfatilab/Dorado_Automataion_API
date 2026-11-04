@@ -23,12 +23,14 @@ class SidebarSection:
     """Mixin that supplies sidebar and section header UI construction methods."""
 
     def _build_sidebar(self):
-        """
-        Build the left-hand sidebar widget.
+        """Build the left-hand sidebar widget.
 
         The sidebar contains an icon/title header and a list of menu buttons.
         Returns:
             QWidget: configured sidebar widget ready to be inserted into the main layout.
+
+        Inputs:
+            None; uses instance state.
         """
         sidebar = QWidget()
         sidebar.setFixedWidth(250)
@@ -147,11 +149,13 @@ class SidebarSection:
         return sidebar
 
     def _build_section_header(self):
-        """
-        Build the content area section header.
+        """Build the content area section header.
 
         Returns:
             QWidget: header container with title and subtitle describing the current panel.
+
+        Inputs:
+            None; uses instance state.
         """
         container = QWidget()
         header_row = QHBoxLayout(container)

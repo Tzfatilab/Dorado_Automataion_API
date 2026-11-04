@@ -5,11 +5,17 @@
   window.reportGraphExportInstalled = 'v21';
   const attached = new WeakSet();
   const NS = 'http://www.w3.org/2000/svg';
+  // Function: save.
+  // Inputs: blob (download content); filename (download filename)
+  // Outputs: Saves the selected data or setting using this feature's existing destination.
   const save = (blob, filename) => {
     const url=URL.createObjectURL(blob),link=document.createElement('a');
     link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();
     setTimeout(()=>URL.revokeObjectURL(url),30000);
   };
+  // Function: figureTitle.
+  // Inputs: graph (Plotly graph element)
+  // Outputs: Contextual export title containing the graph, barcode and read labels.
   const figureTitle = graph => {
     const heading=graph.closest('section,article')?.querySelector('h3,h2')?.cloneNode(true);
     heading?.querySelectorAll('.number').forEach(badge=>badge.remove());
@@ -40,6 +46,9 @@
     const context=[barcode,read].filter(Boolean).join(' · ');
     return title+(context ? ' — '+context : '');
   };
+  // Function: cleanStatistics.
+  // Inputs: layout (figure layout)
+  // Outputs: Removes duplicate group-statistic annotations from the supplied layout.
   const cleanStatistics=layout=>{
     for(const annotation of layout.annotations||[]){
       if(annotation.name!=='group-statistics')continue;
@@ -49,6 +58,9 @@
       }).join('<br>');
     }
   };
+  // Function: svgFromURL.
+  // Inputs: url (SVG data URL)
+  // Outputs: Parsed SVGElement decoded from the data URL; invalid markup raises an error.
   const svgFromURL = url => {
     const payload=url.slice(url.indexOf(',')+1);
     const text=url.slice(0,url.indexOf(',')).includes(';base64') ? atob(payload) : decodeURIComponent(payload);
@@ -56,6 +68,9 @@
     if (documentSVG.querySelector('parsererror')) throw Error('Could not create the SVG image.');
     return documentSVG.documentElement;
   };
+  // Function: snapshot.
+  // Inputs: graph (Plotly graph element)
+  // Outputs: Promise resolving to a standalone SVGElement showing the current figure state.
   const snapshot = async graph => {
     if (graph.matches('svg.km-interval')) {
       const svg=graph.cloneNode(true), originals=[graph,...graph.querySelectorAll('*')];
@@ -140,11 +155,17 @@
     }
     return svg;
   };
+  // Function: exportGraph.
+  // Inputs: graph (Plotly graph element); format (display-value formatter)
+  // Outputs: Promise completing after the PNG or interactive-HTML download is prepared.
   const exportGraph = async (graph,format) => {
     if(format==='html') {
       const bundle=[...document.scripts].find(script=>script.textContent.includes('plotly.js v'))?.textContent;
       if(!bundle||!graph.data)throw Error('Interactive export is unavailable for this figure.');
       const title=figureTitle(graph);
+      // Function: escape.
+      // Inputs: value (value to inspect or format)
+      // Outputs: Escaped text safe for insertion into HTML.
       const escape=value=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       if(graph.reportInteractiveRead&&window.renderReadTracks) {
         const payload=JSON.stringify(graph.reportInteractiveRead).replace(/</g,'\\u003c');
@@ -217,6 +238,9 @@
     const canvas=document.createElement('canvas');canvas.width=Math.ceil(width*factor);canvas.height=Math.ceil((height+headingHeight)*factor);
     const image=new Image(),url=URL.createObjectURL(new Blob([serialized],{type:'image/svg+xml;charset=utf-8'}));
     try {
+      // Function: image.onerror.
+      // Inputs: None; uses the current report/browser state.
+      // Outputs: Rejects the image-export promise with the image-load error.
       await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(Error('PNG conversion failed. Try SVG instead.'));image.src=url;});
       const context=canvas.getContext('2d');if(!context)throw Error('Image export is unavailable in this browser.');
       context.drawImage(image,0,0,canvas.width,canvas.height);
@@ -225,6 +249,9 @@
     } finally {URL.revokeObjectURL(url);}
   };
   window.reportExportGraph=exportGraph;
+  // Function: attach.
+  // Inputs: graph (Plotly graph element)
+  // Outputs: Adds export controls or related handlers to the supplied report element.
   const attach = graph => {
     if(attached.has(graph) || !graph.parentNode || !graph.closest('main')) return;
     attached.add(graph);
@@ -238,6 +265,9 @@
     for(const [format,label] of [['png','Save PNG'],...(graph.data?[['html','Save interactive HTML']]:[])]) {
       const button=document.createElement('button');button.type='button';button.textContent=label;
       button.style.cssText='padding:7px 10px;border:1px solid #ccd8e8;border-radius:6px;background:white;color:#2456a6;cursor:pointer';
+      // Function: button.onclick.
+      // Inputs: None; uses the current report/browser state.
+      // Outputs: Promise completing after the selected UI action finishes.
       button.onclick=async()=>{
         buttons.forEach(b=>b.disabled=true);status.textContent='Preparing image…';
         try{await exportGraph(graph,format);status.textContent='\u2713';status.setAttribute('aria-label','Saved');setTimeout(()=>{status.textContent='';status.removeAttribute('aria-label');},2500);}
@@ -255,16 +285,25 @@
       row.appendChild(toolbar);
     }else if(composition)composition.before(toolbar);else graph.before(toolbar);
   };
+  // Function: scan.
+  // Inputs: root (DOM/data root)
+  // Outputs: Finds relevant report elements and attaches this feature once per element.
   const scan = root => {
     if(root.nodeType!==1 && root!==document) return;
     if(root.matches?.('.js-plotly-plot,svg.km-interval')) attach(root);
     root.querySelectorAll('.js-plotly-plot,svg.km-interval').forEach(attach);
   };
   let observer;
+  // Function: window.reportGraphExportCleanup.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Disconnects the observer and removes generated graph-export controls.
   window.reportGraphExportCleanup=()=>{
     observer?.disconnect();
     document.querySelectorAll('.graph-export-controls').forEach(toolbar=>toolbar.remove());
   };
+  // Function: start.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Initializes this report feature and registers its event listeners.
   const start = () => {
     document.querySelectorAll('.graph-export-controls').forEach(toolbar=>toolbar.remove());
     scan(document);

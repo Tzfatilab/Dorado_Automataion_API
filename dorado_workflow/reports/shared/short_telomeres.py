@@ -4,6 +4,15 @@ import math
 
 
 def short_cutoff_bp(settings, barcode=None):
+    """Positive cutoff in base pairs, or None when not recorded or invalid.
+
+    Args:
+        settings: Recorded analysis settings and their availability.
+        barcode: Imported Barcode record containing reads, metrics and evidence. Default: None.
+
+    Returns:
+        Positive cutoff in base pairs, or None when not recorded or invalid.
+    """
     options = settings.value if settings and settings.status == 'available' else {}
     if isinstance(options, dict):
         options = options.get('nanotel_analysis', options)
@@ -20,6 +29,18 @@ def short_cutoff_bp(settings, barcode=None):
 
 
 def short_statistics(barcode, settings):
+    """Count lengths strictly below the cutoff over the exported filtered reads.
+
+    An empty population has denominator zero and an undefined percentage;
+    missing measurements remain unavailable rather than becoming zero.
+
+    Args:
+        barcode: Imported Barcode record containing reads, metrics and evidence.
+        settings: Recorded analysis settings and their availability.
+
+    Returns:
+        Dictionary containing cutoff, numerator, denominator and short percentage.
+    """
     cutoff = short_cutoff_bp(settings, barcode)
     fact = barcode.metrics.get('filtered_length_records')
     result = dict(cutoff_bp=cutoff, numerator=None, denominator=None, percent=None)
@@ -34,11 +55,27 @@ def short_statistics(barcode, settings):
 
 
 def short_summary_html(barcode, settings):
+    """Short summary html.
+
+    Args:
+        barcode: Imported Barcode record containing reads, metrics and evidence.
+        settings: Recorded analysis settings and their availability.
+
+    Returns:
+        HTML markup for short summary html.
+    """
     return _summary_html(short_statistics(barcode, settings))
 
 
 def pooled_short_statistics(run):
-    """Pool counts only when every barcode has complete, comparable data."""
+    """Pool counts only when every barcode has complete, comparable data.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+
+    Returns:
+        Combined short counts and percentage, available only for comparable populations.
+    """
     rows = [short_statistics(barcode, run.settings) for barcode in run.barcodes]
     result = dict(cutoff_bp=None, numerator=None, denominator=None, percent=None)
     if not rows or any(row['denominator'] is None for row in rows):
@@ -55,10 +92,27 @@ def pooled_short_statistics(run):
 
 
 def pooled_short_summary_html(run):
+    """Pooled short summary html.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+
+    Returns:
+        HTML markup for pooled short summary html.
+    """
     return _summary_html(pooled_short_statistics(run), pooled=True)
 
 
 def _summary_html(result, *, pooled=False):
+    """Summary html.
+
+    Args:
+        result: Result produced by the preceding operation.
+        pooled: Whether the summary combines barcode counts. Default: False.
+
+    Returns:
+        HTML markup for summary html.
+    """
     cutoff = result['cutoff_bp']
     definition = f'Length < {cutoff:,.0f} bp ({cutoff / 1000:g} kb).' if cutoff is not None else 'Cutoff unavailable.'
     if result['percent'] is not None:
@@ -81,7 +135,17 @@ def _summary_html(result, *, pooled=False):
 
 
 def add_cutoff_line(layout, cutoff_bp, *, axis='y', unit='kb'):
-    """Add an explicitly labelled reference line without changing any data."""
+    """Add an explicitly labelled reference line without changing any data.
+
+    Args:
+        layout: Layout object to inspect or update.
+        cutoff_bp: Short-telomere cutoff in base pairs; lengths below it are short.
+        axis: Plot axis receiving the cutoff reference line. Default: 'y'.
+        unit: Measurement or display unit. Default: 'kb'.
+
+    Returns:
+        None.
+    """
     if cutoff_bp is None or unit not in ('bp', 'kb'):
         return
     value = cutoff_bp / (1000 if unit == 'kb' else 1)

@@ -29,6 +29,11 @@ if (!exists("log_message", mode = "function")) {
 }
 
 # Process a single NanoTel summary file
+# Inputs: nanotel_csv_path (Original before-filter NanoTel summary CSV); density_threshold (Minimum
+# accepted repeat density as a fraction); max_telomere_start (Latest allowed telomere start in base
+# pairs); max_edge_distance (Max edge distance); min_read_length (Min read length); min_mapq
+# (Minimum accepted alignment mapping quality)
+# Outputs: Filtered read table for one barcode, including empty populations.
 process_nanotel_barcode <- function(nanotel_csv_path,
                                     density_threshold = 0.75,
                                     max_telomere_start = 150,
@@ -87,7 +92,8 @@ process_nanotel_barcode <- function(nanotel_csv_path,
     return(filtered_data)
   }
 
-  # Sort by sequence length (descending)
+  # Order is part of the edge filter: each running median uses the current
+  # read and all longer reads, rather than the entire barcode population.
   filtered_data <- filtered_data %>%
     arrange(desc(sequence_length))
 
@@ -98,7 +104,7 @@ process_nanotel_barcode <- function(nanotel_csv_path,
                                                   na.rm = TRUE)
                                          })
 
-  # Calculate sequence length minus running median
+  # Compare the remaining read margin to the configured edge threshold below.
   filtered_data$seqLen_runningMED <- filtered_data$sequence_length - filtered_data$running_median
 
   # FASTQ annotations can follow either spaces or tabs; SAM retains only the ID.
@@ -119,6 +125,12 @@ process_nanotel_barcode <- function(nanotel_csv_path,
 }
 
 # Process multiple NanoTel files and combine results
+# Inputs: input_files (Original NanoTel CSV files to process); output_dir (Directory for generated
+# outputs); density_threshold (Minimum accepted repeat density as a fraction); max_telomere_start
+# (Latest allowed telomere start in base pairs); max_edge_distance (Max edge distance);
+# min_read_length (Min read length); summary_only (Whether to omit individual-read pages from the
+# report)
+# Outputs: Filtered read tables indexed by barcode; failures stop aggregation.
 batch_process_nanotel_files <- function(input_files,
                                         output_dir,
                                         density_threshold = 0.75,
@@ -166,7 +178,7 @@ batch_process_nanotel_files <- function(input_files,
           ensure_directory_exists(barcode_output_dir)
         }
 
-        # UPDATED FILE PATH:
+        # Keep each barcode's newly filtered population separate from raw inputs.
         output_file <- file.path(barcode_output_dir, paste0("filtered_summary",
                                                             toupper(gsub("bc", "BC", barcode)), ".csv"))
         safe_write_csv(processed_data, output_file)
@@ -195,10 +207,21 @@ batch_process_nanotel_files <- function(input_files,
 
 # Pure calculation: return statistics without writing files or printing output.
 # Lengths and the short-telomere threshold are in base pairs; densities are fractions.
+# Inputs: all_barcodes_data (Filtered read tables indexed by barcode); short_telomere_threshold_bp
+# (Strict short-telomere cutoff in base pairs)
+# Outputs: One summary-statistics row per barcode, including zero-read barcodes.
 calculate_nanotel_summary_stats <- function(all_barcodes_data,
                                             short_telomere_threshold_bp = 2000) {
-  # Combine all barcode data
-  combined_data <- bind_rows(all_barcodes_data)
+  # Summary calculations do not use identifiers or optional export columns.
+  # In particular, CSV inference can give Serial different types in empty and
+  # populated barcodes; those unrelated columns must not prevent aggregation.
+  summary_columns <- c(
+    "barcode", "Telomere_length_mismatch", "sequence_length",
+    "telo_density_mismatch", "Telomere_start_mismatch"
+  )
+  combined_data <- bind_rows(lapply(all_barcodes_data, function(data) {
+    select(data, all_of(summary_columns))
+  }))
 
   # Generate summary statistics
   summary_stats <- combined_data %>%
@@ -236,6 +259,9 @@ calculate_nanotel_summary_stats <- function(all_barcodes_data,
 }
 
 # Generate summary statistics for all barcodes
+# Inputs: all_barcodes_data (Filtered read tables indexed by barcode); output_file (Output file);
+# short_telomere_threshold_bp (Strict short-telomere cutoff in base pairs)
+# Outputs: Summary table, also written to the requested CSV.
 generate_nanotel_summary_stats <- function(all_barcodes_data, output_file,
                                            short_telomere_threshold_bp = 2000) {
 
@@ -263,6 +289,8 @@ generate_nanotel_summary_stats <- function(all_barcodes_data, output_file,
 }
 
 # Find all NanoTel summary files in a directory
+# Inputs: input_dir (Directory containing input files)
+# Outputs: Unique original-summary CSV paths, excluding derived outputs.
 find_nanotel_summary_files <- function(input_dir) {
   log_message(paste("Looking for NanoTel summary files in:", input_dir))
 
@@ -278,10 +306,10 @@ find_nanotel_summary_files <- function(input_dir) {
     all_files <- c(all_files, files)
   }
 
-  # Remove duplicates and filter out already processed files AND statistics files
+  # Discovery patterns overlap; exclude derived outputs before processing inputs.
   all_files <- unique(all_files)
   all_files <- all_files[!grepl("filtered_", basename(all_files))]
-  all_files <- all_files[!grepl("statistics", basename(all_files))]  # ADD THIS LINE
+  all_files <- all_files[!grepl("statistics", basename(all_files))]
 
   if (length(all_files) == 0) {
     warning("No NanoTel summary files found in: ", input_dir)
@@ -293,6 +321,8 @@ find_nanotel_summary_files <- function(input_dir) {
 }
 
 # Validate NanoTel data structure
+# Inputs: data (Read-level or measurement table for this operation); file_path (File path)
+# Outputs: TRUE for supported input structure; raises for invalid required values.
 validate_nanotel_data <- function(data, file_path) {
 
   required_columns <- c("telo_density_mismatch", "Telomere_start_mismatch",

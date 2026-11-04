@@ -2,6 +2,9 @@
 (() => {
   if(window.reportBarcodeHeaderDesign)return;
   window.reportBarcodeHeaderDesign=true;
+  // Function: icon.
+  // Inputs: paths (SVG path markup)
+  // Outputs: CSS URL containing a self-contained SVG icon.
   const icon=paths=>'url("data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+paths+'</svg>')+'")';
   const grid=icon('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M8 3v18M15 3v18M3 8h18M3 15h18"/>');
   const dna=icon('<path d="M5 2c0 9 14 11 14 20M19 2C19 11 5 13 5 22M6 5h12M9 9h6M9 15h6M6 19h12"/>');
@@ -41,6 +44,9 @@
     @media(max-width:650px){.barcode-page>.breadcrumbs.barcode-header>.barcode-toolbar{flex-basis:100%;border-left:0!important;padding-left:0!important}.barcode-header .barcode-toolbar .barcode-name-editor{flex-wrap:wrap;white-space:normal}.barcode-header .barcode-toolbar .barcode-exclusion-banner{border-left:0!important;padding-left:0!important}.barcode-header>.barcode-step-navigation{margin-left:0!important;width:100%}.barcode-header>.barcode-step-navigation button{flex:1}}
   `;
   document.head.appendChild(style);
+  // Function: decorate.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Applies the barcode-toolbar presentation to existing controls.
   const decorate=()=>{
     for(const page of document.querySelectorAll('.barcode-page')){
       const header=page.querySelector('.breadcrumbs');if(!header)continue;
@@ -51,7 +57,13 @@
       const check=page.querySelector('.barcode-exclusion-banner input');if(check)check.title='Include this barcode in overview graphs and pooled statistics';
     }
   };
+  // Function: schedule.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Schedules one layout update on the next animation frame.
   let pending=false;const schedule=()=>{if(!pending){pending=true;requestAnimationFrame(()=>{pending=false;decorate();});}};
+  // Function: start.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Initializes this report feature and registers its event listeners.
   const start=()=>{
     decorate();
     new MutationObserver(records=>{

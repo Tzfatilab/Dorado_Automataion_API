@@ -14,11 +14,13 @@ class OutputSection:
     """Mixin that builds the Output Path card used in the main UI."""
 
     def _build_output(self):
-        """
-        Construct the output path card.
+        """Construct the output path card.
 
         Returns:
             QWidget: styled card widget containing the output path row.
+
+        Inputs:
+            None; uses instance state.
         """
         box = make_card("Output Path")
         box.setStyleSheet(box.styleSheet() + """
@@ -66,6 +68,14 @@ class OutputSection:
         edit.setPlaceholderText(placeholder)
 
         def browse():
+            """Browse.
+
+            Inputs:
+                None.
+
+            Returns:
+                None.
+            """
             path = QFileDialog.getExistingDirectory(self, f"Select {label}", edit.text())
             if path:
                 edit.setText(path)

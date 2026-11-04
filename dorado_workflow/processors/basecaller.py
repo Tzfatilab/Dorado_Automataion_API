@@ -36,11 +36,13 @@ class BasecallerProcessor(ProcessorBase):
     """
 
     def __init__(self, context: WorkflowContext):
-        """
-        Initialize basecaller processor.
+        """Initialize basecaller processor.
 
         Args:
             context: WorkflowContext with all shared resources
+
+        Returns:
+            None; initializes the instance.
         """
         super().__init__(context)
 
@@ -48,12 +50,12 @@ class BasecallerProcessor(ProcessorBase):
         self.output_dir = self.context.path_manager.get_rebasecalled_dir_path()
 
     def validate_inputs(self, pod5_input: str, organism: str = "mouse", align : bool = False) -> bool:
-        """
-        Validate that all prerequisites for basecalling are met.
+        """Validate that all prerequisites for basecalling are met.
 
         Args:
             pod5_input: Path to POD5 input (file or directory)
             organism: Organism type ('mouse' or 'human') for reference selection
+            align: bool; whether to include reference alignment. Default: False.
 
         Returns:
             True if validation passes, False otherwise
@@ -103,14 +105,14 @@ class BasecallerProcessor(ProcessorBase):
 
     def execute(self, pod5_input: str, organism: str = "mouse", align : bool = False,
                 emit_fastq: Optional[bool] = None) -> ProcessorResult:
-        """
-        Execute the basecalling process.
+        """Execute the basecalling process.
 
         Args:
             pod5_input: Path to POD5 input (file or directory)
             organism: Organism type ('mouse' or 'human') for reference selection
             emit_fastq: None selects FASTQ for sequence-only calls; False reserves BAM
                 for a downstream consumer. True rejects alignment/modification loss.
+            align: bool; whether to include reference alignment. Default: False.
 
         Returns:
             ProcessorResult with success status, selected output path, and statistics
@@ -184,6 +186,17 @@ class BasecallerProcessor(ProcessorBase):
 
     def _build_command(self, pod5_input: str, organism: str, align : bool = False,
                        emit_fastq: Optional[bool] = None) -> tuple[str, Path]:
+        """Select the output extension from the actual Dorado arguments.
+
+        Args:
+            pod5_input: str; pOD5 input file or directory.
+            organism: str; organism label selecting reference and analysis defaults.
+            align: bool; whether to include reference alignment. Default: False.
+            emit_fastq: Optional[bool]; whether Dorado should emit FASTQ instead of BAM. Default: None.
+
+        Returns:
+            Command and output-path information used by the processor.
+        """
         arguments = self._build_arguments(pod5_input, organism, align, emit_fastq)
         extension = 'fastq' if '--emit-fastq' in arguments else 'bam'
         timestamp = datetime.now().strftime('%Y-%m-%d_T%H-%M-%S')
@@ -193,7 +206,16 @@ class BasecallerProcessor(ProcessorBase):
         return command, output_file
 
     def build_classified_stream(self, pod5_input: str, organism: str, kit_name: str) -> list:
-        """Produce classified records on stdout for demux; no intermediate file."""
+        """Produce classified records on stdout for demux; no intermediate file.
+
+        Args:
+            pod5_input: str; pOD5 input file or directory.
+            organism: str; organism label selecting reference and analysis defaults.
+            kit_name: str; barcode kit identifier.
+
+        Returns:
+            Dorado argument list producing classified records on stdout.
+        """
         if not kit_name:
             raise ValueError('A barcode kit is required to classify a basecalling stream')
         modifications = self.context.config_manager.get_basecalling_params().get('modified_bases', '5mCG_5hmCG')
@@ -203,7 +225,18 @@ class BasecallerProcessor(ProcessorBase):
 
     def _build_arguments(self, pod5_input: str, organism: str, align: bool = False,
                          emit_fastq: Optional[bool] = None, kit_name_override: Optional[str] = None) -> list:
-        """Build shell-free Dorado arguments for file output or a binary pipe."""
+        """Build shell-free Dorado arguments for file output or a binary pipe.
+
+        Args:
+            pod5_input: str; pOD5 input file or directory.
+            organism: str; organism label selecting reference and analysis defaults.
+            align: bool; whether to include reference alignment. Default: False.
+            emit_fastq: Optional[bool]; whether Dorado should emit FASTQ instead of BAM. Default: None.
+            kit_name_override: Optional[str]; explicit kit identifier replacing the configured default. Default: None.
+
+        Returns:
+            Ordered tool argument list, without shell redirection.
+        """
         # Get configuration parameters
         config = self.context.config_manager
         basecalling_params = config.get_basecalling_params()
@@ -216,6 +249,7 @@ class BasecallerProcessor(ProcessorBase):
         no_trim = basecalling_params.get('no_trim', True)
 
         if emit_fastq is None:
+            # FASTQ cannot retain alignment or modification tags required later.
             emit_fastq = not (align or modified_bases)
         if emit_fastq and (align or modified_bases):
             raise ValueError("FASTQ output cannot retain alignments or modified-base calls; use BAM output")
@@ -257,11 +291,27 @@ class BasecallerProcessor(ProcessorBase):
 
     @staticmethod
     def _show_dorado_gui_line(line: str) -> bool:
+        """True when the Dorado diagnostic is suitable for GUI display.
+
+        Args:
+            line: str; one line of source or process output.
+
+        Returns:
+            True when the Dorado diagnostic is suitable for GUI display.
+        """
         lower = line.lower()
         return "[error]" in lower or "[warning]" in lower
 
     def _find_output_bam(self) -> Optional[Path]:
         # Look for any BAM file (not per-barcode, so exclude barcode subdirs)
+        """Most recent matching BAM path, or None when no BAM was produced.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Most recent matching BAM path, or None when no BAM was produced.
+        """
         bam_files = [
             f for f in self.output_dir.rglob("*.bam")
             if 'barcode' not in f.parent.name and 'unclassified' not in f.parent.name
@@ -299,22 +349,26 @@ class BasecallerProcessor(ProcessorBase):
         return stats
 
     def get_output_paths(self) -> Dict[str, Path]:
-        """
-        Get the expected output paths for this processor.
+        """Get the expected output paths for this processor.
 
         Returns:
             Dictionary with 'output_dir' key
+
+        Inputs:
+            None; uses instance state.
         """
         return {
             'output_dir': self.output_dir
         }
 
     def get_latest_output(self) -> Optional[Path]:
-        """
-        Convenience method to get the latest basecalled BAM or FASTQ file.
+        """Convenience method to get the latest basecalled BAM or FASTQ file.
 
         Returns:
             Path to most recent basecalled file, or None if not found
+
+        Inputs:
+            None; uses instance state.
         """
         candidates = (path for path in self.output_dir.rglob('*')
                       if path.is_file() and path.suffix.lower() in ('.bam', '.fastq')

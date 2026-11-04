@@ -43,11 +43,13 @@ class RAnalyzer(ProcessorBase):
     """
 
     def __init__(self, context: WorkflowContext):
-        """
-        Initialize R analyzer processor.
+        """Initialize R analyzer processor.
 
         Args:
             context: WorkflowContext with all shared resources
+
+        Returns:
+            None; initializes the instance.
         """
         super().__init__(context)
 
@@ -287,6 +289,12 @@ class RAnalyzer(ProcessorBase):
 
         Returns the workbook path. Recovery after a failed analysis keeps the
         source CSVs by passing ``cleanup_sources=False``.
+
+        Args:
+            cleanup_sources: bool; whether redundant source artifacts may be removed after export. Default: True.
+
+        Returns:
+            Path to the saved NanoTel summary workbook.
         """
         writer = NanoTelWorkbookWriter(
             self.nanotel_output_dir,
@@ -313,7 +321,14 @@ class RAnalyzer(ProcessorBase):
         return workbook_path
 
     def _try_create_summary_workbook_after_failure(self) -> Optional[Path]:
-        """Preserve completed NanoTel results when a later analysis step fails."""
+        """Preserve completed NanoTel results when a later analysis step fails.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Recovery workbook path, or None when recovery export fails.
+        """
         # Without this file, filtering may have failed. Do not turn unknown
         # results into a workbook that claims every barcode has zero reads.
         if not (self.nanotel_output_dir / "nanotel_summary_statistics.csv").exists():
@@ -325,7 +340,14 @@ class RAnalyzer(ProcessorBase):
 
 
     def _cleanup_summary_workspace(self) -> None:
-        """Remove the temporary NanoTel tree after its workbook is safely saved."""
+        """Remove the temporary NanoTel tree after its workbook is safely saved.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         results_dir = self.context.path_manager.get_results_dir_path().resolve(strict=False)
         source_dir = self.nanotel_output_dir.resolve(strict=False)
         if source_dir == results_dir or results_dir not in source_dir.parents:
@@ -340,11 +362,13 @@ class RAnalyzer(ProcessorBase):
 
 
     def _validate_nanotel_summaries(self) -> bool:
-        """
-        Validate that NanoTel summary.csv files exist (for filtration).
+        """Validate that NanoTel summary.csv files exist (for filtration).
 
         Returns:
             True if valid, False otherwise
+
+        Inputs:
+            None; uses instance state.
         """
         nanotel_dir = self.nanotel_output_dir
 
@@ -383,11 +407,13 @@ class RAnalyzer(ProcessorBase):
 
 
     def _validate_aligned_bams(self) -> bool:
-        """
-        Validate that aligned directory has BAM files (for mapping/methylation).
+        """Validate that aligned directory has BAM files (for mapping/methylation).
 
         Returns:
             True if valid, False otherwise
+
+        Inputs:
+            None; uses instance state.
         """
         aligned_dir = self.context.path_manager.get_aligned_dir_path()
 
@@ -411,11 +437,13 @@ class RAnalyzer(ProcessorBase):
         return True
 
     def _check_bam_methylation(self, read_limit: int = 1000) -> bool:
-        """
-        Check if BAM files contain methylation data.
+        """Check if BAM files contain methylation data.
 
         Returns:
             True if methylation data found, False otherwise
+
+        Args:
+            read_limit: int; maximum number of reads to inspect. Default: 1000.
         """
         aligned_dir = self.context.path_manager.get_aligned_dir_path()
         bam_files = list(aligned_dir.rglob("*.bam"))
@@ -454,7 +482,15 @@ class RAnalyzer(ProcessorBase):
         return True
 
     def _count_methylation_tags(self, bam: Path, limit: int = 100) -> int:
-        """Count reads with modified-base tags using samtools."""
+        """Count reads with modified-base tags using samtools.
+
+        Args:
+            bam: Path; bAM path inspected for tags or alignments.
+            limit: int; maximum number of inspected records. Default: 100.
+
+        Returns:
+            int: Integer value.
+        """
         command = ["samtools", "view", str(bam)]
         process = self.context.command_executor.popen(
             command,
@@ -484,11 +520,13 @@ class RAnalyzer(ProcessorBase):
         return count
 
     def _collect_statistics(self) -> Dict:
-        """
-        Collect statistics about the R analysis outputs.
+        """Collect statistics about the R analysis outputs.
 
         Returns:
             Dictionary of statistics
+
+        Inputs:
+            None; uses instance state.
         """
         stats = {}
 
@@ -509,11 +547,13 @@ class RAnalyzer(ProcessorBase):
         return stats
 
     def get_output_paths(self) -> Dict[str, Path]:
-        """
-        Get the expected output paths for this processor.
+        """Get the expected output paths for this processor.
 
         Returns:
             Dictionary with output directory paths
+
+        Inputs:
+            None; uses instance state.
         """
         return {
             'r_analysis_dir': self.r_analysis_dir,

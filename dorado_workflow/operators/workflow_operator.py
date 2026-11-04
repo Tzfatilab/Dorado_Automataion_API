@@ -2,7 +2,7 @@
 Workflow Operator Module
 ========================
 Orchestrates the complete workflow by coordinating all processor classes.
-Handles three main execution scenarios and manages the pipeline flow.
+Routes fresh inputs and saved projects through shared processors and analysis.
 """
 
 from pathlib import Path
@@ -27,17 +27,18 @@ class WorkflowOperator:
     - Handle errors and logging
     - Track workflow state
 
-    Three main workflow scenarios:
-    1. POD5 workflow: basecall ג†’ demux ג†’ nanotel ג†’ align ג†’ R analysis (all three)
-    2. FASTQ workflow: nanotel ג†’ align ג†’ R analysis (filtration only, no methylation yet)
-    3. Single process: Run individual step (nanotel, align, R analysis)
+    Fresh runs execute the required preparation and detection stages before
+    entering the shared post-analysis tail. Recalculation restores saved inputs
+    and enters that same tail without repeating basecalling or NanoTel detection.
     """
 
     def __init__(self, context: WorkflowContext):
-        """
-        Initialize workflow operator with context.
+        """Initialize workflow operator with context.
         Args:
             context: WorkflowContext with all shared resources
+
+        Returns:
+            None; initializes the instance.
         """
         self.context = context
 
@@ -87,13 +88,16 @@ class WorkflowOperator:
     def _run_step(self, key: str, label: str, processor: Any,
                   *args: Any, step: Optional[str] = None,
                   **kwargs: Any) -> Optional[ProcessorResult]:
-        """
-        Execute a processor, store its result, and check for success.
+        """Execute a processor, store its result, and check for success.
         Args:
             key: Name under which to store the result.
             label: Human-readable step name used in the error message.
             processor: Processor instance whose ``execute`` will be called.
             *args, **kwargs: Arguments forwarded to ``processor.execute``.
+            step: Optional[str]; optional stage label included in progress messages. Default: None.
+            args: Any; command-line arguments or forwarded positional arguments.
+            kwargs: Any; keyword arguments forwarded to the underlying operation.
+
         Returns:
             The ProcessorResult on success, or None on failure (after logging).
         """
@@ -113,13 +117,28 @@ class WorkflowOperator:
         return result
 
     def _log_inputs(self, input_path: str, organism: Optional[str]) -> None:
-        """Log the standard input/organism header lines."""
+        """Log the standard input/organism header lines.
+
+        Args:
+            input_path: str; input path.
+            organism: Optional[str]; organism label selecting reference and analysis defaults.
+
+        Returns:
+            None.
+        """
         self.context.logger.section_header("Run details")
         self.context.logger.info(f"Input: {input_path}")
         self.context.logger.info(f"Organism: {organism}")
 
     def _finish_success(self) -> bool:
-        """Log the success banner and print the run summary."""
+        """Log the success banner and print the run summary.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            bool: Boolean result.
+        """
         self.context.logger.section_header("WORKFLOW COMPLETED SUCCESSFULLY")
         self._print_workflow_summary()
         return True
@@ -127,10 +146,15 @@ class WorkflowOperator:
     def _run_basecall_to_fastq(self, pod5_input: str, organism: Optional[str],
                                align_during_basecalling: bool, require_bam: bool = False
                                ) -> Optional[Tuple[Any, Any]]:
-        """
-        Shared POD5 prefix: basecall and demultiplex, converting BAM only when required.
+        """Shared POD5 prefix: basecall and demultiplex, converting BAM only when required.
         Returns:
             (demuxed_dir, fastq_dir) on success, or None on failure.
+
+        Args:
+            pod5_input: str; pOD5 input file or directory.
+            organism: Optional[str]; organism label selecting reference and analysis defaults.
+            align_during_basecalling: bool; whether Dorado should align reads while basecalling.
+            require_bam: bool; whether downstream stages require retained BAM data. Default: False.
         """
         config = self.context.config_manager
         basecalling = config.get_basecalling_params()
@@ -189,7 +213,14 @@ class WorkflowOperator:
         return demuxed_dir, fastq_dir
 
     def _prepare_fastq_input(self, input_path: str) -> Optional[Any]:
-        """Prepare barcode-separated FASTQ input for NanoTel."""
+        """Prepare barcode-separated FASTQ input for NanoTel.
+
+        Args:
+            input_path: str; input path.
+
+        Returns:
+            Prepared FASTQ input path, or None when preparation fails.
+        """
         path = Path(input_path)
         input_files = [path] if path.is_file() else list(path.rglob("*"))
         bam_files = [file for file in input_files
@@ -230,7 +261,14 @@ class WorkflowOperator:
         return input_path
 
     def _log_methylation_outputs(self, result: ProcessorResult) -> None:
-        """Log methylation outputs without defining the R output structure here."""
+        """Log methylation outputs without defining the R output structure here.
+
+        Args:
+            result: ProcessorResult; result produced by the preceding operation.
+
+        Returns:
+            None.
+        """
         methylation_dir = result.get_output('methylation_output')
         if not methylation_dir:
             return
@@ -270,6 +308,17 @@ class WorkflowOperator:
         Source restoration is only needed when entering from a previous project;
         filtering, mapping, workbook and Summary report generation always use
         the existing RAnalyzer processor and its normal failure handling.
+
+        Args:
+            run_filtration: Whether to filter exported NanoTel measurements. Default: True.
+            run_mapping: Whether to run chromosome mapping. Default: False.
+            run_methylation: Whether to run modified-base analysis. Default: False.
+            source: Existing source artifact or source data. Default: None.
+            check_cancelled: Callback raising when workflow cancellation is requested. Default: None.
+            step: Optional stage label included in progress messages. Default: None.
+
+        Returns:
+            ProcessorResult on success, or None when post-analysis fails.
         """
         check_cancelled = check_cancelled or (lambda: None)
         if source is not None:
@@ -288,13 +337,15 @@ class WorkflowOperator:
                           methylation_enabled: bool = False,
                           align_during_basecalling: bool = False,
                           run_mapping: bool = False) -> bool:
-        """
-        Execute complete workflow starting from POD5 files.
+        """Execute complete workflow starting from POD5 files.
         Workflow: POD5 ג†’ basecall ג†’ demux ג†’ nanotel ג†’ align ג†’ R analysis (all)
         Args:
             pod5_input: Path to POD5 input (file or directory)
             organism: Organism type ('mouse' or 'human')
             run_mapping: Map NanoTel reads even without basecalling alignment.
+            methylation_enabled: bool; whether modified-base analysis is enabled. Default: False.
+            align_during_basecalling: bool; whether Dorado should align reads while basecalling. Default: False.
+
         Returns:
             True if entire workflow succeeds, False otherwise
         """
@@ -343,11 +394,13 @@ class WorkflowOperator:
 
     def run_basecalling(self, pod5_input: str, organism: str = None,
                         align_during_basecalling: bool = False) -> bool:
-        """
-        Execute the basecalling portion of the workflow.
+        """Execute the basecalling portion of the workflow.
         Workflow: POD5 ג†’ basecall ג†’ demux ג†’ BAM to FASTQ
         Args:
             pod5_input: Path to POD5 input (file or directory)
+            organism: str; organism label selecting reference and analysis defaults. Default: None.
+            align_during_basecalling: bool; whether Dorado should align reads while basecalling. Default: False.
+
         Returns:
             True if entire workflow succeeds, False otherwise
         """
@@ -367,14 +420,17 @@ class WorkflowOperator:
                              run_mapping: bool = False,
                              has_methylation: bool = False,
                              bam_is_aligned: bool = False) -> bool:
-        """
-        Execute workflow starting from FASTQ files (from MinKNOW) or BAM files.
+        """Execute workflow starting from FASTQ files (from MinKNOW) or BAM files.
         Workflow: FASTQ (or BAM ג†’ FASTQ) ג†’ nanotel ג†’ align ג†’ R analysis (filtration only)
         Note: FASTQ from MinKNOW won't have methylation data, so we only run
         NanoTel filtration. Mapping/methylation require POD5 workflow.
         Args:
             path_input: Path to FASTQ or BAM directory
             organism: Organism type ('mouse' or 'human')
+            run_mapping: bool; whether to run chromosome mapping. Default: False.
+            has_methylation: bool; whether downstream processing requires modification tags. Default: False.
+            bam_is_aligned: bool; whether the selected BAM already contains alignments. Default: False.
+
         Returns:
             True if workflow succeeds, False otherwise
         """
@@ -509,7 +565,14 @@ class WorkflowOperator:
     # ------------------------------ Result accessors / utilities ------------------------------
 
     def _print_workflow_summary(self) -> None:
-        """Print summary of workflow execution."""
+        """Print summary of workflow execution.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         self.context.logger.info("\n=== WORKFLOW SUMMARY ===")
         for processor_name, result in self.results.items():
             status = "SUCCESS" if result.success else "FAILED"
@@ -529,18 +592,34 @@ class WorkflowOperator:
         return self.results.get(processor_name)
 
     def get_all_results(self) -> Dict[str, ProcessorResult]:
-        """
-        Get all processor results.
+        """Get all processor results.
         Returns:
             Dictionary of all results
+
+        Inputs:
+            None; uses instance state.
         """
         return self.results.copy()
 
     def clear_results(self) -> None:
-        """Clear all stored results."""
+        """Clear all stored results.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         self.results.clear()
 
     def __repr__(self) -> str:
-        """String representation of operator."""
+        """String representation of operator.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Readable string describing the instance.
+        """
         completed_steps = len(self.results)
         return f"WorkflowOperator(trial={self.context.path_manager.trial_name}, completed_steps={completed_steps})"

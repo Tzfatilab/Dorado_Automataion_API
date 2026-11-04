@@ -4,6 +4,19 @@ from ..reads.density import tvr_enabled
 
 
 def tvr_statistics(barcode, settings, composition=None):
+    """Count TVR-positive filtered reads and distinct observed motifs.
+
+    Disabled analysis is different from missing evidence. A motif count is
+    withheld when exported coverage cannot identify all observed motif names.
+
+    Args:
+        barcode: Imported Barcode record containing reads, metrics and evidence.
+        settings: Recorded analysis settings and their availability.
+        composition: Precomputed TVR composition for this barcode, when supplied. Default: None.
+
+    Returns:
+        TVR-positive read and observed-motif counts, with explicit missing/disabled states.
+    """
     if tvr_enabled(settings) is False:
         return dict(with_tvr='Not requested', motifs='Not requested')
     population=barcode.metrics.get('filtered_length_records')
@@ -45,8 +58,26 @@ def tvr_statistics(barcode, settings, composition=None):
 
 
 def barcode_key_statistics(barcode, settings, cells, composition=None):
-    """Read the shared barcode card/table values without changing populations."""
+    """Read the shared barcode card/table values without changing populations.
+
+    Args:
+        barcode: Imported Barcode record containing reads, metrics and evidence.
+        settings: Recorded analysis settings and their availability.
+        cells: Chromosome summary records grouped by barcode.
+        composition: Precomputed TVR composition for this barcode, when supplied. Default: None.
+
+    Returns:
+        Key Statistics values for one barcode, preserving missing values.
+    """
     def value(key):
+        """Available metric value, otherwise the enclosing adapter's missing-value marker.
+
+        Args:
+            key: Lookup key or field name.
+
+        Returns:
+            Available metric value, otherwise the enclosing adapter's missing-value marker.
+        """
         fact = barcode.metrics.get(key)
         return fact.value if fact and fact.status == 'available' else None
 

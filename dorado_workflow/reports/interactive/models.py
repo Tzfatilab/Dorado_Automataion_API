@@ -19,7 +19,15 @@ class Availability(str, Enum):
 
 
 def safe_id(kind: str, *parts: str) -> str:
-    """Hash a structured identity; delimiters and hostile names cannot alias paths."""
+    """Hash a structured identity; delimiters and hostile names cannot alias paths.
+
+    Args:
+        kind: str; artifact or entity kind to select.
+        parts: str; ordered identity components used to construct a stable ID.
+
+    Returns:
+        Stable identifier combining the entity kind and SHA-256 digest.
+    """
     if kind not in {"b", "r", "s", "run"}:
         raise ValueError("Unsupported ID kind")
     encoded = json.dumps(parts, ensure_ascii=True, separators=(",", ":")).encode()
@@ -54,6 +62,15 @@ class Fact:
 
 
 def unavailable(reason: str, status=Availability.NOT_EXPORTED) -> Fact:
+    """Fact with a missing-state status, no value and the supplied reason.
+
+    Args:
+        reason: str; explanation attached to unavailable data or a failure.
+        status: Availability or processing status. Default: Availability.NOT_EXPORTED.
+
+    Returns:
+        Fact with a missing-state status, no value and the supplied reason.
+    """
     return Fact(status, reason=reason)
 
 
@@ -95,12 +112,27 @@ class Run:
     schema_version: str = "1.0"
 
     def to_dict(self):
+        """Validated run model converted to ordinary serializable containers.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Validated run model converted to ordinary serializable containers.
+        """
         validate(self)
         return asdict(self)
 
 
 def validate(run: Run) -> None:
-    """Reject malformed availability, unsafe IDs, broken joins and nonfinite JSON."""
+    """Reject malformed availability, unsafe IDs, broken joins and nonfinite JSON.
+
+    Args:
+        run: Run; imported run model containing barcodes, reads and source evidence.
+
+    Returns:
+        None.
+    """
     if run.schema_version != "1.0":
         raise ValueError("Unsupported schema version")
     source_ids = {s.id for s in run.sources}
@@ -123,6 +155,14 @@ def validate(run: Run) -> None:
                 raise ValueError("Read belongs to a different barcode")
 
     def walk(value):
+        """Walk.
+
+        Args:
+            value: Value to inspect, convert or format.
+
+        Returns:
+            None.
+        """
         if isinstance(value, Fact):
             Availability(value.status)
             if value.status == Availability.AVAILABLE:

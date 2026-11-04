@@ -17,6 +17,17 @@ def barcode_views(run, icons, histograms=None, results_root=None, summary_only=F
     TVR counts require complete motif coverage of the post-filtered population.
     Chromosome counts use the same unambiguous assignments as the heatmap.
     Missing coverage remains unavailable, never zero or 100% canonical.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        icons: SVG/icon markup indexed by statistic name.
+        histograms: Saved histogram sections indexed by barcode. Default: None.
+        results_root: Results directory used to resolve saved scientific exports. Default: None.
+        summary_only: Whether to omit individual-read pages from the report. Default: False.
+        comparisons: Precomputed report comparisons; reused when supplied. Default: None.
+
+    Returns:
+        Tuple containing barcode navigation HTML and all barcode-page HTML.
     """
     comparisons = comparison_data(run) if comparisons is None else comparisons
     km_enabled = show_km(run)
@@ -83,7 +94,16 @@ def barcode_views(run, icons, histograms=None, results_root=None, summary_only=F
 
 
 def barcode_summary_section(run, comparisons, key_statistics=False):
-    """Render the same Key Statistics as the barcode cards in a single table."""
+    """Render the same Key Statistics as the barcode cards in a single table.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        comparisons: Precomputed report comparisons; reused when supplied.
+        key_statistics: Precomputed per-barcode Key Statistics. Default: False.
+
+    Returns:
+        HTML for the per-barcode Key Statistics table.
+    """
     from ..shared.barcode_statistics import barcode_key_statistics
     from ..shared.short_telomeres import short_statistics
     composition={r['barcode']:r for r in comparisons['composition']}

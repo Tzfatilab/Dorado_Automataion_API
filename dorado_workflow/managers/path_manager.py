@@ -29,8 +29,7 @@ class PathManager:
 
     def __init__(self, trial_name: str, base_output_dir: Optional[str] = None,
                  config_manager=None):
-        """
-        Initialize the path manager.
+        """Initialize the path manager.
 
         Args:
             trial_name: Name of the trial (e.g., "Trial_99_Mouse")
@@ -40,6 +39,9 @@ class PathManager:
         Note: Directories are NOT created during initialization. Use the
               *_path methods to get paths without creating them, or the
               existing getters when a directory should be created immediately.
+
+        Returns:
+            None; initializes the instance.
         """
         self.trial_name = trial_name
         self.config_manager = config_manager
@@ -97,14 +99,29 @@ class PathManager:
         return directory
 
     def _normalize_barcode(self, barcode: str) -> str:
-        """Normalize barcode name to zero-padded form (e.g., 'barcode6' -> 'barcode06')."""
+        """Normalize barcode name to zero-padded form (e.g., 'barcode6' -> 'barcode06').
+
+        Args:
+            barcode: str; barcode label or record used by this operation.
+
+        Returns:
+            str: Formatted text for the requested output.
+        """
         match = re.search(r'(?:barcode|bc)(\d+)', barcode, re.IGNORECASE)
         if not match:
             return barcode
         return f"barcode{int(match.group(1)):02d}"
 
     def _resolve_barcode_dir(self, parent: Path, barcode: str) -> Path:
-        """Return canonical padded barcode dir under `parent`, merging any unpadded duplicate."""
+        """Return canonical padded barcode dir under `parent`, merging any unpadded duplicate.
+
+        Args:
+            parent: Path; parent Qt widget, when supplied.
+            barcode: str; barcode label or record used by this operation.
+
+        Returns:
+            Path to the requested barcode directory, created when required.
+        """
         canonical_name = self._normalize_barcode(barcode)
         canonical_path = parent / canonical_name
 
@@ -127,9 +144,14 @@ class PathManager:
         return self._ensure_directory(canonical_path)
 
     def create_all_directories(self) -> None:
-        """
-        Create all standard directories for the trial.
+        """Create all standard directories for the trial.
         This is a convenience method to create everything upfront.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
         """
         # Main trial directories
         self._ensure_directory(self.get_trial_dir())
@@ -157,8 +179,7 @@ class PathManager:
             include_aligned_outputs: bool = True,
             include_mapping_outputs: bool = True,
     ) -> None:
-        """
-        Prepare generated workflow outputs for a fresh run.
+        """Prepare generated workflow outputs for a fresh run.
 
         The GUI intentionally uses a stable "Telomere Analyzer" trial folder.
         Without clearing these folders, stale barcodes/BAMs/FASTQs from a
@@ -166,6 +187,17 @@ class PathManager:
 
         When archive_existing is enabled, previous outputs are moved under
         previous_runs/<timestamp>/ instead of being deleted.
+
+        Args:
+            include_results: bool; whether to include generated scientific results. Default: True.
+            archive_existing: bool; whether to archive existing outputs before preparation. Default: False.
+            include_basecalling_outputs: bool; whether to include basecalling intermediates. Default: True.
+            include_fastq_outputs: bool; whether to include FASTQ intermediates. Default: True.
+            include_aligned_outputs: bool; whether to include aligned BAM intermediates. Default: True.
+            include_mapping_outputs: bool; whether to include mapping outputs. Default: True.
+
+        Returns:
+            None.
         """
         archive_root = None
         if archive_existing:
@@ -212,7 +244,16 @@ class PathManager:
             archive_root: Optional[Path] = None,
             recreate: bool = True,
     ) -> None:
-        """Archive or remove a generated path, guarded to stay inside trial_dir."""
+        """Archive or remove a generated path, guarded to stay inside trial_dir.
+
+        Args:
+            target: Path; destination widget, path or object receiving the result.
+            archive_root: Optional[Path]; root directory for archived outputs. Default: None.
+            recreate: bool; whether to recreate the directory after cleanup. Default: True.
+
+        Returns:
+            None.
+        """
         trial_root = self.trial_dir.resolve(strict=False)
         resolved = target.resolve(strict=False)
 
@@ -237,6 +278,12 @@ class PathManager:
 
         Returns True only when the path itself no longer exists. This uses the
         same retry and read-only handling as the normal Windows/OneDrive reset.
+
+        Args:
+            target: Path; destination widget, path or object receiving the result.
+
+        Returns:
+            True when the generated path no longer exists after cleanup.
         """
         self._reset_generated_path(Path(target), recreate=False)
         target = Path(target)
@@ -248,7 +295,15 @@ class PathManager:
         return not target.exists()
 
     def _archive_generated_path(self, target: Path, archive_root: Path) -> None:
-        """Move a generated path into previous_runs while preserving its layout."""
+        """Move a generated path into previous_runs while preserving its layout.
+
+        Args:
+            target: Path; destination widget, path or object receiving the result.
+            archive_root: Path; root directory for archived outputs.
+
+        Returns:
+            None.
+        """
         trial_root = self.trial_dir.resolve(strict=False)
         resolved_archive = archive_root.resolve(strict=False)
 
@@ -274,7 +329,14 @@ class PathManager:
 
     @staticmethod
     def _unique_archive_destination(destination: Path) -> Path:
-        """Avoid replacing an existing archived path in the same timestamp folder."""
+        """Avoid replacing an existing archived path in the same timestamp folder.
+
+        Args:
+            destination: Path; path where the new output is written.
+
+        Returns:
+            Archive destination path with a collision-free suffix when needed.
+        """
         if not destination.exists():
             return destination
 
@@ -282,7 +344,14 @@ class PathManager:
         return destination.with_name(f"{destination.name}_{suffix}")
 
     def _clear_generated_dir(self, target: Path) -> None:
-        """Clear a generated directory while tolerating Windows/OneDrive locks."""
+        """Clear a generated directory while tolerating Windows/OneDrive locks.
+
+        Args:
+            target: Path; destination widget, path or object receiving the result.
+
+        Returns:
+            None.
+        """
         for _ in range(3):
             try:
                 shutil.rmtree(target, onerror=self._handle_remove_readonly)
@@ -300,7 +369,14 @@ class PathManager:
             self._remove_generated_child(child)
 
     def _remove_generated_child(self, child: Path) -> None:
-        """Best-effort removal for generated files/folders on Windows."""
+        """Best-effort removal for generated files/folders on Windows.
+
+        Args:
+            child: Path; child path being checked or removed.
+
+        Returns:
+            None.
+        """
         for _ in range(3):
             try:
                 if child.is_dir():
@@ -314,6 +390,16 @@ class PathManager:
                 time.sleep(0.2)
 
     def _handle_remove_readonly(self, func, path, exc_info) -> None:
+        """Handle remove readonly.
+
+        Args:
+            func: Filesystem operation being retried.
+            path: File or directory path.
+            exc_info: Exception details supplied by the cleanup callback.
+
+        Returns:
+            None.
+        """
         self._make_writable(Path(path))
         try:
             func(path)
@@ -322,146 +408,385 @@ class PathManager:
 
     @staticmethod
     def _make_writable(path: Path) -> None:
+        """Make writable.
+
+        Args:
+            path: Path; file or directory path.
+
+        Returns:
+            None.
+        """
         if path.exists():
             os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
 
     # ==================== Main Directory Getters ====================
 
     def _raw_data_path(self) -> Path:
-        """Return the processing/intermediate data root path without creating it."""
+        """Return the processing/intermediate data root path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path to the run processing directory, without creating it.
+        """
         return self.trial_dir / self.dir_structure.get('raw_data', 'processing')
 
     def _results_path(self) -> Path:
-        """Return the analysis results root path without creating it."""
+        """Return the analysis results root path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path to the run results directory, without creating it.
+        """
         return self.trial_dir / self.dir_structure.get('results', 'results')
 
     def _directory_path(self, key: str) -> Path:
-        """Return a configured trial subdirectory path without creating it."""
+        """Return a configured trial subdirectory path without creating it.
+
+        Args:
+            key: str; lookup key or field name.
+
+        Returns:
+            Configured subdirectory path under the current run.
+        """
         return self.trial_dir / self.dir_structure[key]
 
     def get_trial_dir_path(self) -> Path:
-        """Get the trial root directory path without creating it."""
+        """Get the trial root directory path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying trial dir path.
+        """
         return self.trial_dir
 
     def get_raw_data_dir_path(self) -> Path:
-        """Get the processing/intermediate data root path without creating it."""
+        """Get the processing/intermediate data root path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying raw data dir path.
+        """
         return self._raw_data_path()
 
     def get_processing_dir_path(self) -> Path:
-        """Get the processing/intermediate data root path without creating it."""
+        """Get the processing/intermediate data root path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying processing dir path.
+        """
         return self._raw_data_path()
 
     def get_results_dir_path(self) -> Path:
-        """Get the analysis results root path without creating it."""
+        """Get the analysis results root path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying results dir path.
+        """
         return self._results_path()
 
     def get_reports_dir_path(self) -> Path:
-        """Get the reports/configuration output path without creating it."""
+        """Get the reports/configuration output path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying reports dir path.
+        """
         return self._results_path() / self.dir_structure.get('reports', 'reports')
 
     def get_rebasecalled_dir_path(self) -> Path:
-        """Get the rebasecalled directory path without creating it."""
+        """Get the rebasecalled directory path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying rebasecalled dir path.
+        """
         return self._raw_data_path() / self.dir_structure['rebasecalled']
 
     def get_demuxed_dir_path(self) -> Path:
-        """Get the demuxed directory path without creating it."""
+        """Get the demuxed directory path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying demuxed dir path.
+        """
         return self._raw_data_path() / self.dir_structure['demuxed']
 
     def get_fastq_dir_path(self) -> Path:
-        """Get the FASTQ files directory path without creating it."""
+        """Get the FASTQ files directory path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying fastq dir path.
+        """
         return self._raw_data_path() / self.dir_structure['fastqs']
 
     def get_nanotel_output_dir_path(self) -> Path:
-        """Get the NanoTel output directory path without creating it."""
+        """Get the NanoTel output directory path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying nanotel output dir path.
+        """
         return self._results_path() / self.dir_structure['nanotel_output']
 
     def get_aligned_dir_path(self) -> Path:
-        """Get the aligned directory path without creating it."""
+        """Get the aligned directory path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying aligned dir path.
+        """
         return self._raw_data_path() / self.dir_structure['aligned']
 
     def get_logs_dir_path(self) -> Path:
-        """Get the logs directory path without creating it."""
+        """Get the logs directory path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying logs dir path.
+        """
         return self._results_path() / self.dir_structure['logs']
 
     def get_r_analysis_dir_path(self) -> Path:
-        """Get the R analysis base directory path without creating it."""
+        """Get the R analysis base directory path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying r analysis dir path.
+        """
         return self.trial_dir / self.dir_structure.get(
             'r_analysis',
             self.dir_structure.get('results', 'results')
         )
 
     def get_r_nanotel_output_dir_path(self) -> Path:
-        """Get the R NanoTel analysis output directory path without creating it."""
+        """Get the R NanoTel analysis output directory path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying r nanotel output dir path.
+        """
         return self.get_nanotel_output_dir_path()
 
     def get_r_mapping_output_dir_path(self) -> Path:
-        """Get the R mapping analysis output directory path without creating it."""
+        """Get the R mapping analysis output directory path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying r mapping output dir path.
+        """
         return self.get_r_analysis_dir_path() / self.dir_structure['mapping_output']
 
     def get_r_methylation_output_dir_path(self) -> Path:
-        """Get the R methylation analysis output directory path without creating it."""
+        """Get the R methylation analysis output directory path without creating it.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying r methylation output dir path.
+        """
         return self.get_r_analysis_dir_path() / self.dir_structure['methylation_output']
 
     def get_trial_dir(self) -> Path:
-        """Get the trial root directory."""
+        """Get the trial root directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying trial dir.
+        """
         return self._ensure_directory(self.trial_dir)
 
     def get_raw_data_dir(self) -> Path:
-        """Get the processing/intermediate data root directory."""
+        """Get the processing/intermediate data root directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying raw data dir.
+        """
         return self._ensure_directory(self.get_raw_data_dir_path())
 
     def get_processing_dir(self) -> Path:
-        """Get the processing/intermediate data root directory."""
+        """Get the processing/intermediate data root directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying processing dir.
+        """
         return self._ensure_directory(self.get_processing_dir_path())
 
     def get_results_dir(self) -> Path:
-        """Get the analysis results root directory."""
+        """Get the analysis results root directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying results dir.
+        """
         return self._ensure_directory(self.get_results_dir_path())
 
     def get_reports_dir(self) -> Path:
-        """Get the reports/configuration output directory."""
+        """Get the reports/configuration output directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying reports dir.
+        """
         return self._ensure_directory(self.get_reports_dir_path())
 
     def get_rebasecalled_dir(self) -> Path:
-        """Get the rebasecalled directory."""
+        """Get the rebasecalled directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying rebasecalled dir.
+        """
         return self._ensure_directory(self.get_rebasecalled_dir_path())
 
     def get_demuxed_dir(self) -> Path:
-        """Get the demuxed directory."""
+        """Get the demuxed directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying demuxed dir.
+        """
         return self._ensure_directory(self.get_demuxed_dir_path())
 
     def get_fastq_dir(self) -> Path:
-        """Get the FASTQ files directory."""
+        """Get the FASTQ files directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying fastq dir.
+        """
         return self._ensure_directory(self.get_fastq_dir_path())
 
     def get_nanotel_output_dir(self) -> Path:
-        """Get the NanoTel output directory."""
+        """Get the NanoTel output directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying nanotel output dir.
+        """
         return self._ensure_directory(self.get_nanotel_output_dir_path())
 
     def get_aligned_dir(self) -> Path:
-        """Get the aligned directory."""
+        """Get the aligned directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying aligned dir.
+        """
         return self._ensure_directory(self.get_aligned_dir_path())
 
     def get_logs_dir(self) -> Path:
-        """Get the logs directory."""
+        """Get the logs directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying logs dir.
+        """
         return self._ensure_directory(self.get_logs_dir_path())
 
     # ==================== R Analysis Directory Getters ====================
 
     def get_r_analysis_dir(self) -> Path:
-        """Get the R analysis base directory."""
+        """Get the R analysis base directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying r analysis dir.
+        """
         return self._ensure_directory(self.get_r_analysis_dir_path())
 
     def get_r_nanotel_output_dir(self) -> Path:
-        """Get the R NanoTel analysis output directory."""
+        """Get the R NanoTel analysis output directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying r nanotel output dir.
+        """
         return self._ensure_directory(self.get_r_nanotel_output_dir_path())
 
     def get_r_mapping_output_dir(self) -> Path:
-        """Get the R mapping analysis output directory."""
+        """Get the R mapping analysis output directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying r mapping output dir.
+        """
         return self._ensure_directory(self.get_r_mapping_output_dir_path())
 
     def get_r_methylation_output_dir(self) -> Path:
-        """Get the R methylation analysis output directory."""
+        """Get the R methylation analysis output directory.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Path identifying r methylation output dir.
+        """
         return self._ensure_directory(self.get_r_methylation_output_dir_path())
 
     # ==================== Barcode Subdirectory Helpers ====================
@@ -593,11 +918,13 @@ class PathManager:
         return self.get_rebasecalled_dir() / bam_filename
 
     def get_alignment_summary_path(self) -> Path:
-        """
-        Get path to alignment summary file.
+        """Get path to alignment summary file.
 
         Returns:
             Path to Dorado alignment summary.
+
+        Inputs:
+            None; uses instance state.
         """
         aligned_dir = self.get_aligned_dir_path()
         candidates = [
@@ -612,12 +939,14 @@ class PathManager:
     # ==================== R Config Generation ====================
 
     def generate_r_pipeline_config(self) -> dict:
-        """
-        Generate R pipeline configuration with all required paths.
+        """Generate R pipeline configuration with all required paths.
         This config will be passed to the R analysis scripts.
 
         Returns:
             Dictionary with R pipeline configuration
+
+        Inputs:
+            None; uses instance state.
         """
         return {
             "base_output_dir": str(self.get_results_dir_path()),
@@ -647,12 +976,14 @@ class PathManager:
     # ==================== Utility Methods ====================
 
     def get_all_paths_summary(self) -> dict:
-        """
-        Get a summary of all main paths.
+        """Get a summary of all main paths.
         Useful for logging/debugging.
 
         Returns:
             Dictionary with all main directory paths
+
+        Inputs:
+            None; uses instance state.
         """
         return {
             'trial_dir': str(self.trial_dir),
@@ -672,5 +1003,12 @@ class PathManager:
         }
 
     def __repr__(self) -> str:
-        """String representation of PathManager."""
+        """String representation of PathManager.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Readable string describing the instance.
+        """
         return f"PathManager(trial_name={self.trial_name}, trial_dir={self.trial_dir})"

@@ -23,11 +23,13 @@ class AdvancedSection:
     """Mixin providing the advanced options UI used by the main window."""
 
     def _build_advanced_options(self):
-        """
-        Build the container with Basecalling and NanoTel option cards.
+        """Build the container with Basecalling and NanoTel option cards.
 
         Returns:
             QWidget (card): A styled container widget that holds the two option cards.
+
+        Inputs:
+            None; uses instance state.
         """
         box = make_card("Advanced Options")
 
@@ -49,7 +51,14 @@ class AdvancedSection:
         return box
 
     def _update_advanced_options_state(self):
-        """Enable advanced option cards only for selected workflow steps."""
+        """Enable advanced option cards only for selected workflow steps.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         # getattr keeps construction safe if this mixin is reused before
         # WorkflowSection has initialized selected_workflows.
         selected = getattr(self, "selected_workflows", set())
@@ -79,7 +88,15 @@ class AdvancedSection:
 
     @staticmethod
     def _set_option_card_enabled(card, enabled):
-        """Set card interactivity and clearly fade disabled cards."""
+        """Set card interactivity and clearly fade disabled cards.
+
+        Args:
+            card: Option card to enable, disable or insert.
+            enabled: Whether the control or feature is enabled.
+
+        Returns:
+            None.
+        """
         # Reuse one opacity effect per card; replacing it on every workflow
         # click can make Qt discard the previous effect unexpectedly.
         effect = card.graphicsEffect()
@@ -91,11 +108,13 @@ class AdvancedSection:
         card.setEnabled(enabled)
 
     def _option_card(self):
-        """
-        Create a standardized option card frame with base styling.
+        """Create a standardized option card frame with base styling.
 
         Returns:
             QFrame: styled frame to be used as an options card container.
+
+        Inputs:
+            None; uses instance state.
         """
         card = QFrame()
 
@@ -110,7 +129,14 @@ class AdvancedSection:
         return card
 
     def _build_basecalling_options(self):
-        """Build the card containing basecalling-specific controls."""
+        """Build the card containing basecalling-specific controls.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Qt card containing basecalling options.
+        """
         card = self._option_card()
         main = QVBoxLayout(card)
         main.setContentsMargins(0, 0, 0, 0)
@@ -123,7 +149,14 @@ class AdvancedSection:
         return card
 
     def _build_basecalling_header(self):
-        """Build the Basecalling Options card header."""
+        """Build the Basecalling Options card header.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            QWidget instance.
+        """
         header_widget = QWidget()
         header_widget.setFixedHeight(55)
         header_widget.setStyleSheet("""
@@ -167,7 +200,14 @@ class AdvancedSection:
 
     @staticmethod
     def _build_divider(shape):
-        """Build a horizontal or vertical divider."""
+        """Build a horizontal or vertical divider.
+
+        Args:
+            shape: Qt frame shape.
+
+        Returns:
+            QFrame instance.
+        """
         line = QFrame()
         line.setFrameShape(shape)
         size_rule = "max-height: 1px;" if shape == QFrame.HLine else "max-width: 1px;"
@@ -179,7 +219,14 @@ class AdvancedSection:
         return line
 
     def _build_basecalling_body(self):
-        """Build methylation and chromosome mapping controls."""
+        """Build methylation and chromosome mapping controls.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            QWidget instance.
+        """
         body_widget = QWidget()
         body_widget.setStyleSheet("background: white;")
         body = QHBoxLayout(body_widget)
@@ -193,7 +240,14 @@ class AdvancedSection:
         return body_widget
 
     def _build_methylation_options(self):
-        """Build the mutually exclusive methylation selectors."""
+        """Build the mutually exclusive methylation selectors.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            QWidget instance.
+        """
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setAlignment(Qt.AlignTop)
@@ -231,7 +285,14 @@ class AdvancedSection:
         return widget
 
     def _build_mapping_option(self):
-        """Build the chromosome mapping control."""
+        """Build the chromosome mapping control.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            QWidget instance.
+        """
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setAlignment(Qt.AlignTop)
@@ -293,7 +354,14 @@ class AdvancedSection:
         return widget
 
     def _build_nanotel_options(self):
-        """Build the card containing NanoTel-specific controls."""
+        """Build the card containing NanoTel-specific controls.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Qt card containing NanoTel and recalculation options.
+        """
         card = self._option_card()
         main = QVBoxLayout(card)
         main.setContentsMargins(0, 0, 0, 0)
@@ -306,7 +374,14 @@ class AdvancedSection:
         return card
 
     def _build_nanotel_header(self):
-        """Build the NanoTel Options card header."""
+        """Build the NanoTel Options card header.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            QWidget instance.
+        """
         header_widget = QWidget()
         header_widget.setFixedHeight(55)
         header_widget.setStyleSheet("""
@@ -391,7 +466,14 @@ class AdvancedSection:
         return header_widget
 
     def _toggle_summary_only_from_row(self, event):
-        """Toggle summary-only mode when the label or surrounding row is clicked."""
+        """Toggle summary-only mode when the label or surrounding row is clicked.
+
+        Args:
+            event: Qt event delivered to this handler.
+
+        Returns:
+            None.
+        """
         if event.button() == Qt.LeftButton and self.summary_only.isEnabled():
             self.summary_only.setChecked(not self.summary_only.isChecked())
             event.accept()
@@ -399,7 +481,14 @@ class AdvancedSection:
         event.ignore()
 
     def _build_nanotel_body(self):
-        """Build the TVR mode controls and numeric NanoTel fields."""
+        """Build the TVR mode controls and numeric NanoTel fields.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            QWidget instance.
+        """
         body_widget = QWidget()
         body_widget.setStyleSheet("background: white;")
         body = QVBoxLayout(body_widget)
@@ -419,7 +508,14 @@ class AdvancedSection:
         return body_widget
 
     def _build_nanotel_mapping_option(self):
-        """Build the mapping toggle for NanoTel workflows."""
+        """Build the mapping toggle for NanoTel workflows.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Checkbox controlling NanoTel chromosome mapping.
+        """
         self.nanotel_mapping = QCheckBox(
             "Run mapping"
         )
@@ -456,7 +552,14 @@ class AdvancedSection:
         return self.nanotel_mapping
 
     def _build_tvr_mismatch_option(self):
-        """Build the shared telomere/TVR mismatch toggle."""
+        """Build the shared telomere/TVR mismatch toggle.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Checkbox controlling one-mismatch repeat detection.
+        """
         self.allow_mismatch = QCheckBox("Allow 1 mismatch")
         self.allow_mismatch.setChecked(False)
         self.allow_mismatch.setToolTip(
@@ -467,7 +570,14 @@ class AdvancedSection:
         return self.allow_mismatch
 
     def _build_short_telomere_threshold(self):
-        """Build the short-telomere label and editor for the numeric grid."""
+        """Build the short-telomere label and editor for the numeric grid.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Tuple containing the cutoff label and numeric editor.
+        """
         defaults = ConfigManager().get_nanotel_params()
         label = QLabel("Short telomere cutoff (bp)")
         label.setToolTip("Telomeres shorter than this value are counted as short.")
@@ -496,7 +606,14 @@ class AdvancedSection:
         return label, self.short_telomere_threshold
 
     def _build_tvr_mode_controls(self):
-        """Build optional TVR controls in one compact row."""
+        """Build optional TVR controls in one compact row.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            QHBoxLayout instance.
+        """
         tvr_row = QHBoxLayout()
         tvr_row.setSpacing(8)
 
@@ -568,7 +685,14 @@ class AdvancedSection:
 
     @staticmethod
     def _tvr_button_styles():
-        """Return active and inactive TVR button styles."""
+        """Return active and inactive TVR button styles.
+
+        Inputs:
+            None.
+
+        Returns:
+            Tuple of active and inactive button styles, including disabled states.
+        """
         inactive_style = """
             QPushButton {
                 background: white;
@@ -599,7 +723,14 @@ class AdvancedSection:
         return active_style + disabled_style, inactive_style + disabled_style
 
     def _build_nanotel_fields(self):
-        """Build validated NanoTel fields in a compact two-column grid."""
+        """Build validated NanoTel fields in a compact two-column grid.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            QGridLayout instance.
+        """
         nanotel_defaults = ConfigManager().get_nanotel_params()
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
@@ -675,7 +806,16 @@ class AdvancedSection:
 
     @staticmethod
     def _build_field_label(text, width, style):
-        """Size captions to their actual font metrics so they cannot be cut off."""
+        """Size captions to their actual font metrics so they cannot be cut off.
+
+        Args:
+            text: Text to parse, display or write.
+            width: Available or requested width in pixels.
+            style: Stylesheet for the generated control.
+
+        Returns:
+            QLabel instance.
+        """
         label = QLabel(text)
         label.setStyleSheet(style)
         label.setWordWrap(False)
@@ -731,7 +871,14 @@ class AdvancedSection:
         self._sync_tvr_mismatch_state()
 
     def _sync_tvr_mismatch_state(self):
-        """Force exact matching while Preset is selected."""
+        """Force exact matching while Preset is selected.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         checkbox = self.allow_mismatch
         preset_selected = "Use Preset" in self.selected_tvr_modes
         if preset_selected and checkbox.isEnabled():
@@ -743,11 +890,13 @@ class AdvancedSection:
             checkbox.setChecked(getattr(self, "_mismatch_before_preset", False))
 
     def _prompt_manual_tvr_patterns(self):
-        """
-        Ask for manual TVR patterns with DNA-letter validation.
+        """Ask for manual TVR patterns with DNA-letter validation.
 
         Returns:
             Uppercase comma-separated pattern string, or None if cancelled.
+
+        Inputs:
+            None; uses instance state.
         """
         dialog = QDialog(self)
         dialog.setWindowTitle("Manual TVR Patterns")
@@ -844,11 +993,13 @@ class AdvancedSection:
             self.chromosome_mapping.setChecked(True)
 
     def _get_methylation_type(self):
-        """
-        Query the currently selected methylation type.
+        """Query the currently selected methylation type.
 
         Returns:
             str: one of "none", "5mCpG", "5mCpG + 5hmCpG".
+
+        Inputs:
+            None; uses instance state.
         """
         if self.none_option.selected:
             return "none"

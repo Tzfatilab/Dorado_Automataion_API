@@ -23,6 +23,13 @@ def write_km_run_statistics(source_paths, output_dir):
 
     Missing/failed barcode executions are excluded by the caller. A KM fitting
     failure is still a row: its pre-edge censoring may remain available.
+
+    Args:
+        source_paths: Scientific export paths included in the workbook.
+        output_dir: Directory for generated outputs.
+
+    Returns:
+        Run-level summary values written alongside per-barcode KM observations.
     """
     rows = []
     seen = set()

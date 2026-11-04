@@ -18,7 +18,14 @@ class ConfigSection:
     """Mixin that builds the Configuration card used in the main window."""
 
     def _build_profile_selector(self):
-        """Profile choice anchored at the bottom of the sidebar."""
+        """Profile choice anchored at the bottom of the sidebar.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            QVBoxLayout instance.
+        """
         profile_row = QVBoxLayout()
         profile_row.setContentsMargins(0, 0, 0, 0)
         profile_row.setSpacing(8)
@@ -44,11 +51,13 @@ class ConfigSection:
 
 
     def _build_config(self):
-        """
-        Construct the configuration UI card.
+        """Construct the configuration UI card.
 
         Returns:
             QWidget: styled card widget containing organism selection controls.
+
+        Inputs:
+            None; uses instance state.
         """
         box = make_card("Configuration")
         box.setStyleSheet(box.styleSheet() + """

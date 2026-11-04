@@ -1,5 +1,8 @@
 /* Offline navigation follows the same order as the overview barcode links. */
 (() => {
+  // Function: start.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Initializes this report feature and registers its event listeners.
   const start=()=>{
     const pages=[...document.querySelectorAll('.barcode-page')];
     pages.forEach((page,index)=>{
@@ -11,6 +14,9 @@
         const button=document.createElement('button');button.type='button';button.textContent=label;
         button.disabled=!target;
         button.style.cssText='padding:7px 12px;border:1px solid #ccd8e8;border-radius:6px;background:white;color:#2456a6;cursor:pointer';
+        // Function: button.onclick.
+        // Inputs: None; uses the current report/browser state.
+        // Outputs: Handles the UI action and updates the associated report controls.
         if(target){button.title=target.dataset.label;button.onclick=()=>{location.hash='#/barcode/'+target.id;window.scrollTo(0,0);};}
         else{button.style.opacity='.45';button.style.cursor='default';}
         nav.appendChild(button);

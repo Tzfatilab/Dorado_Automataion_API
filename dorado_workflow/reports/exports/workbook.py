@@ -9,7 +9,14 @@ from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
 def barcode_from_summary_filename(filename: str) -> Optional[str]:
-    """Return a normalized barcode from a CSV filename, or None if absent."""
+    """Return a normalized barcode from a CSV filename, or None if absent.
+
+    Args:
+        filename: str; source filename used to extract a barcode label.
+
+    Returns:
+        Normalized barcode label, or None for an unrecognized filename.
+    """
     match = re.search(r"barcode\s*0*(\d+)", filename, re.IGNORECASE)
     if not match:
         match = re.search(r"(?:^|[_-])bc\s*0*(\d+)", filename, re.IGNORECASE)
@@ -27,6 +34,14 @@ class NanoTelWorkbookWriter:
         """Use CSVs in source_dir and save the workbook in results_dir.
 
         The threshold labels an empty summary; it does not filter any reads.
+
+        Args:
+            source_dir: Path; directory containing existing source artifacts.
+            results_dir: Path; results directory for the current run.
+            short_telomere_threshold_bp: int; strict short-telomere cutoff in base pairs. Default: 2000.
+
+        Returns:
+            None; initializes the instance.
         """
         self.source_dir = source_dir
         self.results_dir = results_dir
@@ -37,6 +52,13 @@ class NanoTelWorkbookWriter:
 
         Raise if raw summaries are missing or duplicate barcode names exist.
         Replace the final workbook only after the temporary file is saved.
+
+        Args:
+            run: Imported run model containing barcodes, reads and source evidence. Default: None.
+            comparisons: Precomputed report comparisons; reused when supplied. Default: None.
+
+        Returns:
+            Path to the completed workbook.
         """
         summary_csv = self.source_dir / "nanotel_summary_statistics.csv"
 
@@ -95,6 +117,15 @@ class NanoTelWorkbookWriter:
                 if not isinstance(data, dict) or data.get("barcode") != barcode:
                     raise ValueError(f"Analysis barcode identity mismatch: {path}")
                 def flatten(prefix, obj):
+                    """Flatten.
+
+                    Args:
+                        prefix: Field-name prefix for nested source facts.
+                        obj: Nested object being flattened.
+
+                    Yields:
+                        Values yielded by the iterator; iteration performs the documented operation.
+                    """
                     if isinstance(obj, dict):
                         for key, val in obj.items():
                             yield from flatten(f"{prefix}.{key}" if prefix else key, val)
@@ -190,14 +221,29 @@ class NanoTelWorkbookWriter:
 
 
     def _find_barcode_detail_files(self) -> tuple[Dict[str, Path], Dict[str, Path]]:
-        """Return ordered raw and filtered CSV sources, rejecting duplicates."""
+        """Return ordered raw and filtered CSV sources, rejecting duplicates.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Tuple of raw and filtered CSV-path dictionaries keyed by barcode.
+        """
         return (
             self._index_detail_files("barcode*_summary.csv", "NanoTel"),
             self._index_detail_files("filtered_summary*.csv", "filtered"),
         )
 
     def _index_detail_files(self, pattern: str, description: str) -> Dict[str, Path]:
-        """Index matching CSVs by barcode without silently replacing a sample."""
+        """Index matching CSVs by barcode without silently replacing a sample.
+
+        Args:
+            pattern: str; filename pattern or recorded search motif for this operation.
+            description: str; human-readable source description for diagnostics.
+
+        Returns:
+            Deterministically ordered dictionary of CSV paths keyed by barcode.
+        """
         details: Dict[str, Path] = {}
         for path in sorted(self.source_dir.glob(pattern)):
             if description == "NanoTel" and path.name.endswith("_filtered_sorted_summary.csv"):
@@ -215,6 +261,15 @@ class NanoTelWorkbookWriter:
 
     @staticmethod
     def _safe_sheet_name(barcode: str, existing_names: List[str]) -> str:
+        """Valid, unique worksheet name within Excel length limits.
+
+        Args:
+            barcode: str; imported Barcode record containing reads, metrics and evidence.
+            existing_names: List[str]; worksheet names already used in the workbook.
+
+        Returns:
+            Valid, unique worksheet name within Excel length limits.
+        """
         base = re.sub(r"[\\/*?:\[\]]", "_", barcode)[:31] or "Barcode"
         name = base
         suffix = 2
@@ -227,7 +282,14 @@ class NanoTelWorkbookWriter:
 
     @staticmethod
     def _parse_csv_value(value: str):
-        """Preserve identifiers as text while storing numeric results as numbers."""
+        """Preserve identifiers as text while storing numeric results as numbers.
+
+        Args:
+            value: str; value to inspect, convert or format.
+
+        Returns:
+            Numeric value, text or None, preserving the source cell meaning.
+        """
         text = value.strip()
         if text == "":
             return None
@@ -239,7 +301,15 @@ class NanoTelWorkbookWriter:
 
 
     def _populate_csv_sheet(self, sheet, csv_path: Path) -> None:
-        """Copy a CSV into a readable, filterable worksheet."""
+        """Copy a CSV into a readable, filterable worksheet.
+
+        Args:
+            sheet: Worksheet or worksheet name.
+            csv_path: Path; csv path.
+
+        Returns:
+            None.
+        """
         with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.reader(handle)
             column_widths: List[int] = []
@@ -297,7 +367,15 @@ class NanoTelWorkbookWriter:
     def _populate_empty_summary_sheet(
         sheet, short_telomere_threshold_bp=2000
     ) -> None:
-        """Create a valid run summary when no reads passed filtration."""
+        """Create a valid run summary when no reads passed filtration.
+
+        Args:
+            sheet: Worksheet or worksheet name.
+            short_telomere_threshold_bp: Strict short-telomere cutoff in base pairs. Default: 2000.
+
+        Returns:
+            None.
+        """
         sheet.append([
             "barcode",
             "amount_of_telomeres",
@@ -313,7 +391,15 @@ class NanoTelWorkbookWriter:
 
     @staticmethod
     def _ensure_summary_barcodes(sheet, barcodes: List[str]) -> None:
-        """Represent barcodes with zero filtered reads in the central summary."""
+        """Represent barcodes with zero filtered reads in the central summary.
+
+        Args:
+            sheet: Worksheet or worksheet name.
+            barcodes: List[str]; barcode labels or records to process.
+
+        Returns:
+            None.
+        """
         existing = {
             str(sheet.cell(row=row, column=1).value).lower()
             for row in range(2, sheet.max_row + 1)
@@ -327,7 +413,15 @@ class NanoTelWorkbookWriter:
 
     @staticmethod
     def _populate_empty_filtered_sheet(sheet, raw_csv: Path) -> None:
-        """Create a header-only filtered sheet for a barcode with no passing reads."""
+        """Create a header-only filtered sheet for a barcode with no passing reads.
+
+        Args:
+            sheet: Worksheet or worksheet name.
+            raw_csv: Path; original before-filter CSV used to recover column headings.
+
+        Returns:
+            None.
+        """
         with raw_csv.open("r", encoding="utf-8-sig", newline="") as handle:
             header = next(csv.reader(handle), [])
         header = ["read_id" if name == "sequence_ID" else name for name in header]

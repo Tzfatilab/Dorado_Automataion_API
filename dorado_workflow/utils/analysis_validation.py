@@ -4,7 +4,14 @@ from numbers import Real
 
 
 def validate_nanotel_settings(settings):
-    """Reject nonfinite/out-of-range supplied values; absent settings keep defaults."""
+    """Reject nonfinite/out-of-range supplied values; absent settings keep defaults.
+
+    Args:
+        settings: Recorded analysis settings and their availability.
+
+    Returns:
+        None.
+    """
     if "tvr_patterns" in settings:
         patterns = settings["tvr_patterns"]
         if not isinstance(patterns, list) or any(

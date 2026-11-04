@@ -5,8 +5,17 @@
   document.querySelectorAll('.table-export-controls').forEach(node=>node.remove());
   window.reportTableExportInstalled='v6';
   const encoder=new TextEncoder(),attached=new WeakSet();
+  // Function: text.
+  // Inputs: value (value to inspect or format)
+  // Outputs: Text representation of the value; missing values become empty text.
   const text=value=>value==null?'':String(value);
+  // Function: xml.
+  // Inputs: value (value to inspect or format)
+  // Outputs: XML-escaped text with invalid XML control characters removed.
   const xml=value=>text(value).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
+  // Function: csv.
+  // Inputs: data (source/presentation data)
+  // Outputs: UTF-8-BOM CSV text with properly quoted cell values.
   const csv=data=>'\uFEFF'+[data.headers,...data.rows].map(row=>row.map(value=>{
     let cell=text(value);
     if(typeof value!=='number' && /^[\s\u0000-\u001f]*[=+@-]/.test(cell))cell="'"+cell;
@@ -16,9 +25,19 @@
     for(let bit=0;bit<8;bit++)n=n&1?0xEDB88320^(n>>>1):n>>>1;
     return n>>>0;
   });
+  // Function: crc32.
+  // Inputs: bytes (input byte array)
+  // Outputs: Unsigned CRC-32 checksum of the bytes.
   const crc32=bytes=>{let crc=0xFFFFFFFF;for(const byte of bytes)crc=crcTable[(crc^byte)&255]^(crc>>>8);return (crc^0xFFFFFFFF)>>>0;};
+  // Function: join.
+  // Inputs: arrays (ordered byte arrays)
+  // Outputs: Uint8Array containing all supplied byte arrays in order.
   const join=arrays=>{const result=new Uint8Array(arrays.reduce((sum,a)=>sum+a.length,0));let offset=0;for(const a of arrays){result.set(a,offset);offset+=a.length;}return result;};
+  // Function: zip.
+  // Inputs: files (ZIP entries keyed by path)
+  // Outputs: Uint8Array containing the uncompressed ZIP entries and central directory.
   const zip=files=>{
+    // XLSX is a ZIP package; stored entries keep offline exports dependency-free.
     const entries=[],directory=[];let offset=0;
     for(const [path,contents] of Object.entries(files)){
       const name=encoder.encode(path),bytes=encoder.encode(contents),crc=crc32(bytes);
@@ -35,7 +54,13 @@
     view.setUint32(12,central.length,true);view.setUint32(16,offset,true);
     return join([...entries,central,end]);
   };
+  // Function: columnName.
+  // Inputs: index (zero-based index)
+  // Outputs: Excel column label for the zero-based column index.
   const columnName=index=>{let label='';for(index++;index;index=Math.floor((index-1)/26))label=String.fromCharCode(65+(index-1)%26)+label;return label;};
+  // Function: workbook.
+  // Inputs: input (worksheet descriptor or descriptor list)
+  // Outputs: Uint8Array containing a standalone XLSX workbook.
   const workbook=input=>{
     const sheets=Array.isArray(input)?input:[input];
     if(!sheets.length)throw Error('There are no worksheets to export.');
@@ -60,6 +85,9 @@
     sheets.forEach((data,index)=>{
       const rows=[data.headers,...data.rows],last=columnName(data.headers.length-1)+rows.length;
       const widths=data.headers.map((header,column)=>data.widths?.[column]||Math.min(44,Math.max(13,text(header).length+2,...data.rows.slice(0,500).map(row=>Math.min(40,text(row[column]).length+2)))));
+      // Function: cell.
+      // Inputs: value (value to inspect or format); column (zero-based column index); row (row)
+      // Outputs: Worksheet cell XML preserving numeric types and text values.
       const cell=(value,column,row)=>{
         const reference=columnName(column)+(row+1);
         if(typeof value==='number'&&Number.isFinite(value)){
@@ -76,6 +104,9 @@
     });
     return zip(files);
   };
+  // Function: contextName.
+  // Inputs: table (table element)
+  // Outputs: Contextual export filename/title for the selected table.
   const contextName=table=>{
     const heading=table.closest('section,details')?.querySelector('h3,h2,summary')?.cloneNode(true);
     heading?.querySelectorAll('.number').forEach(n=>n.remove());
@@ -89,6 +120,9 @@
     else title=title.replace(/\s*\([^)]*\)/g,'').replace(/\s*\d+\s+(?:telomeric\s+)?reads\b/gi,'').trim();
     return [title,barcode,read].filter(Boolean).join(' ');
   };
+  // Function: domData.
+  // Inputs: table (table element)
+  // Outputs: Table headers and rows recovered from the current DOM/export adapter.
   const domData=table=>{
     const grid=[];
     [...table.rows].forEach((row,index)=>{
@@ -111,10 +145,16 @@
     }));
     return {name:contextName(table),headers,rows};
   };
+  // Function: save.
+  // Inputs: blob (download content); name (trace/column name)
+  // Outputs: Saves the selected data or setting using this feature's existing destination.
   const save=(blob,name)=>{
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;
     document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
   };
+  // Function: exportTable.
+  // Inputs: table (table element); format (display-value formatter)
+  // Outputs: Prepares and downloads the selected CSV or XLSX table.
   const exportTable=(table,format)=>{
     const raw=table.reportExportData?.()||domData(table);
     const data=window.reportBarcodeNames?.exportData(table,raw)||raw;
@@ -124,6 +164,9 @@
   };
   window.reportExportTable=exportTable;
   window.reportTableExportFormats={csv,workbook,domData};
+  // Function: attach.
+  // Inputs: table (table element)
+  // Outputs: Adds export controls or related handlers to the supplied report element.
   const attach=table=>{
     if(attached.has(table)||!table.closest('main'))return;attached.add(table);
     const anchor=table.closest('.reads-scroll,.table-responsive')||table;
@@ -136,6 +179,9 @@
     for(const [format,label] of [['csv','Save CSV'],['xlsx','Save Excel']]){
       const button=document.createElement('button');button.type='button';button.textContent=label;
       button.style.cssText='padding:7px 10px;border:1px solid #ccd8e8;border-radius:6px;background:white;color:#2456a6;cursor:pointer';
+      // Function: button.onclick.
+      // Inputs: None; uses the current report/browser state.
+      // Outputs: Handles the UI action and updates the associated report controls.
       button.onclick=()=>{try{exportTable(table,format);status.textContent='\u2713';status.setAttribute('aria-label','Saved');setTimeout(()=>{status.textContent='';status.removeAttribute('aria-label');},2500);}catch(error){status.textContent=error.message||'Table export failed.';}};
       controls.appendChild(button);
     }
@@ -152,7 +198,13 @@
       }else anchor.before(controls);
     }
   };
+  // Function: scan.
+  // Inputs: root (DOM/data root)
+  // Outputs: Finds relevant report elements and attaches this feature once per element.
   const scan=root=>{if(root.nodeType!==1&&root!==document)return;if(root.matches?.('table'))attach(root);root.querySelectorAll('table').forEach(attach);};
+  // Function: start.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Initializes this report feature and registers its event listeners.
   const start=()=>{
     window.reportTableExportObserver?.disconnect();
     document.querySelectorAll('.table-export-controls').forEach(node=>node.remove());

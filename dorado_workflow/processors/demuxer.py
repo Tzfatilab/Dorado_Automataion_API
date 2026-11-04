@@ -33,11 +33,13 @@ class DemuxProcessor(ProcessorBase):
     """
 
     def __init__(self, context: WorkflowContext):
-        """
-        Initialize demux processor.
+        """Initialize demux processor.
 
         Args:
             context: WorkflowContext with all shared resources
+
+        Returns:
+            None; initializes the instance.
         """
         super().__init__(context)
 
@@ -46,11 +48,13 @@ class DemuxProcessor(ProcessorBase):
 
     def validate_inputs(self, basecalled_bam: str, input_format: str = "bam",
                         streamed: bool = False, classified: bool = False) -> bool:
-        """
-        Validate that all prerequisites for demultiplexing are met.
+        """Validate that all prerequisites for demultiplexing are met.
 
         Args:
             basecalled_bam: Path to basecalled BAM file
+            input_format: str; record format entering the processor, such as BAM or FASTQ. Default: 'bam'.
+            streamed: bool; whether input arrives through a subprocess pipe. Default: False.
+            classified: bool; whether records already carry barcode classification. Default: False.
 
         Returns:
             True if validation passes, False otherwise
@@ -99,11 +103,13 @@ class DemuxProcessor(ProcessorBase):
 
     def execute(self, basecalled_bam: str, input_format: str = "bam",
                 upstream_command=None, classified: bool = False) -> ProcessorResult:
-        """
-        Execute the demultiplexing process.
+        """Execute the demultiplexing process.
 
         Args:
             basecalled_bam: Path to basecalled BAM file
+            input_format: str; record format entering the processor, such as BAM or FASTQ. Default: 'bam'.
+            upstream_command: Argument list for the process producing the input stream. Default: None.
+            classified: bool; whether records already carry barcode classification. Default: False.
 
         Returns:
             ProcessorResult with success status, barcode directories, and statistics
@@ -180,20 +186,39 @@ class DemuxProcessor(ProcessorBase):
             return result
 
     def _barcode_kit(self):
+        """Selected demultiplexing or basecalling kit identifier, when configured.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Selected demultiplexing or basecalling kit identifier, when configured.
+        """
         return (self.context.config_manager.get_demuxing_params().get('kit_name')
                 or self.context.config_manager.get_basecalling_params().get('kit_name'))
 
     def _build_command(self, basecalled_bam: str, input_format: str = "bam", classified: bool = False) -> str:
+        """Command and output-path information used by the processor.
+
+        Args:
+            basecalled_bam: str; basecalled input path, or stream marker for piped records.
+            input_format: str; record format entering the processor, such as BAM or FASTQ. Default: 'bam'.
+            classified: bool; whether records already carry barcode classification. Default: False.
+
+        Returns:
+            Command and output-path information used by the processor.
+        """
         command = format_command(self._build_arguments(basecalled_bam, input_format, classified))
         self.context.logger.info(f"Demux command: {command}")
         return command
 
     def _build_arguments(self, basecalled_bam: str, input_format: str = "bam", classified: bool = False) -> list:
-        """
-        Build the dorado demux command.
+        """Build the dorado demux command.
 
         Args:
             basecalled_bam: Path to basecalled BAM file
+            input_format: str; record format entering the processor, such as BAM or FASTQ. Default: 'bam'.
+            classified: bool; whether records already carry barcode classification. Default: False.
 
         Returns:
             Command string
@@ -239,6 +264,14 @@ class DemuxProcessor(ProcessorBase):
 
     @staticmethod
     def _is_fastq_file(path: Path) -> bool:
+        """True when the filename has a supported FASTQ extension.
+
+        Args:
+            path: Path; file or directory path.
+
+        Returns:
+            True when the filename has a supported FASTQ extension.
+        """
         return path.name.lower().endswith((".fastq", ".fastq.gz"))
 
     def _organize_demuxed_files(self, input_format: str = "bam") -> Dict[str, Path]:
@@ -310,11 +343,14 @@ class DemuxProcessor(ProcessorBase):
         return barcode_dirs
 
     def _register_barcodes(self, barcode_dirs: Dict[str, Path], input_format: str = "bam") -> None:
-        """
-        Register discovered barcodes with the BarcodeManager.
+        """Register discovered barcodes with the BarcodeManager.
 
         Args:
             barcode_dirs: Dictionary of barcode names to directory paths
+            input_format: str; record format entering the processor, such as BAM or FASTQ. Default: 'bam'.
+
+        Returns:
+            None.
         """
         SKIP_FOLDERS = {'unclassified', 'mix'}
 
@@ -334,11 +370,11 @@ class DemuxProcessor(ProcessorBase):
         self.context.logger.info(f"Registered {registered} barcodes")
 
     def _collect_statistics(self, barcode_dirs: Dict[str, Path], input_format: str = "bam") -> Dict[str, any]:
-        """
-        Collect statistics about the demultiplexing output.
+        """Collect statistics about the demultiplexing output.
 
         Args:
             barcode_dirs: Dictionary of barcode names to directory paths
+            input_format: str; record format entering the processor, such as BAM or FASTQ. Default: 'bam'.
 
         Returns:
             Dictionary of statistics
@@ -363,22 +399,26 @@ class DemuxProcessor(ProcessorBase):
         return stats
 
     def get_output_paths(self) -> Dict[str, Path]:
-        """
-        Get the expected output paths for this processor.
+        """Get the expected output paths for this processor.
 
         Returns:
             Dictionary with 'output_dir' key
+
+        Inputs:
+            None; uses instance state.
         """
         return {
             'output_dir': self.output_dir
         }
 
     def get_barcode_directories(self) -> Dict[str, Path]:
-        """
-        Get all barcode directories that exist.
+        """Get all barcode directories that exist.
 
         Returns:
             Dictionary mapping barcode names to their directory paths
+
+        Inputs:
+            None; uses instance state.
         """
         barcode_dirs = {}
 

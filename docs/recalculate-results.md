@@ -21,3 +21,16 @@ Threshold changes filter existing measurements; they do not recalculate NanoTel 
 Old filtered rows, mappings and aggregate figures are not reused as new results. Source counts, motifs, repeat coverage and KM evidence are retained when available. Unavailable measurements stay unavailable. The original detected population may be smaller than all input reads; recalculation cannot recover reads never exported by NanoTel.
 
 Mapping subprocesses use direct samtools arguments rather than Unix shell pipelines, so BAM read-ID extraction and filtering work on Windows too. Mapping thresholds are unchanged.
+
+## Disk usage
+
+Recalculation links native source CSVs, read files, detail exports and existing
+aligned BAMs instead of copying them. Hard links share the original file's disk
+storage; file symlinks are used when hard links are unavailable. If neither is
+supported, the run reports an error rather than silently copying large inputs.
+Linked detail exports are not repacked into duplicate archives. Inputs must be
+treated as immutable; symlinked sources must remain accessible.
+
+Workbook-only populations still need CSV extraction for the R pipeline. Archived
+details need extraction, and evidence workbooks and updated Excel/dashboard,
+filtered tables, mapping outputs and BAM indexes are newly generated outputs.

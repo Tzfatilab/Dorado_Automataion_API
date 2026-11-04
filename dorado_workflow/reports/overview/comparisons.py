@@ -8,7 +8,7 @@ from dorado_workflow.reports.barcode.repeats import motif_base_counts, compositi
 
 
 def comparison_data(run):
-    """Return read-based TVR percentages and chromosome medians with missing states.
+    """Build TVR summaries and chromosome length groups from exported reads.
 
     TVR matches must overlap the exported TVR-inclusive telomere call.
     Boundary-crossing matches count once; position markers clip to the call.
@@ -16,6 +16,12 @@ def comparison_data(run):
     counts individual exported matches, retaining overlaps and source motif roles.
     Chromosome names come from annotations or explicit chrN[_Head/_Tail] labels;
     Head/Tail is never interpreted as a chromosome arm.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+
+    Returns:
+        Dictionary of TVR composition, chromosome cells and omitted barcodes.
     """
     composition, groups, omitted = [], defaultdict(list), []
     observations = defaultdict(list)
@@ -107,7 +113,15 @@ def comparison_data(run):
 
 
 def overview_composition_section(data, requested=None):
-    """Pool available complete barcodes and disclose any excluded barcodes."""
+    """Pool available complete barcodes and disclose any excluded barcodes.
+
+    Args:
+        data: Source data or presentation records for this operation.
+        requested: Whether the corresponding analysis was explicitly requested. Default: None.
+
+    Returns:
+        HTML markup for overview composition section.
+    """
     if requested is False:
         return composition_section(None, number=4, title='TVR patterns', requested=False)
     rows = data['composition']
@@ -138,7 +152,15 @@ def overview_composition_section(data, requested=None):
 
 
 def comparison_figures(run, data=None):
-    """Build charts 4/5; missing cells remain gaps, never zero-length telomeres."""
+    """Build charts 4/5; missing cells remain gaps, never zero-length telomeres.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        data: Source data or presentation records for this operation. Default: None.
+
+    Returns:
+        Ordered comparison-chart descriptors and their figures or HTML.
+    """
     import plotly.graph_objects as go
     from dorado_workflow.reports.reads.density import tvr_enabled
     data = comparison_data(run) if data is None else data

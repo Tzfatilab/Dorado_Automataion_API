@@ -39,11 +39,13 @@ class NanoTelProcessor(ProcessorBase):
     """
 
     def __init__(self, context: WorkflowContext):
-        """
-        Initialize NanoTel processor.
+        """Initialize NanoTel processor.
 
         Args:
             context: WorkflowContext with all shared resources
+
+        Returns:
+            None; initializes the instance.
         """
         super().__init__(context)
 
@@ -288,7 +290,15 @@ class NanoTelProcessor(ProcessorBase):
     def _count_fastq_chunks(
         fastq_files: List[Path], records_per_chunk: int = NANOTEL_RECORDS_PER_CHUNK
     ) -> Optional[int]:
-        """Count NanoTel chunks without loading the FASTQ reads into memory."""
+        """Count NanoTel chunks without loading the FASTQ reads into memory.
+
+        Args:
+            fastq_files: List[Path]; fASTQ inputs included in this barcode analysis.
+            records_per_chunk: int; maximum number of FASTQ records in each chunk. Default: NANOTEL_RECORDS_PER_CHUNK.
+
+        Returns:
+            Scheduled chunk count, or None when it cannot be determined.
+        """
         try:
             line_count = 0
             for fastq_file in fastq_files:
@@ -369,7 +379,14 @@ class NanoTelProcessor(ProcessorBase):
         return results
 
     def _last_command_duration(self) -> Optional[float]:
-        """Return the most recent command duration, if the logger recorded one."""
+        """Return the most recent command duration, if the logger recorded one.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Elapsed seconds for the last command, or None when unavailable.
+        """
         commands = getattr(self.context.logger, "executed_commands", [])
         if not commands:
             return None
@@ -379,7 +396,15 @@ class NanoTelProcessor(ProcessorBase):
     def _format_gui_output(
         self, line: str, total_chunks: Optional[int] = None
     ) -> Optional[str]:
-        """Turn verbose NanoTel result-writing diagnostics into concise GUI updates."""
+        """Turn verbose NanoTel result-writing diagnostics into concise GUI updates.
+
+        Args:
+            line: str; one line of source or process output.
+            total_chunks: Optional[int]; total scheduled chunks for progress reporting. Default: None.
+
+        Returns:
+            Filtered or reformatted process-output text, or None to hide the line.
+        """
         text = line.strip()
 
         chunk_match = re.match(r"processing chunk\s+(\d+)", text, re.IGNORECASE)
@@ -524,7 +549,14 @@ class NanoTelProcessor(ProcessorBase):
 
     @staticmethod
     def _summary_only_flag(nanotel_script: str) -> str:
-        """Use the clearest supported summary-only flag for the NanoTel script."""
+        """Use the clearest supported summary-only flag for the NanoTel script.
+
+        Args:
+            nanotel_script: str; path to the NanoTel R script.
+
+        Returns:
+            str: Text value.
+        """
         try:
             script_text = Path(nanotel_script).read_text(encoding="utf-8")
         except OSError:
@@ -570,22 +602,26 @@ class NanoTelProcessor(ProcessorBase):
         return stats
 
     def get_output_paths(self) -> Dict[str, Path]:
-        """
-        Get the expected output paths for this processor.
+        """Get the expected output paths for this processor.
 
         Returns:
             Dictionary with 'output_dir' key
+
+        Inputs:
+            None; uses instance state.
         """
         return {
             'output_dir': self.output_dir
         }
 
     def get_barcode_output_dirs(self) -> Dict[str, Path]:
-        """
-        Get output directories for each processed barcode.
+        """Get output directories for each processed barcode.
 
         Returns:
             Dictionary mapping barcode names to their output directory paths
+
+        Inputs:
+            None; uses instance state.
         """
         barcode_dirs = {}
 

@@ -3,6 +3,14 @@ from .models import Availability as A, Fact, unavailable
 
 
 def integer(value):
+    """Integral numeric value; invalid coordinates raise an exception.
+
+    Args:
+        value: Value to inspect, convert or format.
+
+    Returns:
+        Integral numeric value; invalid coordinates raise an exception.
+    """
     if isinstance(value, bool):
         raise ValueError("Boolean is not a coordinate")
     number = float(value)
@@ -16,6 +24,17 @@ def normalize_interval(start, end, *, convention, space, evidence, length=None):
 
     NanoTel R intervals are 1-based inclusive on the analyzed sequence. This
     does not establish their orientation relative to the original FASTQ read.
+
+    Args:
+        start: Interval start in the declared coordinate convention.
+        end: Interval end in the declared coordinate convention.
+        convention: Declared coordinate convention.
+        space: Coordinate axis to which the interval belongs.
+        evidence: Source references supporting the returned measurement.
+        length: Sequence or coordinate-space length in base pairs. Default: None.
+
+    Returns:
+        Dictionary containing original coordinates and a normalized interval Fact.
     """
     # Preserve the original endpoints and their declared coordinate convention
     # alongside normalized values so users can trace every conversion.

@@ -19,15 +19,41 @@ EMPTY = 'Not applicable'
 
 
 def value(fact):
+    """Available metric value, otherwise the enclosing adapter's missing-value marker.
+
+    Args:
+        fact: Value together with its availability and provenance.
+
+    Returns:
+        Available metric value, otherwise the enclosing adapter's missing-value marker.
+    """
     return fact.value if fact and fact.status == 'available' else MISSING
 
 
 def numeric(v):
+    """True for a finite, nonnegative number; boolean values are rejected.
+
+    Args:
+        v: Value to inspect or format.
+
+    Returns:
+        True for a finite, nonnegative number; boolean values are rejected.
+    """
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0
 
 
 def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=None):
-    """Build the shared visible layout, optionally retaining hidden source sheets."""
+    """Build the shared visible layout, optionally retaining hidden source sheets.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        results_root: Results directory used to resolve saved scientific exports. Default: None.
+        workbook: Existing workbook, when supplied. Default: None.
+        comparisons: Precomputed report comparisons; reused when supplied. Default: None.
+
+    Returns:
+        Workbook containing barcode summaries, read tables and source facts.
+    """
     wb = workbook if workbook is not None else Workbook()
     if workbook is None:
         wb.remove(wb.active)
@@ -35,6 +61,15 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     next_rows = {}
 
     def sheet(name, headers):
+        """New worksheet with the requested headers and frozen identifying column.
+
+        Args:
+            name: Name used for lookup, display or storage.
+            headers: Ordered column headings.
+
+        Returns:
+            New worksheet with the requested headers and frozen identifying column.
+        """
         ws = wb.create_sheet(name)
         ws.append(headers)
         ws.freeze_panes = 'B2'
@@ -44,6 +79,15 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     def append(ws, row):
         # JSON facts can exceed Excel's per-cell limit. Preserve them in ordered
         # chunks rather than silently truncating scientific values.
+        """Worksheet row number used for the appended output record.
+
+        Args:
+            ws: Worksheet receiving the exported values.
+            row: Source row or output row values.
+
+        Returns:
+            Worksheet row number used for the appended output record.
+        """
         row_number = next_rows[ws]
         ws.append(row)
         next_rows[ws] += 1
@@ -52,6 +96,8 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
             if isinstance(cell.value, str):
                 if len(cell.value) > 32767:
                     raise ValueError('Excel cell limit exceeded; use the chunked source facts sheet')
+                # Preserve identifiers and user labels as text, including strings
+                # beginning with '=' that Excel would otherwise treat as formulas.
                 cell.data_type = 's'
         return row_number
 
@@ -73,6 +119,17 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     km = sheet('Kaplan-Meier', ['Barcode ID', *km_keys]) if show_km(run) else None
 
     def fact_rows(barcode, read_id, key, fact):
+        """Fact rows.
+
+        Args:
+            barcode: Imported Barcode record containing reads, metrics and evidence.
+            read_id: Read identifier used for joins or navigation.
+            key: Lookup key or field name.
+            fact: Value together with its availability and provenance.
+
+        Returns:
+            None.
+        """
         raw = value(fact)
         if isinstance(raw, (dict, list, tuple)):
             raw = json.dumps(raw, default=lambda x: asdict(x) if is_dataclass(x) else str(x), ensure_ascii=True)
@@ -108,8 +165,24 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
             with_tvr, motif_count, stats['chromosomes'] if stats['chromosomes'] is not None else MISSING,
             100*short/len(lengths) if numeric(short) and lengths else EMPTY if lengths == [] else MISSING])
         def kb(v):
+            """Length converted from base pairs to kilobases, or the missing-value marker.
+
+            Args:
+                v: Value to inspect or format.
+
+            Returns:
+                Length converted from base pairs to kilobases, or the missing-value marker.
+            """
             return v/1000 if numeric(v) else MISSING
         def pct(v):
+            """Percentage converted to an Excel fraction, or the missing-value marker.
+
+            Args:
+                v: Value to inspect or format.
+
+            Returns:
+                Percentage converted to an Excel fraction, or the missing-value marker.
+            """
             return v/100 if numeric(v) else MISSING
         columns = [('Read number', lambda r:r['label'], None), ('Read ID', lambda r:r['header'], None),
             ('Exact telomere length (kb)', lambda r:kb(r['exact_length']), '0.000')]
@@ -192,7 +265,17 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
 
 
 def write_dashboard_workbook(run, destination, results_root=None, comparisons=None):
-    """Save imported facts atomically without refitting KM or scientific filters."""
+    """Save imported facts atomically without refitting KM or scientific filters.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        destination: Path where the new output is written.
+        results_root: Results directory used to resolve saved scientific exports. Default: None.
+        comparisons: Precomputed report comparisons; reused when supplied. Default: None.
+
+    Returns:
+        Path to the completed Excel workbook.
+    """
     destination = Path(destination)
     wb = build_dashboard_workbook(run, results_root, comparisons=comparisons)
     destination.parent.mkdir(parents=True, exist_ok=True)

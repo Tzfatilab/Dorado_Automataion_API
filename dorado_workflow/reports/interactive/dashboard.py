@@ -8,6 +8,17 @@ from .models import Availability as A, Fact, unavailable
 def aggregate(value, evidence, unit, population):
     # Wrap a presentation-derived value with its units, population and supporting
     # evidence. The origin distinguishes this value from a statistic exported by NanoTel.
+    """Available Fact tagged as a presentation aggregate with source evidence.
+
+    Args:
+        value: Value to inspect, convert or format.
+        evidence: Source references supporting the returned measurement.
+        unit: Measurement or display unit.
+        population: Label identifying the measurement population.
+
+    Returns:
+        Available Fact tagged as a presentation aggregate with source evidence.
+    """
     return Fact(A.AVAILABLE, value, unit=unit, population=population,
                 origin="presentation_aggregate", evidence=evidence)
 
@@ -15,6 +26,16 @@ def aggregate(value, evidence, unit, population):
 def sum_complete(barcodes, key, population):
     # Require every imported barcode to supply this metric. A partial sum would look
     # like a complete run total, so missing contributors make the whole result unavailable.
+    """Summed Fact when all inputs are available; otherwise an unavailable Fact.
+
+    Args:
+        barcodes: Barcode labels or records to process.
+        key: Lookup key or field name.
+        population: Label identifying the measurement population.
+
+    Returns:
+        Summed Fact when all inputs are available; otherwise an unavailable Fact.
+    """
     facts = [b.metrics.get(key) for b in barcodes]
     if not facts or any(f is None or f.status != A.AVAILABLE for f in facts):
         return unavailable("Not recorded for every barcode")
@@ -22,7 +43,14 @@ def sum_complete(barcodes, key, population):
 
 
 def motif_comparison(run):
-    """Count exported hits in an explicit population; no new motif calling."""
+    """Count exported hits in an explicit population; no new motif calling.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+
+    Returns:
+        Per-barcode motif comparison records derived from exported matches.
+    """
     # Build two explicitly different match-count populations: whole reads and matches
     # overlapping TVR-inclusive telomere intervals, both limited to post-filtered reads.
     # Counts are search hits, not covered bases, unique regions or percentages of reads.
@@ -71,6 +99,13 @@ def dashboard_data(run, include_details=True):
 
     Detailed reference/motif tables are optional when the caller uses another
     shared adapter for those plots. The default export remains unchanged.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        include_details: Whether to include individual-read detail payloads. Default: True.
+
+    Returns:
+        Serializable presentation data for the requested level of read detail.
     """
     # Create serializable chart payloads from imported facts. Aggregate only supported
     # populations and keep missing/invalid states available to the presentation layer.

@@ -6,7 +6,15 @@ import math
 
 
 def results_section(barcode, results_root):
-    """Prefer the normal barcode directory; support older summaries folders."""
+    """Prefer the normal barcode directory; support older summaries folders.
+
+    Args:
+        barcode: Imported Barcode record containing reads, metrics and evidence.
+        results_root: Results directory used to resolve saved scientific exports.
+
+    Returns:
+        HTML markup for results section.
+    """
     heading = '<section class="barcode-results"><h2><span class="number">2</span>Telomere Completeness &amp; Kaplan-Meier Estimate</h2>'
     paths = []
     if results_root is not None:
@@ -21,6 +29,14 @@ def results_section(barcode, results_root):
     fields = dict(line.split(':', 1) for line in text.splitlines() if ':' in line)
     fields = {key.strip(): value.strip() for key, value in fields.items()}
     def number(key):
+        """Numeric source Fact or parsed numeric value, according to the enclosing adapter.
+
+        Args:
+            key: Lookup key or field name.
+
+        Returns:
+            Numeric source Fact or parsed numeric value, according to the enclosing adapter.
+        """
         raw = fields.get(key, '').replace(',', '')
         match = re.fullmatch(r'([0-9]+(?:\.[0-9]+)?)\s*(?:bp|%)?', raw)
         return float(match[1]) if match and math.isfinite(float(match[1])) else None
@@ -33,10 +49,27 @@ def results_section(barcode, results_root):
                       fields.get('KM Median 95% Confidence Interval', ''))
     low, high = (map(lambda v: float(v.replace(',', '')), ci.groups()) if ci else (None, None))
     def imported(key):
+        """Available numeric source measurement, or None when absent or invalid.
+
+        Args:
+            key: Lookup key or field name.
+
+        Returns:
+            Available numeric source measurement, or None when absent or invalid.
+        """
         fact = barcode.metrics.get(key)
         value = fact.value if fact and fact.status == 'available' else None
         return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0 else None
     def prefer(key, legacy):
+        """Available imported measurement, otherwise the supplied legacy fallback.
+
+        Args:
+            key: Lookup key or field name.
+            legacy: Fallback value from an older export.
+
+        Returns:
+            Available imported measurement, otherwise the supplied legacy fallback.
+        """
         value = imported(key)
         return value if value is not None else legacy
     complete = prefer('nanotel_final_complete_telomeric_reads', complete)
@@ -52,7 +85,14 @@ def results_section(barcode, results_root):
         width = imported('km_whole_relative_ci_width_pct')
     help_index = 0
     def tip(message):
-        """Native buttons support mouse, touch, Enter and Space offline."""
+        """Native buttons support mouse, touch, Enter and Space offline.
+
+        Args:
+            message: Message to display or log.
+
+        Returns:
+            HTML for an accessible explanation button and its associated text.
+        """
         nonlocal help_index
         help_index += 1
         target = 'km-help-' + barcode.id + '-' + str(help_index)

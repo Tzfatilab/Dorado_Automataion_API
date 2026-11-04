@@ -9,7 +9,15 @@ KEYS = ('canonical_pct', 'tvr_pct', 'tvr_block_count', 'repeat_overlap_bp', 'rep
 
 
 def import_coverage(importer, barcode):
-    """Validate source identity, denominator, coverage consistency and block bounds."""
+    """Validate source identity, denominator, coverage consistency and block bounds.
+
+    Args:
+        importer: ResultImporter providing saved tables and source provenance.
+        barcode: Imported Barcode record containing reads, metrics and evidence.
+
+    Returns:
+        None.
+    """
     index = {}
     for read in barcode.reads:
         index.setdefault(read.original_id, []).append(read)
@@ -49,6 +57,7 @@ def import_coverage(importer, barcode):
             if interval.status != A.AVAILABLE or (row['start']-1,row['end']) != (interval.value['start'],interval.value['end']):
                 raise ValueError('Coverage uses an old/different boundary; regenerate coverage for the TVR-inclusive interval')
             n = row['denominator_bp']; c = row['canonical_bp']; t = row['tvr_bp']; overlap = row['overlap_bp']
+            # Inclusion-exclusion accounts for bases covered by both motif roles.
             if n != row['end']-row['start']+1 or n <= 0 or max(c,t)>n or overlap>min(c,t) or row['unassigned_bp'] != n-c-t+overlap:
                 raise ValueError('inconsistent coverage counts')
             for key, bases in [('canonical_pct',c),('tvr_pct',t)]:

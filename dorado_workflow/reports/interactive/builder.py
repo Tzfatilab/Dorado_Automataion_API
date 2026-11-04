@@ -10,6 +10,14 @@ def build_report(run, destination, results_root=None):
 
     Both entry points use one renderer. The obsolete milestone UI and its
     duplicate browser assets are no longer shipped or maintained.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        destination: Path where the new output is written.
+        results_root: Results directory used to resolve saved scientific exports. Default: None.
+
+    Returns:
+        Path to the generated HTML entry point.
     """
     from ..overview.dashboard import render_screen
     validate(run)

@@ -6,7 +6,16 @@ from .models import Availability as A, Evidence, Fact, unavailable
 
 
 def import_statistics(importer, barcode, number):
-    """Keep NanoTel final-filter and pre-edge KM metrics in separate namespaces."""
+    """Keep NanoTel final-filter and pre-edge KM metrics in separate namespaces.
+
+    Args:
+        importer: ResultImporter providing saved tables and source provenance.
+        barcode: Imported Barcode record containing reads, metrics and evidence.
+        number: Numeric-source parser that returns a value Fact with evidence.
+
+    Returns:
+        None.
+    """
     # Preserve explicit unavailable states even when neither export exists.
     reason = "NanoTel analysis statistics file not exported"
     state = A.NOT_EXPORTED
@@ -99,6 +108,13 @@ def chromosome_fact(reference, evidence):
 
     This is a reference-name convention, not an inferred p/q-arm annotation.
     Unrecognized contigs remain unavailable rather than increasing the count.
+
+    Args:
+        reference: Reference path or exported reference label.
+        evidence: Source references supporting the returned measurement.
+
+    Returns:
+        Chromosome Fact from an explicit supported reference label, or an unavailable Fact.
     """
     match = re.fullmatch(r"(chr(?:[0-9]+|X|Y|M|MT))(?:_(?:Head|Tail))?", str(reference or ""))
     if not match:
@@ -108,7 +124,14 @@ def chromosome_fact(reference, evidence):
 
 
 def detected_chromosomes(run):
-    """Count distinct unambiguous chromosomes among source post-filtered reads."""
+    """Count distinct unambiguous chromosomes among source post-filtered reads.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+
+    Returns:
+        Distinct-chromosome count Fact for unambiguous filtered reads, or an unavailable Fact.
+    """
     names, evidence = set(), []
     for barcode in run.barcodes:
         lengths = barcode.metrics.get("filtered_length_records")
@@ -129,6 +152,18 @@ def detected_chromosomes(run):
 
 
 def restore_summary_sources(importer,barcode):
+    """Recover saved figures and motif evidence after summary-mode cleanup.
+
+    Native exports take precedence; workbook chunks are a fallback rather than
+    additional observations to append to the same read population.
+
+    Args:
+        importer: ResultImporter providing saved tables and source provenance.
+        barcode: Imported Barcode record containing reads, metrics and evidence.
+
+    Returns:
+        None.
+    """
     figures={};figure_evidence=[]
     for kind in ('histogram','plot'):
         paths=[p for p in importer.files('*_telomere_'+kind+'.plotly.json') if p.name==barcode.label+'_telomere_'+kind+'.plotly.json']

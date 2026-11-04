@@ -4,12 +4,24 @@
   detail.id = 'read-detail'; detail.hidden = true;
   if(!summaryOnly)document.querySelector('main').appendChild(detail);
   const browsers = new Map();
+  // Function: node.
+  // Inputs: tag (HTML tag name); text (displayed text); parent (parent element)
+  // Outputs: Created DOM element, appended to the supplied parent.
   function node(tag, text, parent) {
     const el = document.createElement(tag); el.textContent = text;
     if (parent) parent.appendChild(el); return el;
   }
+  // Function: kb.
+  // Inputs: value (value to inspect or format)
+  // Outputs: Formatted length in kilobases, or Unavailable for a missing value.
   function kb(value) { return value == null ? 'Unavailable' : (value / 1000).toLocaleString(undefined, {maximumFractionDigits:3}); }
+  // Function: pct.
+  // Inputs: value (value to inspect or format)
+  // Outputs: Formatted percentage text, retaining the small-positive-value marker.
   function pct(value) { return value == null ? 'Unavailable' : (value > 0 && value < .1 ? '<0.1%' : value.toFixed(summaryOnly?2:1) + '%'); }
+  // Function: formatCount.
+  // Inputs: value (value to inspect or format)
+  // Outputs: Formatted count text, or Unavailable.
   function formatCount(value) { return value == null ? 'Unavailable' : value.toLocaleString(); }
   document.querySelectorAll('.read-browser').forEach(section => {
     const page = section.closest('.barcode-page');
@@ -60,6 +72,9 @@
           if (match && /Edge filter: Removed/.test(text)) edgeRemoved.add(match[1]);
           if (!match || knownHeaders.has(match[1])) return;
           knownHeaders.add(match[1]);
+          // Function: value.
+          // Inputs: pattern (statistic-heading matcher)
+          // Outputs: Selected measurement or table value for the current row.
           const value = pattern => { const found = pattern.exec(text); return found ? Number(found[1].replaceAll(',', '')) : null; };
           detailRows.push({id:'saved-'+encodeURIComponent(match[1]),header:match[1],label:savedLabels[match[1]] || shortLabels.get(match[1]) || 'Read '+match[1],
             length:value(/Read length: ([\d,]+) bp/),exact_length:value(/Telomere length \(exact\): ([\d,]+) bp/),
@@ -102,7 +117,13 @@
       [['filtered','After filtering'],['before','Before filtering']].forEach(([v,t])=>{const o=node('option',t,populationSelect);o.value=v;});
       const before=[...(detailRows||[])].sort((a,b)=>a.label.localeCompare(b.label,undefined,{numeric:true}));
       rows=filteredRows||[];
+      // Function: populationSelect.onchange.
+      // Inputs: None; uses the current report/browser state.
+      // Outputs: Handles the UI action and updates the associated report controls.
       populationSelect.onchange=()=>{rows=populationSelect.value==='before'?before:filteredRows||[];columnFilters.clear();current=1;render();};
+      // Function: reset.onclick.
+      // Inputs: None; uses the current report/browser state.
+      // Outputs: Handles the UI action and updates the associated report controls.
       const reset=node('button','Reset filters and sorting',controls);reset.type='button';reset.onclick=()=>{columnFilters.clear();sort.value='original';search.value='';current=1;render();};
     }
     const search=section.querySelector('.read-search');
@@ -113,8 +134,18 @@
     const columnFilters=new Map();
     const noTvr = page.dataset.tvrEnabled === 'false';
     const withMismatch = page.dataset.mismatchEnabled === 'true';
+    // Function: column.
+    // Inputs: key (measurement/column key); title (displayed heading); format (display-value
+    // formatter); exportValue (export-value formatter)
+    // Outputs: Column descriptor with display and export-value formatters.
     const column = (key,title,format=value=>value??'Unavailable',exportValue=value=>value??'Unavailable') => ({key,title,format,exportValue});
+    // Function: lengthColumn.
+    // Inputs: key (measurement/column key); title (displayed heading)
+    // Outputs: Column descriptor converting base pairs to kilobases.
     const lengthColumn = (key,title) => column(key,title,kb,value=>value==null?'Unavailable':value/1000);
+    // Function: densityColumn.
+    // Inputs: key (measurement/column key); title (displayed heading)
+    // Outputs: Column descriptor converting fractional density to a percentage.
     const densityColumn = (key,title) => column(key,title,value=>value==null?'Unavailable':pct(100*value),value=>value==null?'Unavailable':100*value);
     const columns = [column('label','Read number'),...(showCompleteness?[column('read_status','Status')]:[]),
       ...(noTvr ? [lengthColumn('exact_length','Exact telomere length (kb)'),
@@ -135,9 +166,15 @@
       'Post-filtered telomeric reads. Exact and mismatch measurements use their respective exported canonical telomere calls. Repeat densities are percentages within each called interval. No TVR patterns were selected.';
     const columnKeys=columns.map(c=>c.key);
     const exportHeaders=[...section.querySelectorAll('.reads-table thead th')].map(th=>th.textContent.replace(/\s*[▾↕]$/,'').trim());
+    // Function: columnValues.
+    // Inputs: r (r)
+    // Outputs: Ordered displayed cell values for one read.
     const columnValues=r=>columns.map(c=>c.format(r[c.key]));
     const numericKeys=new Set(['label','telomere','exact_length','mismatch_length','tvr_length','length','canonical','tvr','blocks','exact_density','mismatch_density']);
     // Compare unrounded values in the units displayed in the column heading.
+    // Function: numericValue.
+    // Inputs: read (embedded read record); index (zero-based index)
+    // Outputs: Unrounded value in the column's displayed units, or null when unavailable.
     const numericValue=(read,index)=>{
       const c=columns[index];
       if(c.key==='label'){
@@ -147,6 +184,10 @@
       const value=c.exportValue(read[c.key]);
       return typeof value==='number'&&Number.isFinite(value)?value:null;
     };
+    // Function: matchesColumnFilter.
+    // Inputs: read (embedded read record); index (zero-based index); filter (selected
+    // categorical/numeric filter)
+    // Outputs: True when the read satisfies the selected categorical or numeric filter.
     const matchesColumnFilter=(read,index,filter)=>{
       if(filter instanceof Set)return filter.has(columnValues(read)[index]);
       const value=numericValue(read,index);
@@ -156,6 +197,9 @@
     section.querySelectorAll('.reads-table thead th').forEach((th,index)=>{
       const title=th.textContent;th.textContent='';
       const trigger=node('button',title+' \u25be',th);trigger.type='button';trigger.className='read-column-filter';trigger.setAttribute('aria-expanded','false');
+      // Function: trigger.onclick.
+      // Inputs: None; uses the current report/browser state.
+      // Outputs: Handles the UI action and updates the associated report controls.
       trigger.onclick=()=>{
         if(openMenu){openMenu();}
         const menu=node('div','',document.body);menu.className='read-filter-menu';menu.setAttribute('role','dialog');menu.setAttribute('aria-label','Filter '+title);trigger.setAttribute('aria-expanded','true');
@@ -165,6 +209,9 @@
         [['asc',numeric?'Sort smallest to largest':'Sort A to Z'],['desc',numeric?'Sort largest to smallest':'Sort Z to A']].forEach(([order,label])=>{
           const button=node('button',label,sortActions);button.type='button';
           button.setAttribute('aria-pressed',String(sort.value===columnKeys[index]&&direction.value===order));
+          // Function: button.onclick.
+          // Inputs: None; uses the current report/browser state.
+          // Outputs: Handles the UI action and updates the associated report controls.
           button.onclick=()=>{sort.value=columnKeys[index];direction.value=order;close();current=1;render();};
         });
         let focusInput,applyFilter;
@@ -177,11 +224,20 @@
           const input=node('input','',label);input.type='number';input.step='any';input.placeholder='Enter threshold';input.setAttribute('aria-label','Threshold for '+title);
           if(saved&&!(saved instanceof Set))input.value=String(saved.threshold);
           const note=node('p','Use the units shown in the column title. Values equal to the threshold and unavailable values are excluded.',menu);note.className='note';
+          // Function: clear.onclick.
+          // Inputs: None; uses the current report/browser state.
+          // Outputs: Handles the UI action and updates the associated report controls.
           const clear=node('button','Clear filter',menu);clear.type='button';clear.onclick=()=>{columnFilters.delete(index);close();current=1;render();};
+          // Function: applyFilter.
+          // Inputs: None; uses the current report/browser state.
+          // Outputs: Applies the current column-filter selection and refreshes the table.
           applyFilter=()=>{
             if(!input.value.trim()||!input.checkValidity()||!Number.isFinite(Number(input.value))){input.setCustomValidity('Enter a valid numeric threshold.');input.reportValidity();input.focus();return false;}
             columnFilters.set(index,{operator:operator.value,threshold:Number(input.value)});return true;
           };
+          // Function: input.oninput.
+          // Inputs: None; uses the current report/browser state.
+          // Outputs: Handles the UI action and updates the associated report controls.
           input.oninput=()=>input.setCustomValidity('');
           focusInput=input;
         }else{
@@ -190,19 +246,44 @@
         const searchInput=node('input','',menu);searchInput.type='search';searchInput.placeholder='Search values';searchInput.setAttribute('aria-label','Search '+title);
         if (isStatus) searchInput.hidden=true;
         const actions=node('div','',menu),list=node('div','',menu);list.className='read-filter-values';
+        // Function: draw.
+        // Inputs: None; uses the current report/browser state.
+        // Outputs: Rebuilds the visible filter choices from the current search text.
         const draw=()=>{list.replaceChildren();values.filter(v=>String(v).toLowerCase().includes(searchInput.value.toLowerCase())).forEach(value=>{
           const label=node('label','',list),box=node('input','',label);box.type='checkbox';box.checked=chosen.has(value);node('span',value,label);
+          // Function: box.onchange.
+          // Inputs: None; uses the current report/browser state.
+          // Outputs: Handles the UI action and updates the associated report controls.
           box.onchange=()=>box.checked?chosen.add(value):chosen.delete(value);
         });};
+        // Function: b.onclick.
+        // Inputs: None; uses the current report/browser state.
+        // Outputs: Handles the UI action and updates the associated report controls.
         [['Select all',true],['Clear',false]].forEach(([label,check])=>{const b=node('button',label,actions);b.type='button';b.onclick=()=>{values.filter(v=>String(v).toLowerCase().includes(searchInput.value.toLowerCase())).forEach(v=>check?chosen.add(v):chosen.delete(v));draw();};});
           searchInput.oninput=draw;draw();
           focusInput=isStatus?list.querySelector('input'):searchInput;
+          // Function: applyFilter.
+          // Inputs: None; uses the current report/browser state.
+          // Outputs: Applies the current column-filter selection and refreshes the table.
           applyFilter=()=>{if(chosen.size===values.length)columnFilters.delete(index);else columnFilters.set(index,chosen);return true;};
         }
+        // Function: close.
+        // Inputs: None; uses the current report/browser state.
+        // Outputs: Closes the filter popup and removes temporary event listeners.
         const close=()=>{menu.remove();trigger.setAttribute('aria-expanded','false');openMenu=null;document.removeEventListener('pointerdown',outside);window.removeEventListener('hashchange',close);window.removeEventListener('resize',close);};
+        // Function: outside.
+        // Inputs: e (browser event object)
+        // Outputs: Handles an outside pointer event, closing the active filter popup when
+        // appropriate.
         const outside=e=>{if(!th.contains(e.target)&&!menu.contains(e.target))close();};document.addEventListener('pointerdown',outside);window.addEventListener('hashchange',close);window.addEventListener('resize',close);openMenu=close;
+        // Function: apply.onclick.
+        // Inputs: None; uses the current report/browser state.
+        // Outputs: Handles the UI action and updates the associated report controls.
         const apply=node('button','Apply',menu);apply.type='button';apply.onclick=()=>{if(!applyFilter())return;close();current=1;render();};
         const cancel=node('button','Cancel',menu);cancel.type='button';cancel.onclick=close;
+        // Function: menu.onkeydown.
+        // Inputs: e (browser event object)
+        // Outputs: Handles the UI action and updates the associated report controls.
         menu.onkeydown=e=>{if(e.key==='Escape'){close();trigger.focus();}else if(e.key==='Enter'&&numeric){e.preventDefault();apply.click();}};
         const anchor=trigger.getBoundingClientRect();
         menu.style.left=Math.max(8,Math.min(anchor.left,window.innerWidth-menu.offsetWidth-8))+'px';
@@ -211,6 +292,9 @@
       };
     });
     let current = 1;
+    // Function: render.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Rebuilds the visible table/page using the current filters, sort and pagination.
     function render() {
       if(summaryOnly){
         section.querySelector('.read-total').textContent='('+rows.length.toLocaleString()+' reads)';
@@ -228,6 +312,9 @@
         const key = sort.value, sign = direction.value === 'asc' ? 1 : -1;
         // Sort the filtered copy, never the source population or plotted records.
         // Missing values stay last in either direction; equal values keep source order.
+        // Function: value.
+        // Inputs: read (embedded read record)
+        // Outputs: Selected measurement or table value for the current row.
         const value = read => Array.isArray(read[key]) ? read[key].join(', ') || null : read[key];
         filtered.sort((a,b) => {
           const av=value(a), bv=value(b);
@@ -237,6 +324,9 @@
         });
       }
       browsers.get(page.id).orderedRows=filtered;
+      // Function: section.querySelector('.reads-table').reportExportData.
+      // Inputs: None; uses the current report/browser state.
+      // Outputs: Headers and current filtered/sorted table rows for export.
       section.querySelector('.reads-table').reportExportData=()=>({name:page.dataset.label+' Reads',
         headers:exportHeaders,rows:filtered.map(r=>columns.map(c=>c.exportValue(r[c.key])))});
       const size = Number(limit.value), count = Math.max(1,Math.ceil(filtered.length/size));
@@ -252,6 +342,11 @@
       });
       section.querySelector('.read-status').textContent = filtered.length ? `${(current-1)*size+1}–${Math.min(current*size,filtered.length)} of ${filtered.length.toLocaleString()} reads` : 'No reads match these filters.';
       const nav = section.querySelector('.read-pagination'); nav.replaceChildren();
+      // Function: button.
+      // Inputs: text (displayed text); target (destination element or navigation target); disabled
+      // (whether navigation is disabled)
+      // Outputs: Creates and attaches a navigation button with the selected target and enabled
+      // state.
       function button(text,target,disabled) {
         const b = node('button',text,nav); b.type='button'; b.disabled=disabled;
         if(target===current) b.setAttribute('aria-current','page');
@@ -265,6 +360,9 @@
     }
     search.addEventListener('input',()=>{current=1;render();});
     limit.addEventListener('change',()=>{current=1;render();});
+    // Function: browsers.get(page.id).findRead.
+    // Inputs: id (stable barcode/read identity)
+    // Outputs: Finds the read, changes pagination and highlights its table row.
     if(summaryOnly)browsers.get(page.id).findRead=id=>{
       const target=detailRows.find(r=>r.id===id);if(!target)return;
       populationSelect.value=filteredRows?.some(r=>r.id===id)?'filtered':'before';populationSelect.onchange();
@@ -275,9 +373,18 @@
     };
     render();
   });
+  // Function: window.findSummaryRead.
+  // Inputs: barcode (stable barcode identity); id (stable barcode/read identity)
+  // Outputs: Locates the read in its summary table and invokes its existing find handler.
   window.findSummaryRead=(barcode,id)=>browsers.get(barcode)?.findRead?.(id);
+  // Function: window.reportReadRows.
+  // Inputs: id (stable barcode/read identity)
+  // Outputs: Embedded read-table records for the requested barcode.
   window.reportReadRows = id => browsers.get(id)?.rows || [];
   // One reusable detail shell avoids generating thousands of hidden pages.
+  // Function: window.showReadDetail.
+  // Inputs: hash (hash)
+  // Outputs: True when the hash identifies an available read screen; false otherwise.
   window.showReadDetail = hash => {
     if(summaryOnly)return false;
     detail.hidden=true;
@@ -303,10 +410,16 @@
     const previous=position>0?ordered[position-1]:null;
     const previousButton=node('button','Previous read',controls);previousButton.type='button';previousButton.className='read-next';previousButton.disabled=!previous;
     previousButton.title=previous?'Open '+previous.label+' in the current table order':position<0?'This read is outside the current table selection':'First read in the current table selection';
+    // Function: previousButton.onclick.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Handles the UI action and updates the associated report controls.
     previousButton.onclick=()=>{if(previous)location.hash='#/barcode/'+match[1]+'/read/'+previous.id;};
     const next=position>=0?ordered[position+1]:null;
     const nextButton=node('button','Next read',controls);nextButton.type='button';nextButton.className='read-next';nextButton.disabled=!next;
     nextButton.title=next?'Open '+next.label+' in the current table order':position<0?'This read is outside the current table selection':'Last read in the current table selection';
+    // Function: nextButton.onclick.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Handles the UI action and updates the associated report controls.
     nextButton.onclick=()=>{if(next)location.hash='#/barcode/'+match[1]+'/read/'+next.id;};
     // Keep the source read number independent of table sorting and plot rank.
     const summary=node('div','',detail); summary.className='read-summary-header';
@@ -317,6 +430,10 @@
     node('span','1',statsTitle).className='number';
     statsTitle.appendChild(document.createTextNode('Key Statistics ('+read.label+')'));
     const iconIndices=[2,1,3,1,4,5];let cardIndex=0;
+    // Function: summaryCard.
+    // Inputs: label (displayed label); value (value to inspect or format); note (note); color
+    // (display color)
+    // Outputs: Creates and attaches one read-summary statistic card.
     function summaryCard(label,value,note,color) {
       const card=node('article','',summary);card.className='read-summary-card '+color;
       const originalIcon=source.page.querySelector('.stat-'+iconIndices[cardIndex++]+' svg');
@@ -333,6 +450,9 @@
     // The TVR-inclusive call provides the interval used for TVR coverage.
     // Sum exported union blocks for bases rather than multiplying rounded percentages.
     const tvrBases=Array.isArray(read.regions) ? read.regions.reduce((sum,b)=>sum+b.end-b.start,0) : null;
+    // Function: bp.
+    // Inputs: value (value to inspect or format)
+    // Outputs: Formatted base-pair value.
     const bp=value=>value == null ? 'Unavailable' : formatCount(value)+' bp';
     const exactNote=read.telomere == null ? 'Exact call; filtered length unavailable' :
       read.telomere === read.exact_length ? 'Before final filtering' : 'Filtered: '+bp(read.telomere);
@@ -340,6 +460,9 @@
     const noTvr = source.page.dataset.tvrEnabled === 'false';
     const withMismatch = source.page.dataset.mismatchEnabled === 'true';
     if (noTvr) {
+      // Function: density.
+      // Inputs: value (value to inspect or format)
+      // Outputs: Formatted repeat-density value.
       const density = value => value == null ? 'Unavailable' : pct(100 * value);
       if (withMismatch) {
         summaryCard('Telomere length\n(1 mismatch)',read.mismatch_length == null ? 'Unavailable' : kb(read.mismatch_length)+' kb','Canonical repeat call allowing one mismatch','read-summary-pink');
@@ -393,6 +516,9 @@
     });
     node('p','Coordinates are 1-based inclusive on the NanoTel analyzed sequence.',info).className='note';
     let information;
+    // Function: entry.
+    // Inputs: label (displayed label); value (value to inspect or format)
+    // Outputs: Creates and attaches one labeled read-detail entry.
     const entry=(label,value)=>{
       if(!information)information=node('dl','',info);
       node('dt',label,information);node('dd',value,information);

@@ -20,19 +20,20 @@ source(file.path(script_dir, "functions", "utils.R"))
 source(file.path(script_dir, "functions", "mapping_functions.R"))
 
 # Process a single barcode with multiple BAM files
+# Inputs: barcode_configs_list (Per-BAM configurations belonging to one barcode)
+# Outputs: Combined per-barcode mapping results and filtered output paths.
 process_barcode_multiple_bams <- function(barcode_configs_list) {
   cat("DEBUG: ENTERING process_barcode_multiple_bams function\n")
   # All configs in the list should be for the same barcode
   barcode_name <- toupper(normalize_barcode_name(barcode_configs_list[[1]]$barcode_name))
   log_message(paste("Processing", length(barcode_configs_list), "BAM files for barcode:", barcode_name))
 
-  # CREATE BARCODE DIRECTORY ONCE AT THE TOP (ADD THIS):
+  # All BAM fragments for this barcode contribute to one output directory.
   barcode_output_dir <- file.path(barcode_configs_list[[1]]$output_dir, barcode_name)
   cat("DEBUG: About to create directory:", barcode_output_dir, "\n")
   cat("DEBUG: Directory exists before creation:", dir.exists(barcode_output_dir), "\n")
   ensure_directory_exists(barcode_output_dir)
   cat("DEBUG: Directory exists after creation:", dir.exists(barcode_output_dir), "\n")
-  #ensure_directory_exists("/home/tzfati/Desktop/minknow_runs/Dorado_automation_test/Trial_74_Aki_TEST/mapping_output/BARCODE01")
   all_mapped_data <- list()
   all_filtered_bam_paths <- character()
   all_pileup_bed_paths <- character()
@@ -149,7 +150,9 @@ process_barcode_multiple_bams <- function(barcode_configs_list) {
   ))
 }
 
-# Main function for batch mapping analysis - UPDATED for multiple BAM files
+# Group all BAM fragments by barcode before producing combined mapping results.
+# Inputs: config_file (Saved JSON configuration path)
+# Outputs: Mapping-stage results and saved per-barcode mapping artifacts.
 main_mapping_analysis <- function(config_file) {
 
   cat("Starting Mapping Batch Analysis\n")
@@ -315,6 +318,9 @@ main_mapping_analysis <- function(config_file) {
   ))
 }
 
+# Inputs: config (Configuration values to read or update); reason_lines (Explanations for an empty
+# mapping output); failed_barcodes (Barcode labels whose processing failed)
+# Outputs: Writes a mapping report explaining why no records were produced.
 write_empty_mapping_report <- function(config, reason_lines, failed_barcodes = character()) {
   ensure_directory_exists(config$output_dir)
   report_file <- file.path(config$output_dir, "mapping_analysis_report.txt")
@@ -345,6 +351,10 @@ write_empty_mapping_report <- function(config, reason_lines, failed_barcodes = c
 }
 
 # Updated report generation for multiple BAM files
+# Inputs: results (Results directory or collected processing results); failed_barcodes (Barcode
+# labels whose processing failed); output_file (Output file); config (Configuration values to read
+# or update)
+# Outputs: Writes the run mapping summary for all barcode/BAM fragments.
 generate_mapping_report_multiple_bams <- function(results, failed_barcodes, output_file, config) {
 
   log_message("Generating mapping analysis report for multiple BAM files")
@@ -446,6 +456,10 @@ generate_mapping_report_multiple_bams <- function(results, failed_barcodes, outp
 }
 
 # Create barcode configuration objects
+# Inputs: nanotel_files (Filtered NanoTel CSV paths); bam_info (Discovered BAM paths and their
+# barcode labels); alignment_summary_path (Tab-separated exported alignment summary); output_dir
+# (Directory for generated outputs); ... (Additional arguments forwarded to the underlying function)
+# Outputs: Per-BAM mapping configurations for the discovered barcodes.
 create_barcode_configs <- function(nanotel_files, bam_info, alignment_summary_path,
                                    output_dir, ...) {
 
@@ -494,6 +508,10 @@ create_barcode_configs <- function(nanotel_files, bam_info, alignment_summary_pa
 }
 
 # Generate mapping analysis report
+# Inputs: results (Results directory or collected processing results); failed_barcodes (Barcode
+# labels whose processing failed); output_file (Output file); config (Configuration values to read
+# or update)
+# Outputs: Writes the run mapping report from completed results.
 generate_mapping_report <- function(results, failed_barcodes, output_file, config) {
 
   log_message("Generating mapping analysis report")
@@ -615,6 +633,9 @@ if (!interactive()) {
 # Updated functions to handle multiple BAM files per barcode
 
 # Merge multiple pileup BED files for the same barcode
+# Inputs: bed_file_paths (Per-fragment pileup BED paths to combine); barcode_name (Original barcode
+# label); output_dir (Directory for generated outputs)
+# Outputs: Path/result of the merged pileup BED for one barcode.
 merge_pileup_bed_files <- function(bed_file_paths, barcode_name, output_dir) {
 
   log_message(paste("Merging", length(bed_file_paths), "BED files for", barcode_name))
@@ -664,6 +685,10 @@ merge_pileup_bed_files <- function(bed_file_paths, barcode_name, output_dir) {
 }
 
 # Updated create_barcode_configs to properly group by barcode
+# Inputs: nanotel_files (Filtered NanoTel CSV paths); bam_info (Discovered BAM paths and their
+# barcode labels); alignment_summary_path (Tab-separated exported alignment summary); output_dir
+# (Directory for generated outputs); ... (Additional arguments forwarded to the underlying function)
+# Outputs: Mapping configurations grouped by barcode, retaining all BAM fragments.
 create_barcode_configs_grouped <- function(nanotel_files, bam_info, alignment_summary_path,
                                            output_dir, ...) {
 

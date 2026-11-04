@@ -45,6 +45,15 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
     availability rules. Unit conversion and rounding below affect display only.
     Plotly's JavaScript and the sibling stylesheet are embedded once, allowing
     the returned document to open from file:// without a server or internet.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        results_root: Results directory used to resolve saved scientific exports. Default: None.
+        summary_only: Whether to omit individual-read pages from the report. Default: False.
+        comparisons: Precomputed report comparisons; reused when supplied. Default: None.
+
+    Returns:
+        HTML markup for screen.
     """
     # Lazy imports keep the importer usable independently of chart generation.
     import plotly.graph_objects as go
@@ -230,6 +239,9 @@ def generate_report(results, output):
     Import/render errors propagate before any output directory is created.
     FileExistsError protects existing reports; filesystem write errors propagate
     to the caller. Writes are not transactional if a later filesystem write fails.
+
+    Returns:
+        Path to the generated report index HTML.
     """
     # Import only supported scientific exports. A folder containing only plots
     # or FASTA reads cannot supply summary statistics; availability stays explicit.
@@ -259,6 +271,13 @@ def generate_run_report(results, nanotel_directory):
 
     Source provenance and links to barcode reports are embedded in the HTML.
     Scientific exports stay at their original paths for downstream consumers.
+
+    Args:
+        results: Results directory or collected processing results.
+        nanotel_directory: Nanotel directory.
+
+    Returns:
+        Path to the completed run dashboard.
     """
     from dorado_workflow.reports.storage.layout import write_run_reports, organize_barcode_reports
     from dorado_workflow.reports.storage.archive import available_details, pack_details
@@ -271,16 +290,27 @@ def generate_run_report(results, nanotel_directory):
         destination = write_run_reports(nanotel_directory, run, page)
         from dorado_workflow.reports.exports.dashboard_workbook import write_dashboard_workbook
         write_dashboard_workbook(run, Path(nanotel_directory) / "nanotel_results.xlsx", results, comparisons=comparisons)
-    # Archive only after a complete dashboard has been saved successfully.
-    for barcode in Path(nanotel_directory).glob('barcode*'):
-        if barcode.is_dir():
-            pack_details(barcode)
+    # Recalculation exposes immutable detail files through links. Packing them
+    # would allocate duplicate archives and defeat source reuse.
+    is_recalculated_run = (Path(results) / 'reports' / 'post_analysis_source.json').is_file()
+    if not is_recalculated_run:
+        # Archive only after a complete dashboard has been saved successfully.
+        for barcode_directory in Path(nanotel_directory).glob('barcode*'):
+            if barcode_directory.is_dir():
+                pack_details(barcode_directory)
     return destination
 
 
 
 def main():
-    """Parse explicit input/output paths and print the generated HTML location."""
+    """Parse explicit input/output paths and print the generated HTML location.
+
+    Inputs:
+        None.
+
+    Returns:
+        None.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     # Path arguments are independent: results is the existing input folder;
     # --output must name a new folder, typically a child of results.
@@ -293,10 +323,30 @@ def main():
 
 
 def render_summary(run, results_root=None, comparisons=None):
+    """Render summary.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        results_root: Results directory used to resolve saved scientific exports. Default: None.
+        comparisons: Precomputed report comparisons; reused when supplied. Default: None.
+
+    Returns:
+        HTML markup for summary.
+    """
     return render_screen(run, results_root=results_root, summary_only=True, comparisons=comparisons)
 
 
 def write_summary_dashboard(run, destination, comparisons=None):
+    """Write summary dashboard.
+
+    Args:
+        run: Imported run model containing barcodes, reads and source evidence.
+        destination: Path where the new output is written.
+        comparisons: Precomputed report comparisons; reused when supplied. Default: None.
+
+    Returns:
+        Path object for the requested artifact.
+    """
     destination = Path(destination)
     atomic_text(destination, render_summary(run, results_root=destination.parent, comparisons=comparisons))
     return destination

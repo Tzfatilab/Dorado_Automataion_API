@@ -29,6 +29,12 @@ if (!exists("log_message", mode = "function")) {
 }
 
 # Process alignment and NanoTel data for a single barcode
+# Inputs: alignment_summary_path (Tab-separated exported alignment summary); filtered_nanotel_path
+# (Post-filtered NanoTel read table); bam_file_path (Existing aligned BAM path); output_dir
+# (Directory for generated outputs); barcode_name (Original barcode label); min_mapq (Minimum
+# accepted alignment mapping quality); head_max_start (Maximum accepted Head alignment start
+# coordinate); tail_min_end (Minimum accepted Tail alignment end coordinate)
+# Outputs: Mapped/filtered read records, retained read IDs and diagnostics.
 process_barcode_mapping <- function(alignment_summary_path,
                                     filtered_nanotel_path,
                                     bam_file_path,
@@ -48,7 +54,7 @@ process_barcode_mapping <- function(alignment_summary_path,
 
   ensure_directory_exists(output_dir)
 
-  # Read alignment summary - FIXED: specify column types
+  # SAM-derived fields are tab-separated; '#' is valid content, not a comment.
   minimap <- read.table(alignment_summary_path, header = TRUE, sep = "\t",
                         stringsAsFactors = FALSE, comment.char = "")
 
@@ -109,7 +115,7 @@ process_barcode_mapping <- function(alignment_summary_path,
     stringsAsFactors = FALSE
   )
 
-  # FIXED: Create read_id_clean columns more safely
+  # Join on the SAM read token; trailing FASTQ annotations are not part of QNAME.
   # Clean read IDs in both datasets first
   # Normalize whitespace-delimited FASTQ metadata, including tab-separated tags.
   # Apply this to both sources so existing filtered exports remain compatible.
@@ -208,6 +214,8 @@ process_barcode_mapping <- function(alignment_summary_path,
 }
 
 # Extract unique read IDs from BAM file
+# Inputs: bam_file_path (Existing aligned BAM path)
+# Outputs: Unique read identifiers present in the BAM.
 get_bam_read_ids <- function(bam_file_path) {
 
   log_message(paste("Extracting read IDs from BAM:", basename(bam_file_path)))
@@ -239,6 +247,10 @@ get_bam_read_ids <- function(bam_file_path) {
 }
 
 # Filter BAM file based on read ID list
+# Inputs: filtered_read_ids (Read identifiers retained for the output BAM); input_bam_path (Source
+# aligned BAM); output_bam_path (Destination for the newly filtered BAM); temp_ids_file (Temp ids
+# file)
+# Outputs: Writes and indexes a new BAM containing the selected reads.
 create_filtered_bam <- function(filtered_read_ids,
                                 input_bam_path,
                                 output_bam_path,
@@ -287,6 +299,10 @@ create_filtered_bam <- function(filtered_read_ids,
 }
 
 # Run modkit pileup on filtered BAM
+# Inputs: filtered_bam_path (BAM containing the selected mapped reads); output_bed_path (Output bed
+# path); filter_threshold_c (Filter threshold c); filter_threshold_g (Filter threshold g);
+# mod_threshold_m (Mod threshold m); timeout_seconds (Maximum subprocess runtime in seconds)
+# Outputs: Pileup output information; raises when modkit fails.
 run_modkit_pileup <- function(filtered_bam_path,
                               output_bed_path,
                               filter_threshold_c = 0.75,
@@ -330,6 +346,8 @@ run_modkit_pileup <- function(filtered_bam_path,
   })
 }
 
+# Inputs: bam_file_path (Existing aligned BAM path)
+# Outputs: TRUE when inspected alignments contain supported modification tags.
 bam_has_modified_base_tags <- function(bam_file_path) {
   validate_file_exists(bam_file_path, "Filtered BAM file")
 
@@ -351,6 +369,9 @@ bam_has_modified_base_tags <- function(bam_file_path) {
   })
 }
 
+# Inputs: read_count (Number of selected reads used to scale the timeout);
+# configured_timeout_seconds (Configured timeout seconds)
+# Outputs: Timeout in seconds scaled to the selected read count.
 get_modkit_timeout_seconds <- function(read_count,
                                        configured_timeout_seconds = 900) {
   if (is.null(read_count) || is.na(read_count) || read_count <= 0) {
@@ -363,6 +384,8 @@ get_modkit_timeout_seconds <- function(read_count,
 }
 
 # Complete mapping workflow for a single barcode
+# Inputs: barcode_config (Paths and thresholds for one barcode)
+# Outputs: Mapping and optional methylation results for one barcode.
 process_complete_barcode_workflow <- function(barcode_config) {
 
   barcode_name <- barcode_config$barcode_name
@@ -425,7 +448,10 @@ process_complete_barcode_workflow <- function(barcode_config) {
   ))
 }
 
-# FIXED: Find BAM files for barcodes with nested directory structure
+# Discover barcode BAMs in both flat and nested processing layouts.
+# Inputs: bam_directory (Directory containing aligned barcode BAMs); barcode_pattern (Pattern
+# recognizing supported barcode labels)
+# Outputs: Discovered BAM metadata with barcode identities.
 find_barcode_bam_files <- function(bam_directory, barcode_pattern = "barcode\\d+") {
 
   log_message(paste("Looking for BAM files in:", bam_directory))
@@ -476,6 +502,9 @@ find_barcode_bam_files <- function(bam_directory, barcode_pattern = "barcode\\d+
 }
 
 # In mapping_functions.R, update merge_pileup_bed_files function:
+# Inputs: bed_file_paths (Per-fragment pileup BED paths to combine); barcode_name (Original barcode
+# label); output_dir (Directory for generated outputs)
+# Outputs: Path/result of the merged pileup BED for one barcode.
 merge_pileup_bed_files <- function(bed_file_paths, barcode_name, output_dir) {
 
   log_message(paste("Merging", length(bed_file_paths), "BED files for", barcode_name))
@@ -538,6 +567,10 @@ merge_pileup_bed_files <- function(bed_file_paths, barcode_name, output_dir) {
 }
 
 # Create grouped barcode configurations for multiple BAM processing
+# Inputs: nanotel_files (Filtered NanoTel CSV paths); bam_info (Discovered BAM paths and their
+# barcode labels); alignment_summary_path (Tab-separated exported alignment summary); output_dir
+# (Directory for generated outputs); ... (Additional arguments forwarded to the underlying function)
+# Outputs: Mapping configurations grouped by barcode, retaining all BAM fragments.
 create_barcode_configs_grouped <- function(nanotel_files, bam_info, alignment_summary_path,
                                            output_dir, ...) {
 

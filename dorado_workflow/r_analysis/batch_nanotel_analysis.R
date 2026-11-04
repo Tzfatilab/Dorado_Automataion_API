@@ -20,6 +20,8 @@ source(file.path(script_dir, "functions", "utils.R"))
 source(file.path(script_dir, "functions", "nanotel_functions.R"))
 
 # Main function for batch NanoTel processing
+# Inputs: config_file (Saved JSON configuration path)
+# Outputs: Filtered barcode populations, summary statistics and saved reports.
 main_nanotel_analysis <- function(config_file) {
 
   cat("Starting NanoTel Batch Analysis\n")
@@ -110,6 +112,10 @@ main_nanotel_analysis <- function(config_file) {
 }
 
 # Generate detailed analysis report
+# Inputs: processed_data (Per-barcode filtered populations); summary_stats (Statistics already
+# calculated for the selected population); output_file (Output file); config (Configuration values
+# to read or update); short_telomere_threshold_bp (Strict short-telomere cutoff in base pairs)
+# Outputs: Writes the filtering report for the supplied populations and statistics.
 generate_nanotel_report <- function(processed_data, summary_stats, output_file, config,
                                     short_telomere_threshold_bp = config$short_telomere_threshold_bp %||% 2000) {
 

@@ -32,7 +32,14 @@ class ProcessorResult:
     error: Optional[str] = None
 
     def __post_init__(self):
-        """Validate that failed results have an error message."""
+        """Validate that failed results have an error message.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         if not self.success and not self.error:
             self.error = "Process failed with unknown error"
 
@@ -63,7 +70,14 @@ class ProcessorResult:
         return self.statistics.get(key, default)
 
     def __repr__(self) -> str:
-        """String representation of result."""
+        """String representation of result.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Readable string describing the instance.
+        """
         status = "SUCCESS" if self.success else "FAILED"
         outputs = len(self.output_paths)
         stats = len(self.statistics)
@@ -87,8 +101,7 @@ class WorkflowContext:
 
     def __init__(self, logger, config_manager, path_manager,
                  barcode_manager, command_executor):
-        """
-        Initialize workflow context with all dependencies.
+        """Initialize workflow context with all dependencies.
 
         Args:
             logger: WorkflowLogger instance
@@ -96,6 +109,9 @@ class WorkflowContext:
             path_manager: PathManager instance
             barcode_manager: BarcodeManager instance
             command_executor: CommandExecutor instance
+
+        Returns:
+            None; initializes the instance.
         """
         self.logger = logger
         self.config_manager = config_manager
@@ -118,7 +134,14 @@ class WorkflowContext:
         return all_available
 
     def __repr__(self) -> str:
-        """String representation of context."""
+        """String representation of context.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Readable string describing the instance.
+        """
         return (
             f"WorkflowContext("
             f"trial={self.path_manager.trial_name}, "
@@ -144,18 +167,19 @@ class ProcessorBase(ABC):
     """
 
     def __init__(self, context: WorkflowContext):
-        """
-        Initialize processor with workflow context.
+        """Initialize processor with workflow context.
 
         Args:
             context: WorkflowContext with all shared resources
+
+        Returns:
+            None; initializes the instance.
         """
         self.context = context
 
     @abstractmethod
     def validate_inputs(self, *args, **kwargs) -> bool:
-        """
-        Validate that all required inputs and prerequisites are met.
+        """Validate that all required inputs and prerequisites are met.
 
         This should check:
         - Input files/directories exist
@@ -164,13 +188,16 @@ class ProcessorBase(ABC):
 
         Returns:
             True if validation passes, False otherwise
+
+        Args:
+            args: Command-line arguments or forwarded positional arguments.
+            kwargs: Keyword arguments forwarded to the underlying operation.
         """
         pass
 
     @abstractmethod
     def execute(self, *args, **kwargs) -> ProcessorResult:
-        """
-        Execute the main processing task.
+        """Execute the main processing task.
 
         This is where the actual work happens:
         - Build commands
@@ -180,13 +207,16 @@ class ProcessorBase(ABC):
 
         Returns:
             ProcessorResult with success status, outputs, and statistics
+
+        Args:
+            args: Command-line arguments or forwarded positional arguments.
+            kwargs: Keyword arguments forwarded to the underlying operation.
         """
         pass
 
     @abstractmethod
     def get_output_paths(self) -> Dict[str, Path]:
-        """
-        Get the expected output paths for this processor.
+        """Get the expected output paths for this processor.
 
         Used for:
         - Checking if outputs already exist (skip re-running)
@@ -195,20 +225,32 @@ class ProcessorBase(ABC):
 
         Returns:
             Dictionary mapping output names to Path objects
+
+        Inputs:
+            None; uses instance state.
         """
         pass
 
     def get_name(self) -> str:
-        """
-        Get the processor name (class name).
+        """Get the processor name (class name).
 
         Returns:
             Processor class name
+
+        Inputs:
+            None; uses instance state.
         """
         return self.__class__.__name__
 
     def get_display_name(self) -> str:
-        """Return the plain-language name used in user-facing progress logs."""
+        """Return the plain-language name used in user-facing progress logs.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            str: Selected stored value, or the supplied fallback when absent.
+        """
         names = {
             "BasecallerProcessor": "Basecalling",
             "DemuxerProcessor": "Demultiplexing",
@@ -220,22 +262,26 @@ class ProcessorBase(ABC):
         return names.get(self.get_name(), self.get_name().removesuffix("Processor"))
 
     def log_start(self, message: str = None) -> None:
-        """
-        Log the start of processing with a section header.
+        """Log the start of processing with a section header.
 
         Args:
             message: Optional custom message. If None, uses processor name.
+
+        Returns:
+            None.
         """
         if message is None:
             message = f"Starting {self.get_display_name()}"
         self.context.logger.info(message, gui_visible=False)
 
     def log_complete(self, result: ProcessorResult) -> None:
-        """
-        Log completion of processing.
+        """Log completion of processing.
 
         Args:
             result: ProcessorResult to log
+
+        Returns:
+            None.
         """
         if result.success:
             self.context.logger.info(f"{self.get_display_name()} completed.")
@@ -248,5 +294,12 @@ class ProcessorBase(ABC):
             self.context.logger.error(f"✗ {self.get_name()} failed: {result.error}")
 
     def __repr__(self) -> str:
-        """String representation of processor."""
+        """String representation of processor.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Readable string describing the instance.
+        """
         return f"{self.get_name()}(trial={self.context.path_manager.trial_name})"

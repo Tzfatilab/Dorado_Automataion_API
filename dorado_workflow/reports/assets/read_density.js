@@ -1,5 +1,11 @@
 /* Read density presentation. Source calls and exported samples are not recomputed. */
+// Function: window.readMappingSummary.
+// Inputs: read (embedded read record); data (source/presentation data)
+// Outputs: Validated query spans and human-readable mapping-summary text.
 window.readMappingSummary = (read, data) => {
+  // Function: escape.
+  // Inputs: value (value to inspect or format)
+  // Outputs: Escaped text safe for insertion into HTML.
   const escape = value => String(value).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
   const alignments = (data.alignments || []).filter(a => a.reference && a.reference !== '*');
   const descriptions = alignments.map(a => {
@@ -22,8 +28,16 @@ window.readMappingSummary = (read, data) => {
   return {spans, text: assigned + (spans.length ? '' : '<br>'+missingSpan)};
 };
 
+// Function: window.renderReadTracks.
+// Inputs: parent (parent element); read (embedded read record); options (recorded track-display
+// options)
+// Outputs: Renders saved density, interval, mapping and sequence tracks in the parent.
 window.renderReadTracks = (parent, read, options = {}) => {
   options = {...read.reportTrackOptions, ...options};
+  // Function: add.
+  // Inputs: tag (HTML tag name); text (displayed text); target (destination element or navigation
+  // target)
+  // Outputs: Created DOM element, appended to its target.
   const add = (tag, text, target) => {
     const element = document.createElement(tag);
     element.textContent = text;
@@ -83,12 +97,20 @@ window.renderReadTracks = (parent, read, options = {}) => {
       visible: true,
       hovertemplate: 'Position: %{x:.3f} kb<br>Density: %{y:.3f}<extra>%{fullData.name}</extra>'});
   });
+  // Function: shade.
+  // Inputs: start (interval start in the current coordinate space); end (interval end); color
+  // (display color)
+  // Outputs: Appends a shaded interval to the figure's shape collection.
   const shade = (start, end, color) => {
     if (end > start) shapes.push({type: 'rect', xref: 'x', yref: 'y',
       x0: start / 1000, x1: end / 1000, y0: 0, y1: 1, layer: 'below',
       line: {width: 0}, fillcolor: color});
   };
   if (exact) shade(exact[0], exact[1], 'rgba(142,68,173,0.07)');
+  // Function: intervalStrip.
+  // Inputs: intervals (exported coordinate intervals); name (trace/column name); color (display
+  // color)
+  // Outputs: Appends exported intervals as a plot trace.
   const intervalStrip = (intervals, name, color) => {
     const x=[], y=[];
     intervals.forEach(([start,end])=>{
@@ -136,6 +158,9 @@ window.renderReadTracks = (parent, read, options = {}) => {
 
   // Compact shared lanes match the reference layout. Canonical intervals are
   // drawn first; overlapping variants remain available through legend toggles.
+  // Function: intervalTrace.
+  // Inputs: motif (motif record); positions (positions); lane (lane); showlegend (showlegend)
+  // Outputs: Plotly horizontal-bar trace describing the exported motif intervals.
   function intervalTrace(motif, positions, lane, showlegend) {
     return {type: 'bar', orientation: 'h', xaxis: 'x2', yaxis: 'y2',
       name: motif.label, legendgroup: motif.label, legend: 'legend2', showlegend,
@@ -207,6 +232,9 @@ window.renderReadTracks = (parent, read, options = {}) => {
     // rather than stacking overlapping coordinate labels below the row.
     if (alignments.length > 1) return;
     const availablePixels=(end-start)/extent*mappingPixels;
+    // Function: coordinateLabel.
+    // Inputs: position (coordinate-label position); anchor (text anchor)
+    // Outputs: Appends a coordinate annotation and returns the resulting annotation count.
     const coordinateLabel=(position,anchor)=>annotations.push({xref:'x2',yref:'y2',
       x:position,y:y-.38,yanchor:'top',xanchor:anchor,
       text:position.toFixed(2)+' kb',showarrow:false,font:{size:11,color:'#243750'}});
@@ -237,6 +265,9 @@ window.renderReadTracks = (parent, read, options = {}) => {
   if (!sequence) annotations.push({xref:'x2', yref:'y2', x:extent/2, y:1,
     text:'Sequence unavailable (matching analyzed FASTA required)', showarrow:false,
     font:{size:12,color:'#738292'}});
+  // Function: updateSelection.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Updates the sequence controls for the current selected interval.
   let updateSelection = () => {};
   if (sequence) {
     const controls=add('div','',panel);controls.className='read-sequence-controls';
@@ -250,6 +281,9 @@ window.renderReadTracks = (parent, read, options = {}) => {
     const copy=add('button','Copy sequence',controls);copy.type='button';
     const download=add('button','Download FASTA',controls);download.type='button';
     const message=add('span','',controls);message.setAttribute('role','status');
+    // Function: selection.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Validated 1-based start/end and selected sequence text, or null for invalid bounds.
     const selection=()=>{
       const start=scope.value==='whole'?1:Number(startInput.value),end=scope.value==='whole'?sequence.length:Number(endInput.value);
       if (!Number.isInteger(start)||!Number.isInteger(end)||start<1||end<start||end>sequence.length) {
@@ -258,8 +292,17 @@ window.renderReadTracks = (parent, read, options = {}) => {
       return {start,end,text:sequence.slice(start-1,end)};
     };
     [startInput,endInput].forEach(input=>input.addEventListener('input',()=>{scope.value='region';message.textContent='';}));
+    // Function: scope.onchange.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Handles the UI action and updates the associated report controls.
     scope.onchange=()=>{message.textContent='';};
+    // Function: zoomButton.onclick.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Handles the UI action and updates the associated report controls.
     zoomButton.onclick=()=>{scope.value='region';const selected=selection();if(selected&&chart._fullLayout)Plotly.relayout(chart,{'xaxis2.range':[(selected.start-1)/1000,selected.end/1000]});};
+    // Function: copy.onclick.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Promise completing after the selected UI action finishes.
     copy.onclick=async()=>{
       const selected=selection();if(!selected)return;
       try {
@@ -273,6 +316,9 @@ window.renderReadTracks = (parent, read, options = {}) => {
         message.textContent='Automatic copy unavailable. Press Ctrl+C to copy the selected sequence.';
       }
     };
+    // Function: download.onclick.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Handles the UI action and updates the associated report controls.
     download.onclick=()=>{
       const selected=selection();if(!selected)return;
       const header=(read.header||read.id).replace(/[\r\n]/g,' ')+' | '+read.label+' | analyzed_orientation | '+selected.start+'-'+selected.end+' bp';
@@ -283,6 +329,9 @@ window.renderReadTracks = (parent, read, options = {}) => {
       setTimeout(()=>URL.revokeObjectURL(url),1000);
       message.textContent='Downloaded '+selected.text.length.toLocaleString()+' bases.';
     };
+    // Function: updateSelection.
+    // Inputs: event (browser pointer/event object)
+    // Outputs: Updates the sequence controls for the current selected interval.
     updateSelection=event=>{
       if(!event || !Object.keys(event).some(key=>/^xaxis2?\.(range|autorange)/.test(key)))return;
       const range=chart._fullLayout?.xaxis2?.range;if(!range)return;
@@ -319,6 +368,11 @@ window.renderReadTracks = (parent, read, options = {}) => {
     chart.style.position = 'relative';
     Object.assign(canvas.style, {position:'absolute', pointerEvents:'none', zIndex:'2'});
     const colors = {A:'#35a56f', C:'#387bd4', G:'#c89820', T:'#d85365'};
+    // Function: paintSequence.
+    // Inputs: target (destination element or navigation target); scale (canvas pixel scale); layout
+    // (figure layout)
+    // Outputs: Draws the sequence canvas and returns its export bounds, or no bounds when
+    // unavailable.
     const paintSequence = (target, scale, layout = chart._fullLayout) => {
       if (!chart.isConnected || !chart._fullLayout) return;
       const x = layout.xaxis2, y = layout.yaxis2;
@@ -339,7 +393,13 @@ window.renderReadTracks = (parent, read, options = {}) => {
       }
       return {x:x._offset,y:y._offset+y.l2p(1)-height/2,width,height};
     };
+    // Function: drawSequence.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Redraws the sequence canvas and returns the available drawing bounds.
     const drawSequence = () => paintSequence(canvas, window.devicePixelRatio || 1);
+    // Function: chart.reportExportOverlay.
+    // Inputs: scale (canvas pixel scale); layout (figure layout)
+    // Outputs: Overlay bounds and a PNG data URL for graph export, or null when unavailable.
     chart.reportExportOverlay = (scale, layout) => {
       const exported=document.createElement('canvas');
       const bounds=paintSequence(exported,scale,layout);

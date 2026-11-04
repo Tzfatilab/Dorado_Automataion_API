@@ -10,6 +10,14 @@ def import_final_population(importer, barcode, number):
 
     Use the recorded exact/mismatch mode. Legacy files without that setting
     are accepted only when both modes agree row by row.
+
+    Args:
+        importer: ResultImporter providing saved tables and source provenance.
+        barcode: Imported Barcode record containing reads, metrics and evidence.
+        number: Numeric-source parser that returns a value Fact with evidence.
+
+    Returns:
+        None.
     """
     for target, source in [('amount_of_telomeres', 'number_of_telomeric_reads_post_filtration'),
                            ('median_telomere_length', 'median_telomeric_length_post_filtration_bp')]:

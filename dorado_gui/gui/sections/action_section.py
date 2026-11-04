@@ -13,11 +13,13 @@ class ActionSection:
     """Mixin that exposes _build_buttons() to create the action button layout."""
 
     def _build_buttons(self):
-        """
-        Build the horizontal layout containing Run and Cancel buttons.
+        """Build the horizontal layout containing Run and Cancel buttons.
 
         Returns:
             QHBoxLayout: layout containing configured Run and Cancel QPushButton widgets.
+
+        Inputs:
+            None; uses instance state.
         """
         layout = QHBoxLayout()
 

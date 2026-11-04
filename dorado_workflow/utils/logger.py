@@ -42,11 +42,27 @@ class CallbackHandler(logging.Handler):
 
 
     def __init__(self, callback: Callable[[str], None]):
+        """Initialize the instance and its dependencies.
+
+        Args:
+            callback: Callable[[str], None]; callable invoked for the associated action.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__()
         self.callback = callback
 
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Emit.
+
+        Args:
+            record: logging.LogRecord; record delivered by the caller.
+
+        Returns:
+            None.
+        """
         try:
             gui_message = getattr(record, "gui_message", None)
             message = gui_message if gui_message is not None else record.getMessage()
@@ -59,7 +75,14 @@ class CallbackHandler(logging.Handler):
 
     @classmethod
     def _is_gui_noise(cls, message: str) -> bool:
-        """Hide routine R package startup notices from the GUI only."""
+        """Hide routine R package startup notices from the GUI only.
+
+        Args:
+            message: str; message to display or log.
+
+        Returns:
+            True when the diagnostic line should remain out of the GUI log.
+        """
         message = message.strip()
         return (
             message in {"Warning message:", "Warning messages:"}
@@ -89,14 +112,16 @@ class WorkflowLogger:
         log_level: str = "INFO",
         log_callback: Optional[Callable[[str], None]] = None,
     ):
-        """
-        Initialize the workflow logger.
+        """Initialize the workflow logger.
 
 
         Args:
             log_file_path: Path to the log file. If None, only console logging is enabled.
             log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
             log_callback: Optional callback for forwarding log text.
+
+        Returns:
+            None; initializes the instance.
         """
         self.log_file_path = log_file_path
         self.log_callback = log_callback
@@ -113,7 +138,14 @@ class WorkflowLogger:
 
 
     def _setup_logging(self, log_level: str) -> None:
-        """Configure Python's logging module."""
+        """Configure Python's logging module.
+
+        Args:
+            log_level: str; minimum severity included in logging.
+
+        Returns:
+            None.
+        """
         level = getattr(logging, log_level.upper(), logging.INFO)
 
 
@@ -163,13 +195,29 @@ class WorkflowLogger:
 
 
     def debug(self, message: str) -> None:
-        """Log debug message."""
+        """Log debug message.
+
+        Args:
+            message: str; message to display or log.
+
+        Returns:
+            None.
+        """
         self.logger.debug(message)
 
 
     def info(self, message: str, gui_visible: bool = True,
              gui_message: Optional[str] = None) -> None:
-        """Log info message."""
+        """Log info message.
+
+        Args:
+            message: str; message to display or log.
+            gui_visible: bool; whether to forward this message to the GUI. Default: True.
+            gui_message: Optional[str]; alternative text displayed in the GUI. Default: None.
+
+        Returns:
+            None.
+        """
         self.logger.info(
             message,
             extra={"gui_visible": gui_visible, "gui_message": gui_message},
@@ -177,17 +225,38 @@ class WorkflowLogger:
 
 
     def warning(self, message: str) -> None:
-        """Log warning message."""
+        """Log warning message.
+
+        Args:
+            message: str; message to display or log.
+
+        Returns:
+            None.
+        """
         self.logger.warning(message)
 
 
     def error(self, message: str) -> None:
-        """Log error message."""
+        """Log error message.
+
+        Args:
+            message: str; message to display or log.
+
+        Returns:
+            None.
+        """
         self.logger.error(message)
 
 
     def critical(self, message: str) -> None:
-        """Log critical message."""
+        """Log critical message.
+
+        Args:
+            message: str; message to display or log.
+
+        Returns:
+            None.
+        """
         self.logger.critical(message)
 
 
@@ -195,14 +264,13 @@ class WorkflowLogger:
 
 
     def register_command(self, command: str, cwd: Optional[Path] = None) -> int:
-        """
-        Register a command as it starts executing.
+        """Register a command as it starts executing.
         Thread-safe operation.
 
 
         Args:
             command: The command string to register
-
+            cwd: Optional[Path]; working directory for the command. Default: None.
 
         Returns:
             Command index for later status updates
@@ -232,12 +300,18 @@ class WorkflowLogger:
                              stdout: Optional[str] = None,
                              stderr: Optional[str] = None,
                              output_level: str = "debug") -> None:
-        """
-        Mark a command as successfully completed.
+        """Mark a command as successfully completed.
 
 
         Args:
             cmd_index: Index returned from register_command()
+            returncode: int; subprocess exit status. Default: 0.
+            stdout: Optional[str]; captured standard output, when available. Default: None.
+            stderr: Optional[str]; captured standard error, when available. Default: None.
+            output_level: str; severity used when logging captured command output. Default: 'debug'.
+
+        Returns:
+            None.
         """
         with self.command_lock:
             if 0 <= cmd_index < len(self.executed_commands):
@@ -257,7 +331,14 @@ class WorkflowLogger:
 
 
     def mark_command_cancelled(self, cmd_index: int) -> None:
-        """Record cancellation without reporting an analysis error."""
+        """Record cancellation without reporting an analysis error.
+
+        Args:
+            cmd_index: int; registered command index in the run log.
+
+        Returns:
+            None.
+        """
         with self.command_lock:
             if 0 <= cmd_index < len(self.executed_commands):
                 command = self.executed_commands[cmd_index]
@@ -269,13 +350,18 @@ class WorkflowLogger:
                             returncode: Optional[int] = None,
                             stdout: Optional[str] = None,
                             stderr: Optional[str] = None) -> None:
-        """
-        Mark a command as failed.
+        """Mark a command as failed.
 
 
         Args:
             cmd_index: Index returned from register_command()
             error: Error message or exception details
+            returncode: Optional[int]; subprocess exit status. Default: None.
+            stdout: Optional[str]; captured standard output, when available. Default: None.
+            stderr: Optional[str]; captured standard error, when available. Default: None.
+
+        Returns:
+            None.
         """
         with self.command_lock:
             if 0 <= cmd_index < len(self.executed_commands):
@@ -297,7 +383,16 @@ class WorkflowLogger:
 
     def _log_command_output(self, stdout: Optional[str], stderr: Optional[str],
                             level: str = "debug") -> None:
-        """Log captured command output when it contains useful diagnostic detail."""
+        """Log captured command output when it contains useful diagnostic detail.
+
+        Args:
+            stdout: Optional[str]; captured standard output, when available.
+            stderr: Optional[str]; captured standard error, when available.
+            level: str; severity used for diagnostic output. Default: 'debug'.
+
+        Returns:
+            None.
+        """
         for name, output in (("stdout", stdout), ("stderr", stderr)):
             if output and output.strip():
                 log = getattr(self, level)
@@ -306,12 +401,14 @@ class WorkflowLogger:
                     log(f"    {line}")
 
     def get_command_history(self) -> List[Dict]:
-        """
-        Get the complete command execution history.
+        """Get the complete command execution history.
 
 
         Returns:
             List of command dictionaries with timestamp, command, status, and optional error
+
+        Inputs:
+            None; uses instance state.
         """
         with self.command_lock:
             return self.executed_commands.copy()
@@ -473,19 +570,28 @@ class WorkflowLogger:
 
 
     def section_header(self, title: str, char: str = "=") -> None:
-        """
-        Log a formatted section header.
+        """Log a formatted section header.
 
 
         Args:
             title: Section title
             char: Character to use for the border
+
+        Returns:
+            None.
         """
         self.info(title)
 
 
     def close(self) -> None:
-        """Close the logger and flush all handlers."""
+        """Close the logger and flush all handlers.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         for handler in self.logger.handlers:
             handler.close()
         self.logger.handlers.clear()

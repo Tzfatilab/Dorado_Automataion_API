@@ -1,3 +1,6 @@
+// Function: window.reportBarcodeScaleUI.
+// Inputs: section (containing report section); graph (Plotly graph element)
+// Outputs: Attaches scale/view controls to the existing length chart.
 window.reportBarcodeScaleUI=(section,graph)=>{
   section.querySelector('.barcode-scale-controls')?.remove();
   section.style.gridColumn='span 4';
@@ -5,6 +8,9 @@ window.reportBarcodeScaleUI=(section,graph)=>{
   graph.style.width='100%';graph.style.maxWidth='none';
   delete graph.layout.width;graph.layout.autosize=true;
   graph.reportBarcodeResizeObserver?.disconnect();
+  // Function: resize.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Resizes the visible Plotly chart to its container.
   const resize=()=>{if(graph.isConnected&&graph.offsetWidth>0)Plotly.Plots.resize(graph);};
   graph.reportBarcodeResizeObserver=new ResizeObserver(resize);
   graph.reportBarcodeResizeObserver.observe(graph);
@@ -25,6 +31,9 @@ window.reportBarcodeScaleUI=(section,graph)=>{
   }
   const names=sourceTraces.map(t=>t.name);
   if(graph.reportReadClickHandler)graph.removeListener('plotly_click',graph.reportReadClickHandler);
+  // Function: graph.reportReadClickHandler.
+  // Inputs: event (browser pointer/event object)
+  // Outputs: Handles navigation from a plotted read using its stable identity.
   graph.reportReadClickHandler=event=>{
     const point=event.points?.[0];
     if(!point||!['scatter','violin','box'].includes(point.data.type)||!Number.isInteger(point.pointNumber))return;
@@ -42,14 +51,23 @@ window.reportBarcodeScaleUI=(section,graph)=>{
   const buttons=[];
   for(const [label,type] of [['Linear','linear'],['Logarithmic','log']]){
     const button=document.createElement('button');button.type='button';button.textContent=label;
+    // Function: update.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Synchronizes scale-button appearance with the current chart axis.
     const update=()=>{for(const item of buttons){const active=item.type===(graph.layout.yaxis?.type||'linear');item.button.setAttribute('aria-pressed',String(active));item.button.style.background=active?'#2d65ce':'white';item.button.style.color=active?'white':'#20324c';}};
     button.style.cssText='font:600 15px Segoe UI,Arial,sans-serif;padding:10px 18px;border:1px solid #ccd8e8;border-radius:7px;cursor:pointer';
+    // Function: button.onclick.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Handles the UI action and updates the associated report controls.
     button.onclick=()=>Plotly.relayout(graph,{'yaxis.type':type,'yaxis.autorange':true,'yaxis.rangemode':type==='log'?'normal':'tozero'}).then(update);
     buttons.push({button,type});controls.appendChild(button);
   }
   const bandwidthNote=document.createElement('span');
   bandwidthNote.textContent='Shared bandwidth: 1 kb';bandwidthNote.style.cssText='font-size:13px;color:#52647a;margin-left:8px';
   controls.appendChild(bandwidthNote);
+  // Function: applyViolin.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Promise completing after the length-distribution chart is redrawn.
   const applyViolin=async()=>{
     const data=sourceTraces.map(trace=>{
       const result={...trace,type:'violin'};
@@ -76,6 +94,9 @@ window.reportBarcodeScaleUI=(section,graph)=>{
     refresh();
   };
   if(header)header.appendChild(controls);else graph.before(controls);
+  // Function: refresh.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Updates visible chart controls for the current report state.
   const refresh=()=>{
     for(const {button,type} of buttons){
       const active=type===(graph.layout.yaxis?.type||'linear');
@@ -89,6 +110,9 @@ window.reportBarcodeScaleUI=(section,graph)=>{
   });
 };
 (() => {
+  // Function: start.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Initializes this report feature and registers its event listeners.
   const start=()=>{
     const section=[...document.querySelectorAll('#run-overview section')].find(s=>s.querySelector('h2')?.textContent.includes('Telomere Length by Barcode'));
     const graph=section?.querySelector('.js-plotly-plot');if(graph)window.reportBarcodeScaleUI(section,graph);

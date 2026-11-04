@@ -47,7 +47,39 @@ class WorkerThread(QObject):
             short_telomere_threshold: str = "",
             config_data=None,
     ):
-        """Store workflow settings that will be passed to run_pipeline."""
+        """Store workflow settings that will be passed to run_pipeline.
+
+        Args:
+            trial_name: str; run name used for output directories and logs.
+            pod5_path: str; pod5 path. Default: ''.
+            fastq_path: str; fastq path. Default: ''.
+            bam_path: str; bam path. Default: ''.
+            project_path: str; project path. Default: ''.
+            do_post_analysis: bool; whether to recalculate an existing project. Default: False.
+            output_dir: str; directory for generated outputs. Default: ''.
+            organism: str; organism label selecting reference and analysis defaults. Default: 'Mouse'.
+            do_basecalling: bool; whether the run includes basecalling. Default: False.
+            do_nanotel: bool; whether the run includes NanoTel detection. Default: False.
+            non_pod5_trim_status: str; trimming state of the original BAM or FASTQ reads. Default: 'auto'.
+            bam_is_aligned: Whether the selected BAM already contains alignments. Default: None.
+            bam_has_modifications: Whether the BAM contains modified-base tags. Default: None.
+            methylation_type: str; selected modified-base analysis mode. Default: 'None'.
+            chromosome_mapping: bool; whether reference alignment is selected in the basecalling options. Default: False.
+            nanotel_mapping: bool; whether chromosome mapping is selected for NanoTel analysis. Default: False.
+            summary_only: bool; whether to omit individual-read pages from the report. Default: False.
+            tvr_mode: str; selected TVR configuration mode. Default: 'None'.
+            tvr_manual: str; user-entered TVR motifs. Default: ''.
+            allow_mismatch: bool; whether one mismatch is allowed in repeat searches. Default: False.
+            read_length: str; read-length value in base pairs. Default: ''.
+            max_distance_edge: str; required read margin in base pairs. Default: ''.
+            max_telomere_start: str; latest allowed telomere start in base pairs. Default: ''.
+            min_density_threshold: str; minimum repeat density entered in the GUI. Default: ''.
+            short_telomere_threshold: str; short-telomere cutoff entered in base pairs. Default: ''.
+            config_data: Configuration snapshot supplied for this run. Default: None.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__()
 
         self.trial_name = trial_name
@@ -81,16 +113,31 @@ class WorkerThread(QObject):
         self._stop_requested = False
 
     def stop(self):
-        """Request cancellation by setting a stop flag checked by the pipeline."""
+        """Request cancellation by setting a stop flag checked by the pipeline.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         self._stop_requested = True
         self.log.emit("Stop requested by user")
 
     def run(self):
-        """Execute the pipeline and emit final success/failure signals."""
+        """Execute the pipeline and emit final success/failure signals.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         try:
             self.log.emit("Run started")
 
-            # Pass all current settings and callbacks into the pipeline entrypoint.
+            # Workers report through Qt signals; GUI widgets are updated only
+            # by their receiving slots on the main thread.
             status_code, message = run_pipeline(
                 trial_name=self.trial_name,
                 config_data=self.config_data,

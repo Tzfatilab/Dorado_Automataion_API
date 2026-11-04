@@ -10,7 +10,14 @@ from typing import Iterable
 
 
 def format_command(arguments: Iterable[object]) -> str:
-    """Return a shell command from arguments, converting paths/numbers to text."""
+    """Return a shell command from arguments, converting paths/numbers to text.
+
+    Args:
+        arguments: Iterable[object]; ordered command-line arguments.
+
+    Returns:
+        Shell-quoted command string for the current platform.
+    """
     text_arguments = [str(argument) for argument in arguments]
     if os.name == 'nt':
         return subprocess.list2cmdline(text_arguments)
@@ -18,5 +25,12 @@ def format_command(arguments: Iterable[object]) -> str:
 
 
 def quote_path(path: object) -> str:
-    """Quote a single path for use beside shell pipes or redirection."""
+    """Quote a single path for use beside shell pipes or redirection.
+
+    Args:
+        path: object; file or directory path.
+
+    Returns:
+        Shell-quoted representation of one path.
+    """
     return format_command([path])

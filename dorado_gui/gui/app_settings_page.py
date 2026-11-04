@@ -15,6 +15,15 @@ class AppSettingsPage(QWidget):
     saved = Signal()
 
     def __init__(self, store, parent=None):
+        """Initialize the instance and its dependencies.
+
+        Args:
+            store: SettingsStore containing profiles and application paths.
+            parent: Parent Qt widget, when supplied. Default: None.
+
+        Returns:
+            None; initializes the instance.
+        """
         super().__init__(parent)
         # Inherit the same body font used by the Profile settings tab.
         if parent is not None:
@@ -81,7 +90,15 @@ class AppSettingsPage(QWidget):
         self.reload()
 
     def browse(self, edit, directory):
-        """Stage a selected directory or reference file without saving."""
+        """Stage a selected directory or reference file without saving.
+
+        Args:
+            edit: Path editor receiving the selected file or directory.
+            directory: Directory containing the selected inputs.
+
+        Returns:
+            None.
+        """
         if directory:
             path = QFileDialog.getExistingDirectory(self, "Choose folder", edit.text())
         else:
@@ -90,7 +107,14 @@ class AppSettingsPage(QWidget):
             edit.setText(path)
 
     def reload(self):
-        """Discard app edits and display the saved shared paths."""
+        """Discard app edits and display the saved shared paths.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         self.loading = True
         for key, edit in self.edits.items():
             value = self.store.app_paths["references"][key] if key in {"mouse", "human", "zebrafish"} else self.store.app_paths[key]
@@ -100,7 +124,14 @@ class AppSettingsPage(QWidget):
         self.update_status()
 
     def refresh_legacy_note(self):
-        """Identify preserved custom profiles so the scope of an app save is clear."""
+        """Identify preserved custom profiles so the scope of an app save is clear.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         names = ", ".join(self.store.path_overrides)
         self.legacy_note.setText("Preserved custom paths: " + names + ". These profiles keep their own paths until you choose Use app paths in Profile settings." if names else "")
         self.legacy_note.setVisible(bool(names))
@@ -111,6 +142,12 @@ class AppSettingsPage(QWidget):
         Discard app changes restores the saved paths. Save app settings applies
         the restored values to profiles using shared paths, preserving custom
         profile paths and any unrelated configuration keys.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
         """
         self.loading = True
         defaults = self.store.defaults["paths"]
@@ -121,7 +158,14 @@ class AppSettingsPage(QWidget):
         self.update_status()
 
     def collect(self):
-        """Return shared paths with current field edits, preserving hidden path keys."""
+        """Return shared paths with current field edits, preserving hidden path keys.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Current editor values as a configuration or path dictionary.
+        """
         paths = copy.deepcopy(self.store.app_paths)
         for key, edit in self.edits.items():
             if key in {"mouse", "human", "zebrafish"}:
@@ -131,9 +175,25 @@ class AppSettingsPage(QWidget):
         return paths
 
     def is_dirty(self):
+        """True when current editor values differ from the saved state.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            True when current editor values differ from the saved state.
+        """
         return self.collect() != self.store.app_paths
 
     def update_status(self, *_):
+        """Update status.
+
+        Args:
+            _: Event argument intentionally unused by this callback.
+
+        Returns:
+            None.
+        """
         if self.loading:
             return
         dirty = self.is_dirty()
@@ -142,7 +202,14 @@ class AppSettingsPage(QWidget):
         self.discard_button.setEnabled(dirty)
 
     def save(self):
-        """Persist shared paths and notify the owner only after a successful write."""
+        """Persist shared paths and notify the owner only after a successful write.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            True when saving succeeds; False when validation or persistence fails.
+        """
         try:
             self.store.save_app_paths(self.collect())
         except (OSError, ValueError, TypeError, KeyError) as exc:
@@ -153,7 +220,14 @@ class AppSettingsPage(QWidget):
         return True
 
     def confirm_pending(self):
-        """Protect app edits when navigating away from Settings or closing."""
+        """Protect app edits when navigating away from Settings or closing.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            True to continue; False when the user cancels or saving fails.
+        """
         if not self.is_dirty():
             return True
         answer = ask_unsaved_settings(self, "Unsaved app settings", "Save changes to shared app paths?")

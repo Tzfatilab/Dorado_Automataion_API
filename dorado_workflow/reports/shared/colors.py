@@ -23,7 +23,14 @@ PRESET.update({
 
 
 def motif_color(label):
-    """Keep a motif's color stable even when another barcode lacks that motif."""
+    """Keep a motif's color stable even when another barcode lacks that motif.
+
+    Args:
+        label: Display label.
+
+    Returns:
+        Deterministic hexadecimal display color for the motif label.
+    """
     if label.endswith(' (canonical)'):
         return '#3979CC'
     motif = label.upper()

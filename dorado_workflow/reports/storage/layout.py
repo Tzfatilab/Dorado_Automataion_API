@@ -11,7 +11,15 @@ import warnings
 
 
 def atomic_text(path, text):
-    """Replace a generated file only after its full content is written."""
+    """Replace a generated file only after its full content is written.
+
+    Args:
+        path: File or directory path.
+        text: Text to parse, display or write.
+
+    Returns:
+        None.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=path.name+'.', suffix='.tmp', dir=path.parent)
@@ -29,6 +37,12 @@ def organize_barcode_reports(root):
     Preflight all paths and conflicts before moving anything. Existing identical
     copies can be consolidated; differing files are never silently overwritten.
     Plot HTML and its companion JSON/PNG stay together for relative links.
+
+    Args:
+        root: Root directory or root data object for this operation.
+
+    Returns:
+        None.
     """
     root = Path(root).resolve()
     moves = []
@@ -59,7 +73,14 @@ def organize_barcode_reports(root):
 
 
 def report_index(root):
-    """Link existing per-barcode reports without copying or moving source data."""
+    """Link existing per-barcode reports without copying or moving source data.
+
+    Args:
+        root: Root directory or root data object for this operation.
+
+    Returns:
+        HTML linking the saved human-facing barcode reports.
+    """
     sections = []
     for folder in sorted(root.glob('barcode*')):
         if not folder.is_dir() or not folder.resolve().is_relative_to(root.resolve()):
@@ -82,7 +103,16 @@ def report_index(root):
 
 
 def write_run_reports(root, run, page):
-    """Write one self-contained dashboard, with embedded source provenance."""
+    """Write one self-contained dashboard, with embedded source provenance.
+
+    Args:
+        root: Root directory or root data object for this operation.
+        run: Imported run model containing barcodes, reads and source evidence.
+        page: Rendered HTML document.
+
+    Returns:
+        Path to the saved self-contained dashboard.
+    """
     root = Path(root).resolve()
     destination = root/'dashboard.html'
     # Raw per-window/per-hit tracks already live in scientific exports. Duplicating

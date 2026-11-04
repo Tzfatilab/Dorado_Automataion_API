@@ -1,6 +1,9 @@
 /* Display metadata only: stable barcode/read IDs and scientific values never change. */
 (() => {
   if (window.reportBarcodeNames) return;
+  // Function: start.
+  // Inputs: None; uses the current report/browser state.
+  // Outputs: Initializes this report feature and registers its event listeners.
   const start=()=>{
     const pages=[...document.querySelectorAll('.barcode-page')];
     if(!pages.length)return;
@@ -9,13 +12,28 @@
     const storageKey='telomere-barcode-names-v1:'+location.pathname+':'+pages.map(p=>p.id).join(',');
     let names={};
     try{names=JSON.parse(localStorage.getItem(storageKey)||'{}');}catch{}
+    // Function: clean.
+    // Inputs: value (value to inspect or format)
+    // Outputs: Trimmed display-name text within the configured length limit.
     const clean=value=>typeof value==='string'?value.trim().slice(0,100):'';
     names=Object.fromEntries(pages.map(p=>[p.id,clean(names?.[p.id])]));
+    // Function: display.
+    // Inputs: id (stable barcode/read identity)
+    // Outputs: Display name combined with the original barcode label.
     const display=id=>names[id]?names[id]+' \u00b7 '+originals.get(id).label:originals.get(id).label;
+    // Function: html.
+    // Inputs: value (value to inspect or format)
+    // Outputs: HTML-escaped label text.
     const html=value=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const inputs=new Map(),graphs=new WeakSet(),previous=new Map(),history=new Map(pages.map(p=>[p.id,new Set()]));
     const status=document.createElement('p');status.setAttribute('role','status');
+    // Function: metadata.
+    // Inputs: page (barcode page element)
+    // Outputs: Original barcode ID and custom name, or null when no barcode page is selected.
     const metadata=page=>page?{id:originals.get(page.id)?.id||'',name:names[page.id]||''}:null;
+    // Function: exportData.
+    // Inputs: table (table element); data (source/presentation data)
+    // Outputs: Table data enriched with original barcode ID and display name.
     const exportData=(table,data)=>{
       const detail=table.closest('#read-detail');
       const route=detail?.querySelector('.breadcrumbs a[href^="#/barcode/"]')?.getAttribute('href');
@@ -25,7 +43,11 @@
       return {...data,headers:['Barcode ID','Barcode display name',...data.headers],
         rows:data.rows.map(row=>[info.id,info.name,...row])};
     };
+    // Function: aliases.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Map of current and previous labels to current display labels.
     const aliases=()=>{
+      // Keep prior labels resolvable so repeated renames update existing plots.
       const result=new Map();
       for(const [id,original] of originals){
         const label=html(display(id));
@@ -33,16 +55,23 @@
       }
       return result;
     };
+    // Function: updateGraph.
+    // Inputs: graph (Plotly graph element)
+    // Outputs: Promise completing after applicable graph labels have been updated.
     const updateGraph=async graph=>{
       if(!graph.data)return;
       if(graph.reportNamingBusy){graph.reportNamingPending=true;return;}
       const labels=aliases();let changed=false;
+      // Function: replace.
+      // Inputs: value (value to inspect or format)
+      // Outputs: Value with recognized label aliases replaced; arrays are processed recursively.
       const replace=value=>{
         if(typeof value==='string'&&labels.has(value)&&labels.get(value)!==value){changed=true;return labels.get(value);}
         if(Array.isArray(value))return value.map(replace);
         return value;
       };
       for(const trace of graph.data){
+        // customdata keeps stable identities for navigation and exclusion.
         for(const key of ['name','x','y','text','labels'])if(trace[key]!=null)trace[key]=replace(trace[key]);
       }
       for(const key of ['xaxis','yaxis']){
@@ -53,6 +82,9 @@
       if(changed){graph.reportNamingBusy=true;try{await Plotly.redraw(graph);}finally{graph.reportNamingBusy=false;if(graph.reportNamingPending){graph.reportNamingPending=false;await updateGraph(graph);}}}
       if(!graphs.has(graph)&&graph.on){graphs.add(graph);graph.on('plotly_afterplot',()=>updateGraph(graph));}
     };
+    // Function: sync.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Synchronizes labels, input controls and rendered graph captions.
     const sync=()=>{
       for(const page of pages){
         const original=originals.get(page.id),label=display(page.id);
@@ -69,6 +101,9 @@
       if(detail&&originals.has(id))detail.dataset.barcodeLabel=display(id);
       document.querySelectorAll('.js-plotly-plot').forEach(updateGraph);
     };
+    // Function: save.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Saves the selected data or setting using this feature's existing destination.
     const save=()=>{
       for(const page of pages){history.get(page.id).add(html(page.dataset.label));history.get(page.id).add(html(display(page.id)));}
       try{localStorage.setItem(storageKey,JSON.stringify(names));status.textContent='Names saved in this browser. Export the name list to keep a portable copy.';}
@@ -76,7 +111,13 @@
       sync();
       for(const page of pages)previous.set(page.id,html(display(page.id)));
     };
+    // Function: set.
+    // Inputs: id (stable barcode/read identity); value (value to inspect or format)
+    // Outputs: Updates the selected barcode setting and propagates the change.
     const set=(id,value)=>{if(!originals.has(id))throw Error('Unknown barcode');names[id]=clean(value);save();};
+    // Function: field.
+    // Inputs: id (stable barcode/read identity)
+    // Outputs: Created barcode-control DOM element with its event listeners attached.
     const field=id=>{
       const input=document.createElement('input');input.type='text';input.maxLength=100;
       input.placeholder='Add a display name';input.value=names[id]||'';
@@ -98,14 +139,23 @@
       editor.append('Display name · '+originals.get(page.id).id+' ',field(page.id));
       page.querySelector('.breadcrumbs')?.after(editor);
     }
+    // Function: table.reportExportData.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Headers and current filtered/sorted table rows for export.
     table.reportExportData=()=>({name:'Barcode names',headers:['Barcode ID','Display name'],rows:pages.map(p=>[originals.get(p.id).id,names[p.id]||''])});
     section.appendChild(table);
     const button=document.createElement('button');button.type='button';button.textContent='Export name list';
+    // Function: button.onclick.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Handles the UI action and updates the associated report controls.
     button.onclick=()=>{
       const blob=new Blob([JSON.stringify({version:1,barcodes:pages.map(p=>({barcode_id:originals.get(p.id).id,display_name:names[p.id]||''}))},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='barcode-names.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };section.appendChild(button);
     const upload=document.createElement('input');upload.type='file';upload.accept='.json,application/json';upload.setAttribute('aria-label','Import barcode name list');
+    // Function: upload.onchange.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Promise completing after the selected UI action finishes.
     upload.onchange=async()=>{
       try{
         const file=upload.files[0];if(!file)return;if(file.size>1000000)throw Error('Name list is too large.');
@@ -116,6 +166,9 @@
       }catch(error){status.textContent=error.message;}finally{upload.value='';}
     };section.append(' Import name list: ',upload,status);
     document.querySelector('.barcode-navigation')?.after(section);
+    // Function: entries.
+    // Inputs: None; uses the current report/browser state.
+    // Outputs: Barcode name records containing original IDs and current custom labels.
     window.reportBarcodeNames={set,display,exportData,entries:()=>pages.map(p=>metadata(p))};
     for(const page of pages)history.get(page.id).add(html(display(page.id)));
     sync();for(const page of pages)previous.set(page.id,html(display(page.id)));

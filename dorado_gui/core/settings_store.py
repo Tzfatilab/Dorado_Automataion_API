@@ -11,12 +11,28 @@ from dorado_workflow.utils.analysis_validation import validate_nanotel_settings
 
 
 def canonical_patterns(config=None):
+    """Set containing the canonical motif and its reverse complement.
+
+    Args:
+        config: Configuration values to read or update. Default: None.
+
+    Returns:
+        Set containing the canonical motif and its reverse complement.
+    """
     motif = (config or {}).get("nanotel", {}).get("telomere_pattern", "CCCTAA").upper()
     return {motif, motif.translate(str.maketrans("ACGT", "TGCA"))[::-1]}
 
 
 def local_paths(paths, defaults):
-    """Resolve bundled resources locally and recover unavailable folder defaults."""
+    """Resolve bundled resources locally and recover unavailable folder defaults.
+
+    Args:
+        paths: Path configuration or artifact paths for this operation.
+        defaults: Fallback configuration values.
+
+    Returns:
+        Configuration dictionary with paths resolved for this installation.
+    """
     result = merge_config(defaults, paths)
     package = Path(__file__).resolve().parents[2] / "dorado_workflow"
     for key in ("default_input_base", "default_output_base"):
@@ -40,6 +56,14 @@ def local_paths(paths, defaults):
 
 
 def remove_legacy_canonical(config):
+    """Remove legacy canonical.
+
+    Args:
+        config: Configuration values to read or update.
+
+    Returns:
+        None.
+    """
     forbidden = canonical_patterns(config)
     for section in [config["nanotel"], *config["organism_specific"].values()]:
         if isinstance(section.get("tvr_patterns"), list):
@@ -47,7 +71,15 @@ def remove_legacy_canonical(config):
 
 
 def migrate_legacy_telomere_start(config, supplied):
-    """Separate the old untrimmed value from the displayed profile default."""
+    """Separate the old untrimmed value from the displayed profile default.
+
+    Args:
+        config: Configuration values to read or update.
+        supplied: Imported configuration overrides.
+
+    Returns:
+        None.
+    """
     if 'untrimmed_max_telomere_start' in supplied.get('nanotel', {}):
         return
     sections = [config['nanotel']] + [
@@ -61,6 +93,15 @@ def migrate_legacy_telomere_start(config, supplied):
 
 
 def parse_patterns(text, canonical=None):
+    """Validated, deduplicated motif strings in their original order.
+
+    Args:
+        text: Text to parse, display or write.
+        canonical: Canonical motif set excluded from TVR input. Default: None.
+
+    Returns:
+        Validated, deduplicated motif strings in their original order.
+    """
     patterns = list(dict.fromkeys(re.split(r"[\s,;]+", text.strip().upper())))
     patterns = [pattern for pattern in patterns if pattern]
     if any(not re.fullmatch(r"[ACGT]+", pattern) for pattern in patterns):
@@ -73,7 +114,15 @@ def parse_patterns(text, canonical=None):
 
 
 def merge_config(defaults, supplied):
-    """Merge a partial imported config while rejecting incompatible types."""
+    """Merge a partial imported config while rejecting incompatible types.
+
+    Args:
+        defaults: Fallback configuration values.
+        supplied: Imported configuration overrides.
+
+    Returns:
+        Independent dictionary containing defaults merged with supplied values.
+    """
     if not isinstance(supplied, dict):
         raise ValueError("Configuration must be a JSON object.")
     result = copy.deepcopy(defaults)
@@ -86,6 +135,14 @@ def merge_config(defaults, supplied):
 
 
 def validate_config(config):
+    """Validate a complete profile before saving it or loading GUI editors.
+
+    Args:
+        config: Configuration values to read or update.
+
+    Returns:
+        None.
+    """
     validate_nanotel_settings(config["nanotel"])
     analysis_sections = [config["nanotel"]]
     if not config["demuxing"].get("kit_name"):
@@ -144,7 +201,15 @@ def validate_config(config):
 
 
 def write_json(path, data):
-    """Replace only after the complete document has been flushed to disk."""
+    """Replace only after the complete document has been flushed to disk.
+
+    Args:
+        path: File or directory path.
+        data: Source data or presentation records for this operation.
+
+    Returns:
+        None.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
@@ -163,6 +228,14 @@ def write_json(path, data):
 
 class SettingsStore:
     def __init__(self, path):
+        """Initialize the instance and its dependencies.
+
+        Args:
+            path: File or directory path.
+
+        Returns:
+            None; initializes the instance.
+        """
         self.path = Path(path)
         self.defaults = copy.deepcopy(ConfigManager().config)
         self.defaults["paths"] = local_paths(self.defaults["paths"], self.defaults["paths"])
@@ -217,23 +290,64 @@ class SettingsStore:
 
     @staticmethod
     def validate_name(name):
+        """Validate name.
+
+        Args:
+            name: Name used for lookup, display or storage.
+
+        Returns:
+            None.
+        """
         if not isinstance(name, str) or not name.strip() or len(name) > 80:
             raise ValueError("Profile names must contain 1–80 characters.")
 
     def snapshot(self):
+        """Independent copy of the active profile.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            Independent copy of the active profile.
+        """
         return copy.deepcopy(self.profiles[self.active])
 
     def _refresh_paths(self):
-        """Keep exported/run configurations complete while sharing resource defaults."""
+        """Keep exported/run configurations complete while sharing resource defaults.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         for name, config in self.profiles.items():
             config["paths"] = copy.deepcopy(self.path_overrides.get(name, self.app_paths))
 
     def _document(self, profiles, active, app_paths, overrides):
+        """Serializable settings document containing profiles and path overrides.
+
+        Args:
+            profiles: Saved configurations indexed by profile name.
+            active: Name of the active profile.
+            app_paths: Application-wide path defaults.
+            overrides: Explicit configuration or profile path overrides.
+
+        Returns:
+            Serializable settings document containing profiles and path overrides.
+        """
         return {"version": 2, "active": active, "profiles": profiles,
                 "app_paths": app_paths, "path_overrides": overrides}
 
     def save_app_paths(self, paths):
-        """Save shared resources without changing analysis profiles or custom paths."""
+        """Save shared resources without changing analysis profiles or custom paths.
+
+        Args:
+            paths: Path configuration or artifact paths for this operation.
+
+        Returns:
+            None.
+        """
         probe = copy.deepcopy(self.defaults)
         paths = copy.deepcopy(paths)
         for key in ("default_input_base", "default_output_base"):
@@ -252,7 +366,14 @@ class SettingsStore:
         self.load_error = None
 
     def delete(self, name):
-        """Persist deletion before changing the active in-memory configuration."""
+        """Persist deletion before changing the active in-memory configuration.
+
+        Args:
+            name: Name used for lookup, display or storage.
+
+        Returns:
+            None.
+        """
         if name == "Lab default":
             raise ValueError("The default profile cannot be deleted.")
         if name not in self.profiles:
@@ -269,6 +390,15 @@ class SettingsStore:
         self.path_overrides = overrides
 
     def commit(self, name, config):
+        """Persist a validated profile before publishing it as the active config.
+
+        Args:
+            name: Name used for lookup, display or storage.
+            config: Configuration values to read or update.
+
+        Returns:
+            None.
+        """
         self.validate_name(name)
         validate_config(config)
         profiles = copy.deepcopy(self.profiles)
@@ -284,7 +414,14 @@ class SettingsStore:
         self.path_overrides = overrides
 
     def _backup_unreadable(self):
-        """Keep the existing recovery copy before either kind of settings save."""
+        """Keep the existing recovery copy before either kind of settings save.
+
+        Inputs:
+            None; uses instance state.
+
+        Returns:
+            None.
+        """
         # Preserve an unreadable file before an explicit Save replaces it.
         if self.load_error and self.path.exists():
             backup = self.path.with_name(self.path.name + ".bak")
