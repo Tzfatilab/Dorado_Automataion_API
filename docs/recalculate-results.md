@@ -10,7 +10,7 @@ Choose an Output Path outside the source project. A new timestamped run preserve
 
 - An original `results/nanotel` CSV population, or `nanotel_summary.xlsx` containing original source worksheets. A presentation-only spreadsheet or standalone HTML cannot supply the original population.
 - Original detection settings in `results/reports/nanotel_source_settings.json`, the original R configuration, or workbook Run metadata. The NanoTel processor now saves a detection snapshot before starting, for both GUI and CLI runs.
-- Mapping additionally needs original `processing/aligned` BAMs, or `processing/fastq` sequences if new alignment is necessary. Existing aligned BAMs are reused through AlignmentProcessor, without repeating basecalling or NanoTel detection.
+- When Run mapping is selected, alignment is always recalculated through AlignmentProcessor. Prefer saved `processing/fastq` reads, then FASTQ or BAM inputs under `processing/demultiplexed`; aligned BAMs are a fallback sequence source and are realigned. A candidate input directory must cover every nonempty original NanoTel barcode. Partial cached alignment output must not silently limit the run to one barcode. Basecalling and NanoTel detection are not repeated.
 
 ## Shared implementation
 
@@ -24,8 +24,9 @@ Mapping subprocesses use direct samtools arguments rather than Unix shell pipeli
 
 ## Disk usage
 
-Recalculation links native source CSVs, read files, detail exports and existing
-aligned BAMs instead of copying them. Hard links share the original file's disk
+Recalculation links native source CSVs, read files, detail exports and saved BAM
+inputs instead of copying them. FASTQ inputs are read directly; fresh aligned
+BAMs and their indexes are new analysis outputs. Hard links share the original file's disk
 storage; file symlinks are used when hard links are unavailable. If neither is
 supported, the run reports an error rather than silently copying large inputs.
 Linked detail exports are not repacked into duplicate archives. Inputs must be

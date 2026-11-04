@@ -200,7 +200,10 @@ class ProjectSources:
             if book: book.close()
 
     def prepare_mapping(self, operator, check_cancelled):
-        """Reuse original alignment through the existing alignment processor.
+        """Align saved sequences again through the shared alignment processor.
+
+        Prefer FASTQ inputs to potentially partial aligned outputs. Existing BAMs
+        are sequence sources only: their old alignment calls are not reused.
 
         Args:
             operator: WorkflowOperator coordinating the shared processors.
@@ -209,15 +212,84 @@ class ProjectSources:
         Returns:
             None.
         """
-        aligned = self.root / "processing" / "aligned"
-        fastq = self.root / "processing" / "fastq"
         check_cancelled()
-        if aligned.is_dir() and any(aligned.rglob("*.bam")):
-            result = operator.aligner.execute(str(aligned), organism=operator.context.config_manager.get_current_organism(),
-                                              input_type="bam", use_existing_alignment=True, link_inputs_only=True)
-        elif fastq.is_dir() and any(fastq.rglob("*.fastq*")):
-            result = operator.aligner.execute(str(fastq), organism=operator.context.config_manager.get_current_organism(), input_type="fastq")
-        else:
-            raise ValueError("Mapping requires the project's original processing/aligned BAM files or processing/fastq reads. The Excel workbook alone cannot run mapping.")
-        if not result.success:
-            raise RuntimeError(result.error or "Alignment preparation failed")
+        required_barcodes = self._mapping_barcodes(check_cancelled)
+        processing = self.root / "processing"
+        candidates = (
+            (processing / "fastq", "fastq"),
+            (processing / "demultiplexed", "fastq"),
+            (processing / "demultiplexed", "bam"),
+            (processing / "aligned", "bam"),
+        )
+        incomplete_sources = []
+        for folder, input_type in candidates:
+            check_cancelled()
+            if not folder.is_dir():
+                continue
+            inputs = operator.aligner._find_alignment_inputs(folder, input_type)
+            if not inputs:
+                continue
+            available_barcodes = {
+                operator.aligner._extract_barcode(path.relative_to(folder))
+                for path in inputs
+            }
+            missing = required_barcodes - available_barcodes
+            if missing:
+                incomplete_sources.append(f"{folder}: missing {', '.join(sorted(missing))}")
+                continue
+            operator.context.logger.info(
+                f"Recalculating alignment from saved {input_type.upper()} reads: {folder}"
+            )
+            result = operator.aligner.execute(
+                str(folder),
+                organism=operator.context.config_manager.get_current_organism(),
+                input_type=input_type,
+                use_existing_alignment=False,
+                link_inputs_only=True,
+            )
+            if not result.success:
+                raise RuntimeError(result.error or "Alignment recalculation failed")
+            return
+        if incomplete_sources:
+            raise ValueError(
+                "Saved sequence inputs do not cover all nonempty NanoTel barcodes. "
+                "Select the complete original project to recalculate alignment. "
+                + "; ".join(incomplete_sources)
+            )
+        raise ValueError(
+            "Alignment recalculation requires saved FASTQ reads or barcode BAMs "
+            "under processing/fastq, processing/demultiplexed or processing/aligned. "
+            "The Excel workbook alone does not contain the original sequences."
+        )
+
+    def _mapping_barcodes(self, check_cancelled):
+        """Identify nonempty source populations that require sequence inputs.
+
+        Args:
+            check_cancelled: Callback raising when cancellation is requested.
+
+        Returns:
+            Set of barcode labels with at least one original NanoTel record.
+        """
+        required = set()
+        workbook = None
+        try:
+            for barcode, source in self.summaries.items():
+                check_cancelled()
+                if isinstance(source, Path):
+                    with source.open(newline="", encoding="utf-8-sig") as stream:
+                        rows = csv.reader(stream)
+                        next(rows, None)
+                        if any(any(value not in (None, "") for value in row) for row in rows):
+                            required.add(barcode)
+                else:
+                    if workbook is None:
+                        workbook = load_workbook(self.workbook, read_only=True, data_only=True)
+                    rows = iter(workbook[source].values)
+                    next(rows, None)
+                    if any(any(value not in (None, "") for value in row) for row in rows):
+                        required.add(barcode)
+        finally:
+            if workbook is not None:
+                workbook.close()
+        return required

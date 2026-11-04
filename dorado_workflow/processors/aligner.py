@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, Optional
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
 from ..utils.cancellation import WorkflowCancelled
+from ..utils.source_links import link_source
 from ..utils.shell_commands import format_command
 from datetime import datetime
 import os
@@ -139,7 +140,9 @@ class AlignmentProcessor(ProcessorBase):
                 self.context.logger.info("Preparing existing aligned BAM files")
                 aligned_bams = self._stage_existing_aligned_bams(Path(input_dir), link_inputs_only=link_inputs_only)
             else:
-                prepared_input = self._prepare_alignment_input(Path(input_dir), input_type)
+                prepared_input = self._prepare_alignment_input(
+                    Path(input_dir), input_type, link_inputs_only=link_inputs_only
+                )
 
                 self.context.logger.info(
                     f"Running minimap2 alignment ({input_type.upper()} input)"
@@ -228,7 +231,6 @@ class AlignmentProcessor(ProcessorBase):
             barcode = self._extract_barcode(bam_file) or f"bam{index:02d}"
             destination = self.output_dir / f"aligned_{barcode}_{index}.bam"
             if link_inputs_only:
-                from dorado_workflow.utils.source_links import link_source
                 link_source(bam_file, destination)
             else:
                 self._link_or_copy_bam(bam_file, destination)
@@ -451,12 +453,14 @@ class AlignmentProcessor(ProcessorBase):
                 length += int(count)
         return length
 
-    def _prepare_alignment_input(self, input_path: Path, input_type: str) -> Path:
+    def _prepare_alignment_input(self, input_path: Path, input_type: str,
+                                 *, link_inputs_only: bool = False) -> Path:
         """Flatten barcode BAM paths for alignment without changing their contents.
 
         Args:
             input_path: Path; input path.
             input_type: str; selected input kind, such as BAM, FASTQ or auto.
+            link_inputs_only: Reject copying saved BAM inputs when linking fails.
 
         Returns:
             Directory containing FASTQ inputs or staged barcode BAM files.
@@ -476,7 +480,10 @@ class AlignmentProcessor(ProcessorBase):
                 staging_dir.mkdir(parents=True, exist_ok=True)
                 barcode = self._extract_barcode(bam_file) or f"bam{index:02d}"
                 link_path = staging_dir / f"{barcode}_{index}_{bam_file.name}"
-                self._link_or_copy_bam(bam_file, link_path)
+                if link_inputs_only:
+                    link_source(bam_file, link_path)
+                else:
+                    self._link_or_copy_bam(bam_file, link_path)
         except Exception:
             if staging_dir.exists() and not any(staging_dir.iterdir()):
                 staging_dir.rmdir()
