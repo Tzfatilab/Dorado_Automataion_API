@@ -14,7 +14,7 @@ from PySide6.QtCore import QRegularExpression
 
 from gui.ui_styles import make_card
 from gui.widgets.selection_widgets import SelectOption
-from gui.widgets.advanced_controls import HoverHelpLabel, MappingCheckBox, ToggleSwitch
+from gui.widgets.advanced_controls import HoverHelpLabel, MappingCheckBox, ToggleSwitch, LockedTVRControls
 from core.workflow_constants import BASE_DIR
 from dorado_workflow.managers.config_manager import ConfigManager
 
@@ -59,8 +59,23 @@ class AdvancedSection:
         )
         self._set_option_card_enabled(
             self.nanotel_options_card,
-            "nanotel" in selected,
+            bool({"nanotel", "post_analysis"} & selected),
         )
+
+        post = "post_analysis" in selected
+        self.tvr_mode_widget.setLocked(post)
+        self.allow_mismatch.setEnabled(not post)
+        if post and not getattr(self, "_post_analysis_active", False):
+            self._summary_before_post = self.summary_only.isChecked()
+            self._mismatch_before_post = self.allow_mismatch.isChecked()
+        elif not post and getattr(self, "_post_analysis_active", False):
+            self.summary_only.setChecked(self._summary_before_post)
+            self.allow_mismatch.setChecked(self._mismatch_before_post)
+        if not post:
+            self._sync_tvr_mismatch_state()
+        self._post_analysis_active = post
+        self.summary_only.setEnabled(True)
+        self.organism.setEnabled(not post or not getattr(self, "_post_source_organism", ""))
 
     @staticmethod
     def _set_option_card_enabled(card, enabled):
@@ -317,7 +332,8 @@ class AdvancedSection:
             )
         )
 
-        title = QLabel("NanoTel Options")
+        title = QLabel("Analysis Options")
+        self.nanotel_options_title = title
         title.setStyleSheet("""
             font-size: 16px;
             font-weight: 700;
@@ -335,7 +351,12 @@ class AdvancedSection:
         header.addStretch()
         summary_toggle = QWidget()
         summary_toggle.setCursor(Qt.PointingHandCursor)
-        summary_toggle.setStyleSheet("background: transparent; border: none;")
+        summary_toggle.setObjectName("summaryOnlyControl")
+        summary_toggle.setStyleSheet("""
+            QWidget#summaryOnlyControl { background: transparent; border: none; }
+            QToolTip { background-color: #ffffff; color: #162238;
+                       border: 1px solid #cbd5e1; padding: 5px 7px; font-size: 13px; }
+        """)
         summary_layout = QHBoxLayout(summary_toggle)
         summary_layout.setContentsMargins(0, 0, 0, 0)
         summary_layout.setSpacing(8)
@@ -358,6 +379,8 @@ class AdvancedSection:
             "Include a compact summary dashboard. Skip per-read plots, FASTA and density/motif track exports. "
             "Detection and filters are unchanged; separately selected mapping/methylation still run."
         )
+        summary_label.setToolTip(self.summary_only.toolTip())
+        summary_toggle.setToolTip(self.summary_only.toolTip())
         self.summary_only.setChecked(False)
         summary_layout.addWidget(summary_label)
         summary_layout.addWidget(self.summary_only)
@@ -383,7 +406,8 @@ class AdvancedSection:
         body.setContentsMargins(16, 10, 16, 10)
         body.setSpacing(8)
 
-        body.addLayout(self._build_tvr_mode_controls())
+        self.tvr_mode_widget = LockedTVRControls(self._build_tvr_mode_controls())
+        body.addWidget(self.tvr_mode_widget)
         body.addLayout(self._build_nanotel_fields())
         footer = QHBoxLayout()
         footer.setSpacing(8)
@@ -571,7 +595,8 @@ class AdvancedSection:
                 font-weight: 600;
             }
         """
-        return active_style, inactive_style
+        disabled_style = "QPushButton:disabled { color:#a0a9b6; background:#f8fafc; border-color:#e5e7eb; }"
+        return active_style + disabled_style, inactive_style + disabled_style
 
     def _build_nanotel_fields(self):
         """Build validated NanoTel fields in a compact two-column grid."""

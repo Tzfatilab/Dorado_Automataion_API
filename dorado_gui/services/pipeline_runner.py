@@ -28,6 +28,8 @@ def run_pipeline(
         pod5_path: str = "",
         fastq_path: str = "",
         bam_path: str = "",
+        project_path: str = "",
+        do_post_analysis: bool = False,
         output_dir: str,
         organism: str,
         do_basecalling: bool,
@@ -56,6 +58,15 @@ def run_pipeline(
     run_started_at = time.monotonic()
     log = _make_log_callback(log_cb)
     check_cancelled = _make_cancel_checker(stop_cb)
+
+    if do_post_analysis:
+        return _run_post_analysis(
+            project_path=project_path, output_dir=output_dir, organism=organism,
+            mapping=nanotel_mapping, summary_only=summary_only, read_length=read_length,
+            max_telomere_start=max_telomere_start, density=min_density_threshold,
+            short_cutoff=short_telomere_threshold, config_data=config_data,
+            log=log, check_cancelled=check_cancelled, stop_cb=stop_cb, report_cb=report_cb,
+        )
 
     check_cancelled()
     _log_banner(log, "SETTING UP WORKFLOW", "Preparing paths, settings, and tools")
@@ -134,15 +145,7 @@ def run_pipeline(
                 report_cb(str(summary_path))
     if result and do_nanotel and not summary_only:
         try:
-            from dorado_workflow.reports.all_barcodes import generate_run_report
-            log("Generating All Barcodes dashboard and Excel workbook...")
-            report_path = generate_run_report(
-                context.path_manager.get_results_dir_path(),
-                context.path_manager.get_nanotel_output_dir_path(),
-            )
-            check_cancelled()
-            log(f"All Barcodes report: {report_path}")
-            log(f"Excel workbook: {Path(report_path).with_name('nanotel_results.xlsx')}")
+            report_path = _write_full_report(context, log, check_cancelled)
             if report_cb:
                 report_cb(str(report_path))
         except WorkflowCancelled:
@@ -597,3 +600,69 @@ def _parse_patterns(value: str) -> list:
         for pattern in value.replace(";", ",").replace(" ", ",").split(",")
         if pattern.strip()
     ]
+
+
+def _run_post_analysis(*, project_path, output_dir, organism, mapping, summary_only, read_length,
+                       max_telomere_start, density, short_cutoff, config_data,
+                       log, check_cancelled, stop_cb, report_cb):
+    """Use the same R filtering/mapping and report writers as a normal run."""
+    from dorado_workflow.processors.project_sources import ProjectSources
+    import json
+    check_cancelled()
+    source = ProjectSources.inspect(project_path)
+    organism = source.organism or organism
+    base = Path(_resolve_base_output_dir(output_dir)).resolve()
+    if base == source.root or source.root in base.parents:
+        raise ValueError("Choose an Output Path outside the source project; Post-analysis never overwrites the original project.")
+    context = _setup_pipeline_context(output_dir=str(base), organism=organism, log=log,
+        do_basecalling=False, do_nanotel=True, bam_path="", nanotel_mapping=mapping,
+        align_during_basecalling=False, config_data=config_data)
+    context.command_executor.stop_callback = stop_cb
+    params = dict(context.config_manager.get_nanotel_params())
+    params.update(source.params)
+    params["source_detection_settings"] = source.params.get("source_detection_settings", dict(source.params))
+    # Only post-detection thresholds may change. Detection options come from
+    # the source snapshot, never the current GUI TVR/mismatch controls.
+    for key in ("input_dir", "output_dir"):
+        params.pop(key, None)
+    params["summary_only"] = bool(summary_only)
+    for key, value, convert in (("min_read_length", read_length, int),
+                                 ("max_telomere_start", max_telomere_start, int),
+                                 ("density_threshold", density, float),
+                                 ("short_telomere_threshold_bp", short_cutoff, int)):
+        if str(value).strip(): params[key] = convert(value)
+    params["read_length"] = params.get("min_read_length")
+    params["max_edge_distance"] = params["max_telomere_start"]
+    params["min_density"] = params["density_threshold"]
+    context.config_manager.config.setdefault("r_analysis", {})["run_nanotel_analysis"] = True
+    context.config_manager.update_nanotel_params(params)
+    reports = context.path_manager.get_reports_dir_path()
+    reports.mkdir(parents=True, exist_ok=True)
+    (reports / "post_analysis_source.json").write_text(json.dumps({"source_project": str(source.root),
+        "source_workbook": str(source.workbook) if source.workbook else None,
+        "original_detection_settings": params["source_detection_settings"], "post_analysis_settings": params}, indent=2), encoding="utf-8")
+    log("Post-analysis: restoring original before-filter NanoTel populations; TVR and mismatch settings are locked.")
+    operator = WorkflowOperator(context=context)
+    result = operator.run_post_analysis(source=source, check_cancelled=check_cancelled,
+                                       run_mapping=mapping)
+    if result is None:
+        return (1, "Post-analysis failed; original project was not modified. Inspect the run log.")
+    dashboard = (context.path_manager.get_r_analysis_dir_path() / "dashboard_summary.html"
+                 if summary_only else _write_full_report(context, log, check_cancelled))
+    if not dashboard.is_file():
+        return (1, "Post-analysis finished without a dashboard; inspect the run log.")
+    if report_cb: report_cb(str(dashboard))
+    log("Post-analysis complete: " + str(dashboard))
+    return (0, "Filtering, selected mapping, Excel and dashboard were regenerated in a new run.")
+
+
+def _write_full_report(context, log, check_cancelled):
+    """Shared full dashboard/export publication for normal and resumed runs."""
+    from dorado_workflow.reports.all_barcodes import generate_run_report
+    log("Generating All Barcodes dashboard and Excel workbook...")
+    report_path = Path(generate_run_report(context.path_manager.get_results_dir_path(),
+                                         context.path_manager.get_nanotel_output_dir_path()))
+    check_cancelled()
+    log(f"All Barcodes report: {report_path}")
+    log(f"Excel workbook: {report_path.with_name('nanotel_results.xlsx')}")
+    return report_path

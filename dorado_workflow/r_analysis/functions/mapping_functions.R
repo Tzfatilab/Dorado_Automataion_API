@@ -214,19 +214,28 @@ get_bam_read_ids <- function(bam_file_path) {
 
   validate_file_exists(bam_file_path, "BAM file")
 
-  # Build samtools command
-  command <- paste(
-    "samtools view", shQuote(bam_file_path),
-    "| cut -f1 | sort | uniq"
-  )
-
-  tryCatch({
-    read_ids <- system(command, intern = TRUE)
-    log_message(paste("Extracted", length(read_ids), "unique read IDs from BAM"))
-    return(read_ids)
-  }, error = function(e) {
-    stop("Failed to extract read IDs from BAM: ", e$message)
-  })
+  # Direct arguments work on Windows and Unix; shell pipelines in system()
+  # are not portable and can be interpreted as BAM region arguments.
+  sam_file <- tempfile("mapping-read-ids-", fileext = ".sam")
+  err_file <- tempfile("mapping-read-ids-", fileext = ".stderr")
+  on.exit(unlink(c(sam_file, err_file)), add = TRUE)
+  status <- system2("samtools", c("view", shQuote(bam_file_path)),
+                    stdout = sam_file, stderr = err_file)
+  if (status != 0L) {
+    stop("Failed to extract read IDs from BAM: ", paste(readLines(err_file, warn = FALSE), collapse = " "))
+  }
+  stream <- file(sam_file, open = "r")
+  on.exit(close(stream), add = TRUE, after = FALSE)
+  batches <- list()
+  repeat {
+    lines <- readLines(stream, n = 100000L, warn = FALSE)
+    if (!length(lines)) break
+    batches[[length(batches) + 1L]] <- unique(sub("\\t.*$", "", lines))
+  }
+  read_ids <- unique(unlist(batches, use.names = FALSE))
+  if (is.null(read_ids)) read_ids <- character()
+  log_message(paste("Extracted", length(read_ids), "unique read IDs from BAM"))
+  read_ids
 }
 
 # Filter BAM file based on read ID list
@@ -252,8 +261,7 @@ create_filtered_bam <- function(filtered_read_ids,
     # Filter BAM using samtools
     filter_cmd <- paste(
       "samtools view -N", shQuote(temp_ids_file),
-      "-b", shQuote(input_bam_path),
-      ">", shQuote(output_bam_path)
+      "-b -o", shQuote(output_bam_path), shQuote(input_bam_path)
     )
     run_system_command(filter_cmd, "BAM filtering")
 

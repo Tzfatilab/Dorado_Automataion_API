@@ -9,6 +9,7 @@ Processes FASTQ files to identify and analyze telomeric sequences.
 from pathlib import Path
 from typing import Dict, List, Optional
 import gzip
+import json
 import math
 import re
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
@@ -126,6 +127,14 @@ class NanoTelProcessor(ProcessorBase):
             return result
 
         try:
+            # Persist detection settings before processing starts. Both GUI and
+            # CLI runs can resume after NanoTel without reselecting TVR/mismatch.
+            snapshot = self.context.path_manager.get_reports_dir_path() / "nanotel_source_settings.json"
+            snapshot.parent.mkdir(parents=True, exist_ok=True)
+            snapshot.write_text(json.dumps({
+                "organism": self.context.config_manager.get_current_organism(),
+                "nanotel_analysis": self.context.config_manager.get_nanotel_params(),
+            }, indent=2), encoding="utf-8")
             # Discover barcode directories
             barcode_tasks = self._create_barcode_tasks(fastq_dir)
 

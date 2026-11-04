@@ -427,6 +427,8 @@ class AppWindow(
             pod5_path=inputs["pod5"],
             fastq_path=inputs["fastq"],
             bam_path=inputs["bam"],
+            project_path=inputs.get("project", ""),
+            do_post_analysis=flags.get("do_post_analysis", False),
             output_dir=output_dir,
 
             organism=self.organism.currentText().lower(),
@@ -710,6 +712,7 @@ class AppWindow(
             "fastq": self.input_path.text() if self.selected_input == "fastq" else "",
             "bam": self.input_path.text() if self.selected_input == "bam" else "",
             "nanotel": "",
+            "project": self.input_path.text() if self.selected_input == "project" else "",
         }
 
 

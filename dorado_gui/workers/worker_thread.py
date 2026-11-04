@@ -24,6 +24,8 @@ class WorkerThread(QObject):
             pod5_path: str = "",
             fastq_path: str = "",
             bam_path: str = "",
+            project_path: str = "",
+            do_post_analysis: bool = False,
             output_dir: str = "",
             organism: str = "Mouse",
             do_basecalling: bool = False,
@@ -53,6 +55,8 @@ class WorkerThread(QObject):
         self.pod5_path = pod5_path
         self.fastq_path = fastq_path
         self.bam_path = bam_path
+        self.project_path = project_path
+        self.do_post_analysis = do_post_analysis
         self.output_dir = output_dir
         self.organism = organism.lower()
 
@@ -93,6 +97,8 @@ class WorkerThread(QObject):
                 pod5_path=self.pod5_path,
                 fastq_path=self.fastq_path,
                 bam_path=self.bam_path,
+                project_path=self.project_path,
+                do_post_analysis=self.do_post_analysis,
                 output_dir=self.output_dir,
                 organism=self.organism,
                 do_basecalling=self.do_basecalling,

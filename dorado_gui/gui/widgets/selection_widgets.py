@@ -1,5 +1,5 @@
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFrame,
@@ -8,6 +8,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QSizePolicy,
+    QGridLayout,
+    QLayout,
 )
 
 try:
@@ -151,6 +153,8 @@ class SelectCard(QFrame):
                 "fastq": "fastq.png",
                 "basecalling": "basecalling.png",
                 "nanotel": "nanotel.png",
+                "project": "folder.png",
+                "post_analysis": "recalculate.svg",
             }.get(key, "")
         )
 
@@ -214,3 +218,44 @@ class SelectOption(QFrame):
             font-size: 16px;
             color: {"#2563EB" if selected else "#9CA3AF"};
         """)
+
+
+class SelectionGrid(QWidget):
+    """Keep selection cards in-place, wrapping rows before captions are squeezed."""
+    def __init__(self, maximum_columns, spacing=16, minimum_card_width=300):
+        super().__init__()
+        self.maximum_columns = maximum_columns
+        self.minimum_card_width = minimum_card_width
+        self.cards = []
+        self.columns = 0
+        self.grid = QGridLayout(self)
+        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setSpacing(spacing)
+        self.grid.setSizeConstraint(QLayout.SetNoConstraint)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+    def minimumSizeHint(self):
+        return QSize(0, max((card.minimumHeight() for card in self.cards), default=83))
+
+    def add_card(self, card):
+        card.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.cards.append(card)
+        self._reflow()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._reflow()
+
+    def _reflow(self):
+        card_width = max(self.minimum_card_width, max((card.minimumSizeHint().width() for card in self.cards), default=0))
+        columns = min(self.maximum_columns, max(1, (self.width()+self.grid.spacing()) // (card_width+self.grid.spacing())))
+        if self.maximum_columns == 4 and columns == 3: columns = 2
+        height = max((card.minimumHeight() for card in self.cards), default=83)
+        rows = (len(self.cards)+columns-1)//columns
+        self.setFixedHeight(rows*height+max(0, rows-1)*self.grid.spacing())
+        if columns == self.columns and self.grid.count() == len(self.cards): return
+        self.columns = columns
+        while self.grid.count(): self.grid.takeAt(0)
+        for column in range(self.maximum_columns): self.grid.setColumnStretch(column, 0)
+        for index, card in enumerate(self.cards): self.grid.addWidget(card, index // columns, index % columns)
+        for column in range(columns): self.grid.setColumnStretch(column, 1)

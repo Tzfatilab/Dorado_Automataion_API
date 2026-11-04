@@ -1,7 +1,38 @@
 """Reusable help labels, constrained checkboxes and toggle switches."""
-from PySide6.QtWidgets import QLabel, QCheckBox, QMessageBox
+from PySide6.QtWidgets import QLabel, QCheckBox, QMessageBox, QWidget, QVBoxLayout
 from PySide6.QtCore import Qt, QSize, QRectF
 from PySide6.QtGui import QColor, QPainter
+
+
+class LockedTVRControls(QWidget):
+    """Keep locked controls visible and explain clicks during recalculation."""
+
+    def __init__(self, controls_layout):
+        super().__init__()
+        self.locked = False
+        self.controls = QWidget(self)
+        self.controls.setLayout(controls_layout)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.controls)
+
+    def setLocked(self, locked):
+        self.locked = locked
+        self.controls.setEnabled(not locked)
+        self.controls.setAttribute(Qt.WA_TransparentForMouseEvents, locked)
+
+    def mousePressEvent(self, event):
+        if self.locked and event.button() == Qt.LeftButton:
+            QMessageBox.warning(
+                self.window(),
+                "TVR mode cannot be changed",
+                "Recalculate results uses the original TVR settings. "
+                "To change TVR mode, run NanoTel analysis again.",
+            )
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
 
 class HoverHelpLabel(QLabel):

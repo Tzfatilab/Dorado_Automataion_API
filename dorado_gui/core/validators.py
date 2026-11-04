@@ -172,6 +172,20 @@ def validate_mode_inputs(inputs, selected_workflows):
         errors.append("Please select an input directory.")
         return errors
 
+    if "post_analysis" in selected_workflows:
+        if selected_workflows != {"post_analysis"}:
+            return ["Recalculate results runs separately from Basecalling and NanoTel."]
+        if not inputs.get("project"):
+            return ["Recalculate results requires an Existing project folder."]
+        try:
+            from dorado_workflow.processors.project_sources import ProjectSources
+            ProjectSources.inspect(inputs["project"])
+        except (OSError, ValueError, KeyError) as error:
+            return [str(error)]
+        return []
+    if inputs.get("project"):
+        return ["Select Recalculate results to use an Existing project."]
+
     # Basecalling requires POD5
     if (
         "basecalling" in selected_workflows

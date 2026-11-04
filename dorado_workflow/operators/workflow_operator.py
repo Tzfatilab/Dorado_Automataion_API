@@ -262,6 +262,26 @@ class WorkflowOperator:
             remaining = len(output_files) - 10
             self.context.logger.info(f"  ... and {remaining} more file(s)")
 
+    def run_post_analysis(self, run_filtration=True, run_mapping=False,
+                          run_methylation=False, *, source=None,
+                          check_cancelled=None, step=None):
+        """Shared pipeline tail for normal runs and existing-project recovery.
+
+        Source restoration is only needed when entering from a previous project;
+        filtering, mapping, workbook and Summary report generation always use
+        the existing RAnalyzer processor and its normal failure handling.
+        """
+        check_cancelled = check_cancelled or (lambda: None)
+        if source is not None:
+            check_cancelled()
+            source.restore(self.context, check_cancelled)
+            if run_mapping:
+                source.prepare_mapping(self, check_cancelled)
+        check_cancelled()
+        return self._run_step('r_analyzer', 'Post-analysis', self.r_analyzer,
+                              run_filtration=run_filtration, run_mapping=run_mapping,
+                              run_methylation=run_methylation, step=step)
+
     # ------------------------------ Full workflows ------------------------------
 
     def run_pod5_workflow(self, pod5_input: str, organism: str = "mouse",
@@ -310,7 +330,7 @@ class WorkflowOperator:
                 return False
 
         # Post-analysis (filtration, plus mapping when requested and methylation when enabled)
-        result = self._run_step('r_analyzer', 'Post-analysis', self.r_analyzer,
+        result = self.run_post_analysis(
                                 run_filtration=True,
                                 run_mapping=do_mapping,
                                 run_methylation=methylation_enabled)
@@ -398,7 +418,7 @@ class WorkflowOperator:
 
         final_step = total_steps
         run_methylation = has_methylation and do_mapping
-        result = self._run_step('r_analyzer', 'Post-analysis', self.r_analyzer,
+        result = self.run_post_analysis(
                                 run_filtration=True,
                                 run_mapping=do_mapping,
                                 run_methylation=run_methylation,
@@ -427,8 +447,7 @@ class WorkflowOperator:
             if self.context.config_manager.get_nanotel_params().get('summary_only', False):
                 # The summary workbook depends on the filtration step, even
                 # when the CLI command requests NanoTel without mapping.
-                result = self._run_step(
-                    'r_analyzer', 'Post-analysis', self.r_analyzer,
+                result = self.run_post_analysis(
                     run_filtration=True, run_mapping=False, run_methylation=False,
                 )
                 if result is None:
@@ -472,7 +491,7 @@ class WorkflowOperator:
             True if succeeds, False otherwise
         """
         self.context.logger.section_header("POST-ANALYSIS ONLY")
-        result = self._run_step('r_analyzer', 'Post-analysis', self.r_analyzer,
+        result = self.run_post_analysis(
                                 run_filtration=run_filtration,
                                 run_mapping=run_mapping,
                                 run_methylation=run_methylation)

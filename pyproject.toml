@@ -101,6 +101,7 @@ dorado_gui = [
     "icons/checked.png",
     "icons/fastq.png",
     "icons/folder.png",
+    "icons/recalculate.svg",
     "icons/nanotel.png",
     "icons/pod5.png",
     "icons/sub_basecalling.png",

@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 
 from PySide6.QtGui import QIcon
 from gui.ui_styles import make_card, make_help_button
-from gui.widgets.selection_widgets import SelectCard
+from gui.widgets.selection_widgets import SelectCard, SelectionGrid
 from core.workflow_constants import BASE_DIR
 
 
@@ -58,24 +58,28 @@ class InputSection:
             "<p>Barcode folders are used directly. If the reads have not been "
             "split by barcode, Dorado demultiplexes them first using the "
             "configured kit.</p>"
+            "<h3>Existing project</h3>"
+            "<p>Choose the original project or results folder. Recalculate results reads the original "
+            "before-filter NanoTel tables from CSV or the source worksheets in Excel. Mapping also needs "
+            "saved aligned BAMs or FASTQ reads. The original project is not overwritten.</p>"
             "<hr><p>Results are saved in the <b>Output Path</b> selected below.</p>",
             subtitle
         )
 
-        row = QHBoxLayout()
-        row.setSpacing(20)
+        row = SelectionGrid(4, spacing=20, minimum_card_width=260)
 
         for key, label, desc in [
-            ("pod5", "POD5 (Raw Signals)", "Start from raw POD5 files.\nBasecalling will be performed."),
-            ("bam", "BAM (Basecalled)", "Use existing basecalled BAM files.\nSkip basecalling step."),
+            ("pod5", "POD5 (Raw Signals)", "Start from raw POD5 signals."),
+            ("bam", "BAM (Basecalled)", "Analyze basecalled BAM reads."),
             ("fastq", "FASTQ", "Use existing FASTQ files."),
+            ("project", "Existing project", "Recalculate saved results."),
         ]:
             card = SelectCard(key, label, desc, theme="blue")
             card.mousePressEvent = lambda e, k=key: self._select_input(k)
             self.cards[key] = card
-            row.addWidget(card)
+            row.add_card(card)
 
-        layout.addLayout(row)
+        layout.addWidget(row)
 
         path_row = QHBoxLayout()
         path_row.setSpacing(8)
@@ -93,6 +97,7 @@ class InputSection:
 
         layout.addLayout(path_row)
         self._select_input("pod5")
+        self.input_path.editingFinished.connect(self._load_post_analysis_source)
 
         return box
 
@@ -104,8 +109,21 @@ class InputSection:
             key (str): one of "pod5", "bam", "fastq".
         """
         self.selected_input = key
+        if key != "project":
+            self._post_loaded_path = None
         for k, card in self.cards.items():
             card.set_selected(k == key)
+        if hasattr(self, "workflow_cards"):
+            if key == "project":
+                self.selected_workflows = {"post_analysis"}
+            else:
+                self.selected_workflows.discard("post_analysis")
+            for name, card in self.workflow_cards.items():
+                card.set_selected(name in self.selected_workflows)
+            if hasattr(self, "nanotel_options_card"):
+                self._update_advanced_options_state()
+        self.input_path.setPlaceholderText("Select the original project folder..." if key == "project" else "Select input directory...")
+
 
     def _browse_input(self, edit=None):
         """
@@ -119,6 +137,7 @@ class InputSection:
         path = QFileDialog.getExistingDirectory(self, "Select input", edit.text())
         if path:
             edit.setText(path)
+            self._load_post_analysis_source()
 
     def get_selected_inputs(self):
         """
@@ -132,6 +151,7 @@ class InputSection:
             "fastq": self.input_path.text() if self.selected_input == "fastq" else "",
             "bam": self.input_path.text() if self.selected_input == "bam" else "",
             "nanotel": "",
+            "project": self.input_path.text() if self.selected_input == "project" else "",
         }
     
     def _create_folder_button(self, callback):
@@ -172,3 +192,33 @@ class InputSection:
 
         btn.clicked.connect(lambda: callback())
         return btn
+
+    def _load_post_analysis_source(self):
+        """Preview original detection settings without editing the project."""
+        if self.selected_input != "project" or not hasattr(self, "nanotel_mapping"):
+            return
+        path = self.input_path.text().strip()
+        if not path or path == getattr(self, "_post_loaded_path", None):
+            return
+        try:
+            from dorado_workflow.processors.project_sources import ProjectSources
+            source = ProjectSources.inspect(path)
+            self._post_loaded_path = path
+            self.summary_only.setChecked(bool(source.params.get("summary_only", False)))
+            self._post_source_organism = source.organism
+            self.nanotel_mapping.setChecked(bool(source.settings.get("run_mapping_analysis", False)))
+            self.organism.setEnabled(not bool(source.organism))
+            self.allow_mismatch.setChecked(source.params.get("max_mismatch") == 1)
+            if source.organism:
+                index = self.organism.findText(source.organism, Qt.MatchFixedString)
+                if index >= 0: self.organism.setCurrentIndex(index)
+            params = source.params
+            for name, key in (("read_length", "min_read_length"), ("max_telomere_start", "max_telomere_start"),
+                              ("min_density_threshold", "density_threshold"), ("short_telomere_threshold", "short_telomere_threshold_bp")):
+                value = params.get(key)
+                if value is not None:
+                    getattr(self, name).setText(format(value*100, '.6g') if name == 'min_density_threshold' else str(value))
+        except (OSError, ValueError, KeyError):
+            # Input validation reports errors when Run is pressed; do not
+            # display backend error messages inside the options panel.
+            pass

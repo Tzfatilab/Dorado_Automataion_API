@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
 )
 
 from gui.ui_styles import make_card, make_help_button
-from gui.widgets.selection_widgets import SelectCard
+from gui.widgets.selection_widgets import SelectCard, SelectionGrid
 
 
 class WorkflowSection:
@@ -34,8 +34,7 @@ class WorkflowSection:
         """)
         layout.addWidget(subtitle)
 
-        row = QHBoxLayout()
-        row.setSpacing(16)
+        row = SelectionGrid(3, spacing=16)
 
         # Container of SelectCard widgets for each workflow step
         self.workflow_cards = {}
@@ -51,6 +50,11 @@ class WorkflowSection:
                 "NanoTel Analysis",
                 "Analyze telomere content and generate statistics."
             ),
+            (
+                "post_analysis",
+                "Recalculate results",
+                "Refilter saved NanoTel data and rebuild reports."
+            ),
         ]
 
         for key, title, desc in workflow_items:
@@ -59,9 +63,9 @@ class WorkflowSection:
             card.mousePressEvent = lambda e, k=key: self._toggle_workflow(k)
 
             self.workflow_cards[key] = card
-            row.addWidget(card)
+            row.add_card(card)
 
-        layout.addLayout(row)
+        layout.addWidget(row)
 
         box.setLayout(layout)
         make_help_button(
@@ -76,6 +80,10 @@ class WorkflowSection:
             "<b>Process:</b> measures telomeres, filters reads, and calculates statistics.<br>"
             "<b>Output:</b> per-barcode results and a combined summary.</p>"
             "<p>For raw POD5 through telomere results, select both steps.</p>"
+            "<h3>Recalculate results</h3>"
+            "<p>Select an <b>Existing project</b> to rerun the shared filtering and optional mapping stages, "
+            "then rebuild Excel and a Summary dashboard without rerunning NanoTel. TVR and mismatch settings "
+            "are loaded from the original run. Results are saved in a new output folder.</p>"
             "<hr><h2 style='color:#1d4ed8'>Advanced options</h2>"
             "<h3>Basecalling options</h3>"
             "<p><b>Methylation Type:</b> choose whether to detect modified bases.<br>"
@@ -121,12 +129,23 @@ class WorkflowSection:
         Returns:
             None
         """
-        if key in self.selected_workflows:
-            self.selected_workflows.remove(key)
-            self.workflow_cards[key].set_selected(False)
+        if key == "post_analysis":
+            if key in self.selected_workflows:
+                self.selected_workflows.clear()
+            else:
+                self.selected_workflows = {key}
+                self._select_input("project")
+                self._load_post_analysis_source()
         else:
-            self.selected_workflows.add(key)
-            self.workflow_cards[key].set_selected(True)
+            self.selected_workflows.discard("post_analysis")
+            if self.selected_input == "project":
+                self._select_input("pod5" if key == "basecalling" else "fastq")
+            if key in self.selected_workflows:
+                self.selected_workflows.remove(key)
+            else:
+                self.selected_workflows.add(key)
+        for name, card in self.workflow_cards.items():
+            card.set_selected(name in self.selected_workflows)
 
         if hasattr(self, "_update_advanced_options_state"):
             self._update_advanced_options_state()
@@ -142,6 +161,7 @@ class WorkflowSection:
             dict: flags for workflow steps, e.g. {'do_basecalling': bool, 'do_nanotel': bool}
         """
         return {
+            "do_post_analysis": "post_analysis" in self.selected_workflows,
             "do_basecalling":
                 "basecalling" in self.selected_workflows
                 and bool(inputs.get("pod5", "")),
