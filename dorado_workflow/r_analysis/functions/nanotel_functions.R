@@ -220,7 +220,16 @@ calculate_nanotel_summary_stats <- function(all_barcodes_data,
     "telo_density_mismatch", "Telomere_start_mismatch"
   )
   combined_data <- bind_rows(lapply(all_barcodes_data, function(data) {
-    select(data, all_of(summary_columns))
+    summary_data <- select(data, all_of(summary_columns))
+    if (nrow(summary_data) == 0L) {
+      # Header-only CSVs can infer every column as character. Give empty
+      # measurements their expected types without coercing any observed values.
+      summary_data$barcode <- character(0)
+      for (column in setdiff(summary_columns, "barcode")) {
+        summary_data[[column]] <- numeric(0)
+      }
+    }
+    summary_data
   }))
 
   # Generate summary statistics
