@@ -49,8 +49,8 @@
       let actions=header.querySelector('.overview-panel-actions');
       if(!actions){actions=document.createElement('div');actions.className='overview-panel-actions';header.appendChild(actions);}
       const switches=section.querySelector('.barcode-scale-controls');if(switches)actions.appendChild(switches);
-      header.classList.toggle('has-view-controls',!!switches);
-      const exports=section.querySelector('.graph-export-controls');if(exports)header.appendChild(exports);
+      const exports=section.querySelector('.graph-export-controls');if(exports)actions.appendChild(exports);
+      header.classList.toggle('has-view-controls',!!switches||!!exports);
       section.querySelectorAll('.histogram-heading').forEach(old=>{if(!old.children.length)old.remove();});
       for(const graph of section.querySelectorAll('.js-plotly-plot')){
         const heatmap=graph.data.find(trace=>trace.type==='heatmap');

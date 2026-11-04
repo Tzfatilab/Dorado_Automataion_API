@@ -266,13 +266,15 @@ class WorkflowOperator:
 
     def run_pod5_workflow(self, pod5_input: str, organism: str = "mouse",
                           methylation_enabled: bool = False,
-                          align_during_basecalling: bool = False) -> bool:
+                          align_during_basecalling: bool = False,
+                          run_mapping: bool = False) -> bool:
         """
         Execute complete workflow starting from POD5 files.
         Workflow: POD5 ג†’ basecall ג†’ demux ג†’ nanotel ג†’ align ג†’ R analysis (all)
         Args:
             pod5_input: Path to POD5 input (file or directory)
             organism: Organism type ('mouse' or 'human')
+            run_mapping: Map NanoTel reads even without basecalling alignment.
         Returns:
             True if entire workflow succeeds, False otherwise
         """
@@ -290,7 +292,8 @@ class WorkflowOperator:
                           self.nanotel, str(fastq_dir)) is None:
             return False
 
-        if align_during_basecalling or methylation_enabled:
+        do_mapping = run_mapping or align_during_basecalling or methylation_enabled
+        if do_mapping:
             alignment_kwargs = {}
             if align_during_basecalling:
                 self.context.logger.info(
@@ -306,12 +309,10 @@ class WorkflowOperator:
                               **alignment_kwargs) is None:
                 return False
 
-        run_mapping = align_during_basecalling or methylation_enabled
-
         # Post-analysis (filtration, plus mapping when requested and methylation when enabled)
         result = self._run_step('r_analyzer', 'Post-analysis', self.r_analyzer,
                                 run_filtration=True,
-                                run_mapping=run_mapping,
+                                run_mapping=do_mapping,
                                 run_methylation=methylation_enabled)
         if result is None:
             return False

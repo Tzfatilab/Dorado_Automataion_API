@@ -70,7 +70,7 @@ def positions_section(row, requested=None):
     Each tick is one match start, pooled across reads. The analyzed sequence
     orientation is not known to establish distal/proximal biological direction.
     """
-    heading = '<section><h2><span class="number">6</span>TVR Position Along Telomeres</h2>'
+    heading = '<section><div class="report-section-heading"><h2><span class="number">6</span>TVR Position Along Telomeres</h2></div>'
     if requested is False:
         return heading + '<p class="note">Not requested: no TVR patterns were selected for this run.</p></section>'
     if row is None:

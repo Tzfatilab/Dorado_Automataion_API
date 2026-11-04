@@ -58,7 +58,7 @@
         const original=originals.get(page.id),label=display(page.id);
         page.dataset.label=label;page.dataset.barcodeId=original.id;page.dataset.displayName=names[page.id]||'';
         for(const input of inputs.get(page.id)||[])if(input!==document.activeElement)input.value=names[page.id]||'';
-        document.querySelectorAll('a[href="#/barcode/'+page.id+'"]').forEach(a=>{if(a.textContent!==label)a.textContent=label;});
+        document.querySelectorAll('a[href="#/barcode/'+page.id+'"]').forEach(a=>{const target=a.querySelector('.barcode-stat-name')||a;if(target.textContent!==label)target.textContent=label;});
         const h=page.querySelector('section h2');
         if(h){const text=[...h.childNodes].find(n=>n.nodeType===3);if(text)text.textContent='Key Statistics ('+label+')';}
         const crumb=page.querySelector('.breadcrumbs>span:not(.barcode-step-navigation)');

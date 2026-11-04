@@ -106,6 +106,11 @@
     plot.on('plotly_click', event => {
       const point = event.points[0];
       if (!point) return;
+      if(point.data.meta==='barcode-links'){
+        const id=point.customdata??point.data.customdata?.[point.pointNumber];
+        if(pages.some(page=>page.id===id))location.hash='#/barcode/'+id;
+        return;
+      }
       // Box-summary clicks have no individual observation index. Only a dot
       // with a joined source read may navigate to the read dashboard.
       if (['box','violin','scatter'].includes(point.data.type) && Number.isInteger(point.pointNumber)) {
@@ -119,6 +124,16 @@
       const page = pages.find(p => p.dataset.chartLabel === label);
       if (page) location.hash = '#/barcode/' + page.id;
     });
+  });
+  overview.addEventListener('click',event=>{
+    const tick=event.target.closest?.('.xtick');
+    const plot=tick?.closest('.js-plotly-plot');
+    const trace=plot?.data?.find(trace=>trace.meta==='barcode-links');
+    if(!trace)return;
+    const label=tick.textContent.trim();
+    const index=trace.x.findIndex(value=>String(value)===label);
+    const id=trace.customdata?.[index];
+    if(pages.some(page=>page.id===id))location.hash='#/barcode/'+id;
   });
   window.addEventListener('hashchange', route);
   route();

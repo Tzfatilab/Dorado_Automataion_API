@@ -71,7 +71,7 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
              ("telomeric_reads", "Post-filtered telomeric reads", "Post-filtered reads"),
              ("telomeric_percentage", "% telomeric reads", "Of total input reads"),
              ("median_telomere_length", "Median length", "Pooled post-filtered reads"),
-             ("detected_chromosomes", "Chromosomes", "Chromosome annotations unavailable")]
+             ("detected_chromosomes", "Number of Chromosomes end found", "Chromosome annotations unavailable")]
     # Reference labels are not chromosome annotations; never substitute their count.
     for index, (key, label, note) in enumerate(specs):
         # A missing metric key is handled like an unavailable fact. This also
@@ -91,7 +91,8 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
         caption = f'<p>{escape(note)}</p>' if note else ''
         cards.append(f'<article class="stat stat-{index}" title="{escape(fact.get("reason") or note, quote=True)}"><svg viewBox="0 0 48 48" aria-hidden="true">{ICONS[index]}</svg><div><h3>{label}</h3><strong class="{"missing" if value is None else ""}">{display}</strong>{caption}</div></article>')
     from ..shared.short_telomeres import pooled_short_summary_html
-    cards.append(pooled_short_summary_html(run))
+    median_index = next(i for i, card in enumerate(cards) if "<h3>Median length</h3>" in card)
+    cards.insert(median_index + 1, pooled_short_summary_html(run))
     # Only source-reported post-filtered counts enter the bars. An unavailable
     # barcode count is omitted rather than fabricated as a zero-height bar.
     counts = [(b.label.replace("barcode", "BC"), b.metrics["amount_of_telomeres"].value)
@@ -99,6 +100,8 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
     # Keep x labels, heights and text in the same source order. cliponaxis=False
     # allows count labels to remain visible above the plotting rectangle.
     bars = go.Figure(go.Bar(x=[x for x, _ in counts], y=[y for _, y in counts],
+        customdata=[b.id for b in run.barcodes if b.metrics["amount_of_telomeres"].status == "available"],
+        meta="barcode-links",
         marker_color="#5996E8", width=0.55, text=[str(y) for _, y in counts], textposition="outside", cliponaxis=False,
         hovertemplate="%{x}<br>%{y} telomeric reads<extra></extra>"))
     # Leave headroom for count labels, including an all-zero dataset.
@@ -192,14 +195,13 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
                      for b in run.barcodes}
     navigation, barcode_pages = barcode_views(run, ICONS, barcode_plots, results_root=results_root,summary_only=summary_only,comparisons=comparisons)
     css = (Path(__file__).parents[1] / "assets" / "dashboard.css").read_text(encoding="utf-8")
-    barcode_summary = barcode_summary_section(run, comparisons) if summary_only else ''
-    workbook_link = '<a class="summary-workbook-link" href="nanotel_summary.xlsx">Open Excel workbook</a>' if summary_only else ''
+    barcode_summary = barcode_summary_section(run, comparisons, key_statistics=True)
     body_attributes = ' data-summary-only="true"' if summary_only else ''
     if summary_only:
-        css += 'body[data-summary-only] .summary-workbook-link{color:white}body[data-summary-only] .reads-table tr:focus{outline:2px solid #d59a15}'
+        css += 'body[data-summary-only] .reads-table tr:focus{outline:2px solid #d59a15}'
     # Combine the complete page in memory. Cards appear before the two panels;
     # CSS controls wrapping while figure scripts attach hover/zoom behavior.
-    html = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{TITLE}</title><style>{css}</style><script>{get_plotlyjs()}</script></head><body{body_attributes}><header>{workbook_link}<h1>{TITLE}</h1><span>Project overview &nbsp; | &nbsp; NanoTel summary</span></header><main><div id="run-overview">{navigation}<section><h2><span class="number">1</span>Key Statistics (All Barcodes)</h2><div class="stats">{"".join(cards)}</div></section><div class="charts">{"".join(panels)}</div>{availability_html(run)}{barcode_summary}{selection_data}</div>{barcode_pages}<section id="unknown-barcode" hidden><h2>Barcode or read not found</h2><a href="#/">Back to All Barcodes</a></section></main>{ROUTER}</body></html>'
+    html = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{TITLE}</title><style>{css}</style><script>{get_plotlyjs()}</script></head><body{body_attributes}><header><h1>{TITLE}</h1><span>Project overview &nbsp; | &nbsp; NanoTel summary</span></header><main><div id="run-overview">{navigation}{barcode_summary}<div class="charts">{"".join(panels)}</div>{availability_html(run)}{selection_data}</div>{barcode_pages}<section id="unknown-barcode" hidden><h2>Barcode or read not found</h2><a href="#/">Back to All Barcodes</a></section></main>{ROUTER}</body></html>'
     export_script = (Path(__file__).parents[1] / 'assets' / 'graph_export.js').read_text(encoding='utf-8')
     table_export_script = (Path(__file__).parents[1] / 'assets' / 'table_export.js').read_text(encoding='utf-8')
     spacing_script = (Path(__file__).parents[1] / 'assets' / 'chromosome_spacing.js').read_text(encoding='utf-8')

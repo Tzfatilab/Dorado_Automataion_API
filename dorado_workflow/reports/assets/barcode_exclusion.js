@@ -82,7 +82,7 @@
         else if(title==='Post-filtered telomeric reads'){value=format(t.filtered);note='Post-filtered reads · included barcodes';}
         else if(title==='% telomeric reads'){value=format(t.percent,'%',2);note='Included post-filtered reads / included input reads';}
         else if(title==='Median length'){value=format(t.median==null?null:t.median/1000,' kb',2);note='Pooled individual post-filtered reads · included barcodes';}
-        else if(title==='Chromosomes'){value=t.chromosomes?format(t.chromosomes):'Unavailable';note='Distinct unambiguous mapped post-filtered chromosomes · included barcodes';}
+        else if((title==='Number of Chromosomes end found'||title==='Chromosomes')){value=t.chromosomes?format(t.chromosomes):'Unavailable';note='Distinct unambiguous mapped post-filtered chromosomes · included barcodes';}
         else if(title==='Short telomeres'){
           value=t.short==null?(t.lengths?.length===0?'No reads':'Unavailable'):format(100*t.short/t.lengths.length,'%',1);
           note=t.short==null?'Complete lengths and a common cutoff are required for included barcodes.':'< '+t.cutoff/1000+' kb · '+t.short.toLocaleString('en-US')+'/'+t.lengths.length.toLocaleString('en-US')+' post-filtered telomeric reads · included barcodes';
@@ -112,7 +112,7 @@
         }else if(t.type!=='pie'){
           const n=Math.max(t.x?.length||0,t.y?.length||0,t.customdata?.length||0);
           const indices=Array.from({length:n},(_,i)=>i).filter(i=>{
-            const identity=Array.isArray(t.customdata?.[i])?resolve(t.customdata[i][0]):null;
+            const identity=t.meta==='barcode-links'?resolve(t.customdata?.[i]):Array.isArray(t.customdata?.[i])?resolve(t.customdata[i][0]):null;
             return keep(identity||resolve(t.x?.[i])||resolve(t.y?.[i]));
           });
           for(const field of ['x','y','text','hovertext','customdata','ids'])if(Array.isArray(t[field])&&t[field].length===n)t[field]=indices.map(i=>t[field][i]);

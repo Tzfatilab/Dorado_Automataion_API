@@ -1,8 +1,8 @@
 /* Offline exports for existing and lazily rendered report figures. */
 (() => {
-  if (window.reportGraphExportInstalled === 'v20') return;
+  if (window.reportGraphExportInstalled === 'v21') return;
   window.reportGraphExportCleanup?.();
-  window.reportGraphExportInstalled = 'v20';
+  window.reportGraphExportInstalled = 'v21';
   const attached = new WeakSet();
   const NS = 'http://www.w3.org/2000/svg';
   const save = (blob, filename) => {
@@ -240,14 +240,20 @@
       button.style.cssText='padding:7px 10px;border:1px solid #ccd8e8;border-radius:6px;background:white;color:#2456a6;cursor:pointer';
       button.onclick=async()=>{
         buttons.forEach(b=>b.disabled=true);status.textContent='Preparing image…';
-        try{await exportGraph(graph,format);status.textContent='File saved.';}
+        try{await exportGraph(graph,format);status.textContent='\u2713';status.setAttribute('aria-label','Saved');setTimeout(()=>{status.textContent='';status.removeAttribute('aria-label');},2500);}
         catch(error){status.textContent=error.message||'Image export failed.';}
         finally{buttons.forEach(b=>b.disabled=false);}
       };
       buttons.push(button);toolbar.appendChild(button);
     }
     toolbar.appendChild(status);
-    if(composition) composition.before(toolbar);else graph.before(toolbar);
+    const section=graph.closest('section');
+    const heading=section?.querySelector('h2');
+    if(heading&&section.querySelectorAll('.js-plotly-plot,svg.km-interval').length===1){
+      let row=heading.closest('.histogram-heading,.report-section-heading');
+      if(!row){row=document.createElement('div');row.className='report-section-heading';heading.before(row);row.appendChild(heading);}
+      row.appendChild(toolbar);
+    }else if(composition)composition.before(toolbar);else graph.before(toolbar);
   };
   const scan = root => {
     if(root.nodeType!==1 && root!==document) return;

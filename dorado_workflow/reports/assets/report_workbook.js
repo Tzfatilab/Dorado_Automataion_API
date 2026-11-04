@@ -93,7 +93,7 @@
       const headers=['Barcode ID','Barcode display name','Total barcode reads',
         'Post-filtered telomeric reads','Median length (kb)','Reads with TVRs','TVR motifs','Chromosomes','Short telomeres (%)'];
       const rows=summaries.map((row,i)=>[row[0],row[1],row[3],row[4],row[8],
-        cardValue(selected[i],'Reads with TVRs'),cardValue(selected[i],'TVR motifs'),cardValue(selected[i],'Chromosomes'),row[16]]);
+        cardValue(selected[i],'Reads with TVRs'),cardValue(selected[i],'TVR motifs'),cardValue(selected[i],'Number of Chromosomes end found'),row[16]]);
       const formats=['','','integer','integer','decimal','integer','integer','integer','percent'];
       const cutoffs=[...new Set(summaries.map(r=>r[13]))];
       const cutoffDefinition=cutoffs.length===1&&typeof cutoffs[0]==='number'?

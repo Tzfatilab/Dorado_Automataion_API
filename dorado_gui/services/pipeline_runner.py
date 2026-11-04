@@ -367,6 +367,7 @@ def _dispatch_workflow(
             check_cancelled,
             has_methylation,
             align_during_basecalling,
+            nanotel_mapping=nanotel_mapping,
         )
 
     if do_basecalling:
@@ -466,6 +467,7 @@ def _run_full_pipeline(
         check_cancelled,
         methylation_enabled: bool = False,
         align_during_basecalling: bool = False,
+        nanotel_mapping: bool = False,
 ):
     """Execute the full POD5 to NanoTel workflow."""
     check_cancelled()
@@ -475,6 +477,7 @@ def _run_full_pipeline(
         organism=organism,
         methylation_enabled=methylation_enabled,
         align_during_basecalling=align_during_basecalling,
+        run_mapping=nanotel_mapping,
     )
 
 

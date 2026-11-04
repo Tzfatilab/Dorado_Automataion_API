@@ -1,9 +1,9 @@
 /* Offline CSV and genuine XLSX exports; no network or spreadsheet formulas. */
 (() => {
-  if(window.reportTableExportInstalled==='v5')return;
+  if(window.reportTableExportInstalled==='v6')return;
   window.reportTableExportObserver?.disconnect();
   document.querySelectorAll('.table-export-controls').forEach(node=>node.remove());
-  window.reportTableExportInstalled='v5';
+  window.reportTableExportInstalled='v6';
   const encoder=new TextEncoder(),attached=new WeakSet();
   const text=value=>value==null?'':String(value);
   const xml=value=>text(value).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
@@ -136,10 +136,21 @@
     for(const [format,label] of [['csv','Save CSV'],['xlsx','Save Excel']]){
       const button=document.createElement('button');button.type='button';button.textContent=label;
       button.style.cssText='padding:7px 10px;border:1px solid #ccd8e8;border-radius:6px;background:white;color:#2456a6;cursor:pointer';
-      button.onclick=()=>{try{exportTable(table,format);status.textContent='Table saved.';}catch(error){status.textContent=error.message||'Table export failed.';}};
+      button.onclick=()=>{try{exportTable(table,format);status.textContent='\u2713';status.setAttribute('aria-label','Saved');setTimeout(()=>{status.textContent='';status.removeAttribute('aria-label');},2500);}catch(error){status.textContent=error.message||'Table export failed.';}};
       controls.appendChild(button);
     }
-    controls.appendChild(status);anchor.before(controls);
+    controls.appendChild(status);
+    const statsHeading=table.closest('.barcode-statistics-section')?.querySelector('.barcode-statistics-heading');
+    if(statsHeading)statsHeading.appendChild(controls);
+    else{
+      const section=table.closest('section');
+      const heading=section?.querySelector('h2');
+      if(heading&&section.querySelectorAll('table').length===1){
+        let row=heading.closest('.report-section-heading');
+        if(!row){row=document.createElement('div');row.className='report-section-heading';heading.before(row);row.appendChild(heading);}
+        row.appendChild(controls);
+      }else anchor.before(controls);
+    }
   };
   const scan=root=>{if(root.nodeType!==1&&root!==document)return;if(root.matches?.('table'))attach(root);root.querySelectorAll('table').forEach(attach);};
   const start=()=>{

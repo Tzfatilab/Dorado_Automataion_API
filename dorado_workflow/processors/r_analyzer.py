@@ -177,9 +177,9 @@ class RAnalyzer(ProcessorBase):
             pipeline_config["run_nanotel_analysis"] = (
                     r_analysis_params.get("run_nanotel_analysis", True) and run_filtration
             )
-            pipeline_config["run_mapping_analysis"] = (
-                    r_analysis_params.get("run_mapping_analysis", True) and run_mapping
-            )
+            # The workflow's explicit mapping request is authoritative; a saved
+            # default must not silently disable a selected GUI/CLI stage.
+            pipeline_config["run_mapping_analysis"] = bool(run_mapping)
             pipeline_config["run_methylation_analysis"] = (
                     r_analysis_params.get("run_methylation_analysis", True) and run_methylation
             )
