@@ -225,7 +225,9 @@ class RAnalyzer(ProcessorBase):
             ])
 
             self.context.logger.info(f"Command: {command}", gui_visible=False)
-            self.context.command_executor.execute(command, cwd=r_analysis_dir)
+            self.context.command_executor.execute(
+                command, cwd=r_analysis_dir, stream_output=True
+            )
 
             # Capture counts before Summary mode removes its CSV intermediates.
             stats = self._collect_statistics()
