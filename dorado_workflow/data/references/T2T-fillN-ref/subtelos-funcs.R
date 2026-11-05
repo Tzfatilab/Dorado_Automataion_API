@@ -187,6 +187,237 @@ fill_n <- function(genome_path, indices_path, output_path, subtelo_length, compr
 
 
 
+#################### Exploring the Ashkenazi Human Reference Genome ############
+
+# Link to the ref:
+# https://www.ncbi.nlm.nih.gov/datasets/genome/GCA_011064465.2/
+
+genome_path <- "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/GCA_011064465.2_Ash1_v2.2_genomic.fna"
+
+genome <- readDNAStringSet(filepath = genome_path)
+
+
+ash1_50k  <- create_chr_edges(genome = genome[1:24, ], edge_length = 50000, 
+                           save_path =  "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/GCA_011064465.2_Ash1_v2.2_genomic-50k-edges.fa.gz", compress = TRUE)
+
+run_nanotel(nanotel_path = "Telomere-Analyzer/NanoTel.R", 
+            input_path = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/GCA_011064465.2_Ash1_v2.2_genomic-50k-edges.fa.gz" , 
+            save_path = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA", pattern = "CCCTAA", min_density = 0.5, right_edge = FALSE)
+
+run_nanotel(nanotel_path = "Telomere-Analyzer/NanoTel.R", 
+            input_path = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/GCA_011064465.2_Ash1_v2.2_genomic-50k-edges.fa.gz", 
+            save_path =  "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG", pattern = "TTAGGG", min_density = 0.5, right_edge = TRUE)
+
+
+# Heads indices, the start of the 5' subtelomeric region
+subtelo_head_index <- integer()
+
+
+
+
+
+heads_df <- read_csv(file = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/summary.csv")
+heads_df <- heads_df %>% 
+  arrange(sequence_ID)
+
+chr_1 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/1.fasta.gz")
+chr_2 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/13.fasta.gz")
+chr_3 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/25.fasta.gz")
+chr_4 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/37.fasta.gz")
+chr_5 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/2.fasta.gz")
+chr_6 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/14.fasta.gz")
+chr_7 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/26.fasta.gz")
+chr_8 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/38.fasta.gz")
+chr_9 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/3.fasta.gz")
+chr_10 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/15.fasta.gz")
+chr_11 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/27.fasta.gz")
+chr_12 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/39.fasta.gz")
+chr_13 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/4.fasta.gz")
+chr_14 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/16.fasta.gz")
+chr_15 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/28.fasta.gz")
+chr_16 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/40.fasta.gz")
+chr_17 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/5.fasta.gz")
+chr_18 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/17.fasta.gz")
+chr_19 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/29.fasta.gz")
+chr_20 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/41.fasta.gz")
+chr_21 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/6.fasta.gz")
+chr_22 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/18.fasta.gz")
+chr_X <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/30.fasta.gz")
+chr_Y <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/CCCTAA/reads/42.fasta.gz")
+
+subseq(x = chr_1 , start = 2684, width = 200)
+
+# This is the index for the start of the subtelomre
+subtelo_head_index <-c(subtelo_head_index, chr_1 = 2684) #  2684
+
+subtelo_head_index <-c(subtelo_head_index, chr_2 = 3626) # 3626
+
+
+subtelo_head_index <-c(subtelo_head_index, chr_3 = 2662) #2658
+
+subtelo_head_index <-c(subtelo_head_index, chr_4 = 3357) #3356
+
+subtelo_head_index <-c(subtelo_head_index, chr_5 = 2364) #2322
+
+subtelo_head_index <-c(subtelo_head_index, chr_6 = 2897) #2897
+
+
+subtelo_head_index <-c(subtelo_head_index, chr_7 = 3391) #3387
+
+subtelo_head_index <-c(subtelo_head_index, chr_8 = 2508) #2508
+
+subtelo_head_index <-c(subtelo_head_index, chr_9 = 3701) #3701
+
+subtelo_head_index <-c(subtelo_head_index, chr_10 = 2658) #2657
+
+subtelo_head_index <-c(subtelo_head_index, chr_11 = 1998) # 1998
+
+subtelo_head_index <-c(subtelo_head_index, chr_12 = 3104) #3104
+
+subtelo_head_index <-c(subtelo_head_index, chr_13 = 2546) #2546
+
+subtelo_head_index <-c(subtelo_head_index, chr_14 = 2117) #2117
+
+subtelo_head_index <-c(subtelo_head_index, chr_15 = 3335) # 3335
+
+subtelo_head_index <-c(subtelo_head_index, chr_16 = 2319) #2319
+
+subtelo_head_index <-c(subtelo_head_index, chr_17 = 2238) #2238
+
+subtelo_head_index <-c(subtelo_head_index, chr_18 = 2038) #2038
+
+subtelo_head_index <-c(subtelo_head_index, chr_19 = 2290) #2290
+
+subtelo_head_index <-c(subtelo_head_index, chr_20 = 2688) #2684
+
+subtelo_head_index <-c(subtelo_head_index, chr_21 = 8532) #8532
+
+subtelo_head_index <-c(subtelo_head_index, chr_22 = 4392) # 4391
+
+subtelo_head_index <-c(subtelo_head_index, chr_X = 5575) # 5575
+
+subtelo_head_index <-c(subtelo_head_index, chr_Y = 5660) # 5656
+
+
+# Now tails
+tails_df <- read_csv(file = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/summary.csv")
+
+# remove bad read
+tails_df <- tails_df[2:25, ]
+
+# arrange by chr 1: till Y
+tails_df <- tails_df %>%
+  arrange(sequence_ID)
+
+
+chr_1 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/7.fasta.gz")
+chr_2 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/19.fasta.gz")
+chr_3 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/31.fasta.gz")
+chr_4 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/43.fasta.gz")
+chr_5 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/8.fasta.gz")
+chr_6 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/20.fasta.gz")
+chr_7 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/32.fasta.gz")
+chr_8 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/44.fasta.gz")
+chr_9 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/9.fasta.gz")
+chr_10 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/21.fasta.gz")
+chr_11 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/33.fasta.gz")
+chr_12 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/45.fasta.gz")
+chr_13 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/10.fasta.gz")
+chr_14 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/22.fasta.gz")
+chr_15 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/34.fasta.gz")
+chr_16 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/46.fasta.gz")
+chr_17 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/11.fasta.gz")
+chr_18 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/23.fasta.gz")
+chr_19 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/35.fasta.gz")
+chr_20 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/47.fasta.gz")
+chr_21 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/12.fasta.gz")
+chr_22 <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/24.fasta.gz")
+chr_X <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/36.fasta.gz")
+chr_Y <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads/48.fasta.gz")
+
+# Tails indices - the end of th subtelomere 
+subtelo_tail_index <- integer()
+# index ~ telomere_start_mismatch - 1
+subtelo_tail_index <-c(subtelo_tail_index, chr_1 = 46790) #  46797
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_2 = 47358) #  47378
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_3 = 45406) #  45406
+
+# there is the TGGAGGG pattern at tje start of the telomere
+subtelo_tail_index <-c(subtelo_tail_index, chr_4 = 47685) #  47692
+
+# there is the TGGAGGG pattern at tje start of the telomere
+subtelo_tail_index <-c(subtelo_tail_index, chr_5 = 48439) #  48446 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_6 =  47231) #  47232 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_7 = 47778) #  47778 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_8 = 47378 ) #  47378 
+
+# there is the TGGAGGG pattern at tje start of the telomere
+subtelo_tail_index <-c(subtelo_tail_index, chr_9 = 47021) #  47028 
+
+subseq(x =  chr_10, start = 46811 - 46 , width = 32)
+subseq(x =  chr_5, start = 48446 - 46 , width = 32)
+
+# 5,10, 16,  Has a 64 bases long pattern at before the start of the telomere : "AAATGCAGCATTCCTAATGCACACATGACACCCTAAATATAACAGGCATATTACTCATGGAGGG"
+# another sub p attern of this "ACATGACACCCTAAATATAACAGGCATATTACTCATGGAGGG"
+all_tails <- readDNAStringSet(filepath = dir("~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads", all.files = TRUE, full.names = TRUE) )
+
+v2 <- vmatchPattern(pattern = "ACATGACACCCTAAATATAACAGGCATATTACTCATGGAGGG", subject = all_tails)
+
+
+
+# search big similarity 
+# search for a new pattern at the start of the telomere 
+for(i in 20:20000) {
+  ans = ( toString(subseq(x =  chr_4, start = 47692 - i , width = i + 1)) ==  toString(subseq(x =  chr_10, start = 46811 - i , width = i + 1)))
+  if(ans == FALSE) {
+    print(i - 1)
+    break
+  }
+}
+
+
+
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_10 = 46804) # 46811 
+
+
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_11 = 47414) #  47414 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_12 = 47626) #  47682 
+
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_13 = ) #  46492 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_14 = ) #  48397 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_15 = ) #  47079 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_16 = ) #  47332 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_17 = ) #  46984 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_18 = ) #  46524 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_19 = ) #  47062 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_20 = ) #  46951 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_21 = ) #  45440 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_22 = ) #  47066 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_X = ) #   44002 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_Y = ) #   43611
+
+################### End of Ashkenazi Human Reference Genome    #################
+
 
 
 
