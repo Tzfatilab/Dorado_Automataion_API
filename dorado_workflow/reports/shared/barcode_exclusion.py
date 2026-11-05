@@ -16,7 +16,9 @@ def exclusion_payload(run, comparisons=None):
         Per-barcode source records used to rebuild overview statistics after exclusion.
     """
     comparisons = comparison_data(run) if comparisons is None else comparisons
-    composition = {row['barcode']: row for row in comparisons['composition']}
+    mismatch_mode = comparisons.get('repeat_method') == 'mismatch'
+    composition = {row['barcode']: row for row in comparisons[
+        'mismatch_composition' if mismatch_mode else 'composition']}
     rows = []
     for barcode in run.barcodes:
         def value(key):
@@ -48,7 +50,9 @@ def exclusion_payload(run, comparisons=None):
                          length_population=getattr(barcode.metrics.get('filtered_length_records'), 'population', None),
                          lengths=[row['length_bp'] for row in lengths] if lengths is not None else None,
                          chromosomes=sorted(chromosomes), cutoff=short_cutoff_bp(run.settings, barcode),
-                         composition={key: motif[key] for key in ('base_counts', 'total', 'with_tvr')} if motif else None))
+                         composition=dict(base_counts=motif['base_counts'], total=motif['total'],
+                             with_tvr=None if mismatch_mode else motif['with_tvr'],
+                             with_events=motif['with_mismatch' if mismatch_mode else 'with_tvr']) if motif else None))
     return rows
 
 

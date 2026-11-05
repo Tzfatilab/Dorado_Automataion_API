@@ -425,7 +425,6 @@
     const summary=node('div','',detail); summary.className='read-summary-header';
     const identity=node('div','',summary); identity.className='read-summary-identity';
     node('h2',read.label.startsWith('Read ')?read.label:'Read: '+read.label,identity);
-    node('p',source.page.dataset.label+' | Read length: '+formatCount(read.length)+(read.length == null ? '' : ' bp'),identity);
     const statsTitle=node('h2','',summary);statsTitle.className='read-statistics-title';
     node('span','1',statsTitle).className='number';
     statsTitle.appendChild(document.createTextNode('Key Statistics ('+read.label+')'));
@@ -473,7 +472,7 @@
       if (withMismatch) {
         summaryCard('Repeat density\n(1 mismatch)',density(read.mismatch_density),'Canonical repeat density in the mismatch telomere interval','read-summary-blue');
       } else {
-        summaryCard('TVR analysis','Not requested','No TVR patterns selected for this run','read-summary-purple');
+        summaryCard('TVR analysis','Off','No TVR patterns selected','read-summary-purple');
       }
       summaryCard('Read length',bp(read.length),'Total analyzed read length','read-summary-blue');
     } else {

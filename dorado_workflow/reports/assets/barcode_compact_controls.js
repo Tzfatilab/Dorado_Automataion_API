@@ -61,7 +61,7 @@
       if(banner){
         const label=banner.querySelector('label span');if(label&&label.textContent!=='Include in overview')label.textContent='Include in overview';
         const checkbox=banner.querySelector('input');if(checkbox)checkbox.title='Include this barcode in overview graphs and pooled statistics';
-        if(banner.parentElement!==toolbar)toolbar.appendChild(banner);
+        if(!toolbar.contains(banner))toolbar.appendChild(banner);
       }
     }
     const controls=document.querySelector('.barcode-exclusion-controls');

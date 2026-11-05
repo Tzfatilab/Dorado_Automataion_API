@@ -175,6 +175,19 @@ class ProjectSources:
                         dest = evidence.create_sheet("_source_" + name)
                         for row in sheet.values:
                             dest.append(row)
+            # Full runs retain analysis fields in their automatic workbook,
+            # rather than loose JSON. Carry those fields into the source sheet
+            # already used by both report modes, without recreating JSON files.
+            from dorado_workflow.reports.storage.analysis_metadata import analysis_rows, HEADERS
+            analysis = analysis_rows(self.results, include_native=False)
+            if analysis and '_source_NanoTel analysis facts' not in evidence.sheetnames:
+                retained = evidence.create_sheet('_source_NanoTel analysis facts')
+                retained.append(HEADERS)
+                for row, _, _ in analysis:
+                    retained.append([row[key] for key in HEADERS])
+                    for cell in retained[retained.max_row]:
+                        if isinstance(cell.value, str):
+                            cell.data_type = 's'
             metadata = evidence.create_sheet("_source_Run metadata")
             metadata.append(["Field", "Part", "Value"])
             updated_settings = dict(self.settings)

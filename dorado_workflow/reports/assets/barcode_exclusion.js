@@ -83,6 +83,20 @@
     // Inputs: None; uses the current report/browser state.
     // Outputs: Source records for the currently included barcodes.
     const included=()=>pages.filter(p=>!excluded.has(p.id)).map(p=>facts.get(p.id));
+    // Function: updateStatisticsTables.
+    // Inputs: None; uses the current exclusions and stable barcode route IDs.
+    // Outputs: Hides excluded summary rows and restores them when re-included.
+    const updateStatisticsTables=()=>{
+      for(const table of overview.querySelectorAll('.barcode-statistics-table')){
+        for(const row of table.querySelectorAll('tbody tr')){
+          const route=row.querySelector('a[href^="#/barcode/"]')?.getAttribute('href');
+          const id=route?.split('/')[2];
+          const out=facts.has(id)&&excluded.has(id);
+          row.dataset.overviewExcluded=String(out);
+          row.hidden=out;
+        }
+      }
+    };
     // Function: totals.
     // Inputs: rows (source records)
     // Outputs: Comparable pooled counts, lengths and short-telomere statistics.
@@ -205,13 +219,14 @@
     const compositionGraph=(figure,section)=>{
       const pie=figure.data.find(t=>t.type==='pie');if(!pie)return;
       const rows=included(),available=rows.filter(r=>r.composition),bases={};
-      let total=0,withTVR=0;
-      for(const row of available){const c=row.composition;total+=c.total;withTVR+=c.with_tvr;for(const [motif,n] of Object.entries(c.base_counts))bases[motif]=(bases[motif]||0)+n;}
+      let total=0,withEvents=0;
+      for(const row of available){const c=row.composition;total+=c.total;withEvents+=c.with_events??c.with_tvr;for(const [motif,n] of Object.entries(c.base_counts))bases[motif]=(bases[motif]||0)+n;}
+      const eventLabel=section.dataset.repeatMethod==='mismatch'?'Reads with mismatch hits':'Reads with TVRs';
       pie.values=pie.labels.map(m=>bases[m]||0);
       const sum=pie.values.reduce((a,b)=>a+b,0);
       figure.layout.annotations=(figure.layout.annotations||[]).filter(a=>!(a.x===.5&&a.y===.5));
       figure.layout.annotations.push({x:.5,y:.5,xref:'paper',yref:'paper',showarrow:false,
-        text:sum&&total?'Reads with TVRs<br><b>'+(100*withTVR/total).toFixed(1)+'%</b><br>'+withTVR.toLocaleString('en-US')+' / '+total.toLocaleString('en-US')+' reads':'No composition data<br>for included barcodes'});
+        text:sum&&total?eventLabel+'<br><b>'+(100*withEvents/total).toFixed(1)+'%</b><br>'+withEvents.toLocaleString('en-US')+' / '+total.toLocaleString('en-US')+' reads':'No composition data<br>for included barcodes'});
       section.querySelectorAll('.read-composition-legend li').forEach((li,i)=>{li.hidden=!sum||!pie.values[i];const strong=li.querySelector('strong');if(strong)strong.textContent=sum?(100*pie.values[i]/sum).toFixed(1)+'%':'Unavailable';});
       let note=section.querySelector('.exclusion-composition-coverage');
       if(!note){note=document.createElement('p');note.className='note exclusion-composition-coverage';section.appendChild(note);}
@@ -267,6 +282,7 @@
         }
         status.textContent=(pages.length-excluded.size)+' of '+pages.length+' barcodes included.'+(excluded.size?' Excluded: '+[...excluded].map(label).join(', ')+'.':' All barcodes are included.');
         summary.textContent='Include or exclude barcodes ('+(pages.length-excluded.size)+' / '+pages.length+' included)';
+        updateStatisticsTables();
         // Do not redraw the original overview until the selection actually changes.
         if(!excluded.size&&!snapshots.size)return;
         updateStats();

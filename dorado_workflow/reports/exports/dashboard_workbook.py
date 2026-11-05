@@ -101,15 +101,20 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
                 cell.data_type = 's'
         return row_number
 
-    summary = sheet('Barcode summary', ['Barcode ID', 'Total barcode reads',
-        'Post-filtered telomeric reads', 'Median length (kb)', 'Reads with TVRs',
-        'TVR motifs', 'Chromosomes', 'Short telomeres (%)'])
     from ..overview.comparisons import comparison_data
     from ..reads.density import tvr_enabled, mismatch_enabled
+    from ..shared.barcode_statistics import mismatch_statistics
     comparisons = comparison_data(run) if comparisons is None else comparisons
     compositions = {row['barcode']: row for row in comparisons['composition']}
     tvr_requested = tvr_enabled(run.settings)
     mismatch_requested = mismatch_enabled(run.settings)
+    mismatch_mode = tvr_requested is False and mismatch_requested is True
+    mismatch_rows = {row['barcode']: row for row in comparisons.get('mismatch_composition', [])}
+    summary = sheet('Barcode summary', ['Barcode ID', 'Total barcode reads',
+        'Post-filtered telomeric reads', 'Median length (kb)',
+        'Reads with mismatches' if mismatch_mode else 'Reads with TVRs',
+        'Mismatch patterns' if mismatch_mode else 'TVR motifs',
+        'Chromosomes', 'Short telomeres (%)'])
     cutoffs = set()
     facts = sheet('Source facts', ['Barcode ID', 'Read ID', 'Field', 'Availability', 'Unit',
         'Population', 'Reason', 'Value part', 'Value', 'Evidence'])
@@ -159,6 +164,12 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
         stats = barcode_key_statistics(barcode, run.settings, comparisons['cells'], motif)
         with_tvr = stats['reads_with_tvr'] if stats['reads_with_tvr'] is not None else MISSING
         motif_count = stats['tvr_motifs'] if stats['tvr_motifs'] is not None else MISSING
+        if mismatch_mode:
+            mismatch_stats = mismatch_statistics(barcode, mismatch_rows.get(barcode.label))
+            with_tvr = mismatch_stats['reads_with_mismatch']
+            motif_count = mismatch_stats['mismatch_patterns']
+            with_tvr = with_tvr if with_tvr is not None else MISSING
+            motif_count = motif_count if motif_count is not None else MISSING
         median = stats['median_length_bp']
         append(summary, [barcode.label, value(barcode.metrics.get('total_reads')), source_count,
             EMPTY if no_reads else median/1000 if numeric(median) else MISSING,
@@ -261,6 +272,9 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
                 row[1].alignment = Alignment(wrap_text=True, vertical='top')
     wb.move_sheet(summary, offset=-wb.index(summary))
     wb.active = 0
+    if results_root is not None:
+        from ..storage.analysis_metadata import retain_analysis_sheet
+        retain_analysis_sheet(wb, results_root)
     return wb
 
 

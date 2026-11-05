@@ -1,4 +1,4 @@
-"""Embed existing NanoTel histogram HTML without regenerating its statistics."""
+"""Display saved NanoTel figures or plot explicitly exported read populations."""
 from html import escape
 from pathlib import Path
 from html.parser import HTMLParser
@@ -113,7 +113,7 @@ class _FigureParser(HTMLParser):
 
 
 def histogram_sections(run, results_root=None):
-    """Section 2 uses the original histogram and its unit controls.
+    """Prefer saved histograms; otherwise plot exported post-filtered lengths.
 
     Args:
         run: Imported run model containing barcodes, reads and source evidence.
@@ -129,7 +129,7 @@ def histogram_sections(run, results_root=None):
 
 
 def telomere_plot_sections(run, results_root=None):
-    """Section 3 preserves the original per-read plot, including its axes.
+    """Prefer saved per-read plots; otherwise plot exported before-filter reads.
 
     Args:
         run: Imported run model containing barcodes, reads and source evidence.
@@ -144,7 +144,7 @@ def telomere_plot_sections(run, results_root=None):
 
 
 def _saved_plot_sections(run, results_root, kind, number, title, note):
-    """Reuse the figure saved in NanoTel's histogram HTML, with no recalculation.
+    """Reuse saved figures, falling back to current exported measurements.
 
     Extract JSON, not executable HTML. The parent report supplies offline Plotly.
     Duplicate files and unsupported legacy HTML remain explicitly unavailable.
@@ -152,7 +152,7 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
     Args:
         run: Imported run model containing barcodes, reads and source evidence.
         results_root: Results directory used to resolve saved scientific exports.
-        kind: Artifact or entity kind to select.
+        kind: Saved figure kind: histogram or plot.
         number: Section number or numeric-source parser used by the enclosing adapter.
         title: Displayed title.
         note: Explanation displayed beside the chart.
@@ -170,6 +170,18 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
         for path in root.rglob(f'*_telomere_{kind}.plotly.json'):
             if path.is_file() and path.resolve().is_relative_to(root):
                 specifications.setdefault(path.name.lower(), []).append(path)
+    regenerated = {}
+    if kind == 'histogram':
+        from .original_histograms import original_histograms
+        missing = []
+        for barcode in run.barcodes:
+            saved = barcode.metrics.get('saved_barcode_figures')
+            stored = saved.value.get(kind) if saved and saved.status == 'available' else None
+            name = f'{barcode.label}_telomere_{kind}'
+            if (not specifications.get((name + '.plotly.json').lower())
+                    and not found.get((name + '.html').lower()) and stored is None):
+                missing.append(barcode)
+        regenerated = original_histograms(missing, run.settings)
     sections = {}
     for barcode in run.barcodes:
         paths = specifications.get(f'{barcode.label}_telomere_{kind}.plotly.json'.lower(), []) or found.get(f'{barcode.label}_telomere_{kind}.html'.lower(), [])
@@ -180,12 +192,18 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
         reason = ''
         saved=barcode.metrics.get('saved_barcode_figures')
         stored=saved.value.get(kind) if saved and saved.status=='available' else None
-        if not paths and stored is None and getattr(run.stages.get('summary_only'),'value',False):
-            sections[barcode.id]=_summary_length_plot(barcode,run.settings,kind,heading)
+        if barcode.id in regenerated:
+            stored = regenerated[barcode.id]
+        if not paths and stored is None:
+            # Recalculation deliberately omits old aggregate plots. Full and
+            # Summary reports share the same fallback over the current exports.
+            if kind == 'histogram':
+                sections[barcode.id] = heading + '<p class="note">Original NanoTel histogram unavailable: complete exported lengths and the recorded matching mode are required.</p></section>'
+            else:
+                sections[barcode.id]=_exported_read_length_plot(barcode,run.settings,heading)
             continue
         if len(paths) != 1 and stored is None:
-            reason = (f'Multiple matching {kind} files; select an unambiguous results directory.' if paths else
-                      f'Saved NanoTel {kind} not available. Summary-only runs do not generate this plot.')
+            reason = f'Multiple matching {kind} files; select an unambiguous results directory.'
         else:
             path = paths[0] if paths else Path(barcode.label+'_telomere_'+kind+'.plotly.json')
             raw = path.read_bytes() if paths else json.dumps(stored).encode('utf-8')
@@ -239,17 +257,22 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
         if reason:
             sections[barcode.id] = heading + f'<p class="note">{reason}</p></section>'
             continue
-        source = escape(path.relative_to(root).as_posix()) if paths else 'Retained original NanoTel figure in Summary workbook'
+        rebuilt = barcode.id in regenerated
+        source = (escape(path.relative_to(root).as_posix()) if paths else
+                  'Original NanoTel histogram builder; current exported post-filtered lengths' if rebuilt else
+                  'Retained original NanoTel figure in Summary workbook')
+        figure_note = ('Post-filtered reads, matching the cards and read table. Original NanoTel bins, smoothing and count/percentage controls.'
+                       if rebuilt else note)
         digest = hashlib.sha256(raw).hexdigest()
         sections[barcode.id] = (heading + '<div class="saved-histogram"></div>'
             f'<script type="application/json" class="histogram-figure">{payload}</script>'
-            f'<p class="note">{escape(note)}</p>'
+            f'<p class="note">{escape(figure_note)}</p>'
             f'<details class="note"><summary>Plot source</summary>{source}<br>SHA-256: {digest}</details></section>')
     return sections
 
 
-def _summary_length_plot(barcode, settings, kind, heading):
-    """Numeric fallback when original NanoTel plot specifications were not saved.
+def _exported_read_length_plot(barcode, settings, heading):
+    """Show exported per-read lengths when the saved line plot is absent.
 
     Explicitly uses imported populations; never reconstructs filter decisions or
     running medians from a different population.
@@ -257,7 +280,6 @@ def _summary_length_plot(barcode, settings, kind, heading):
     Args:
         barcode: Imported Barcode record containing reads, metrics and evidence.
         settings: Recorded analysis settings and their availability.
-        kind: Artifact or entity kind to select.
         heading: Prepared section heading HTML.
 
     Returns:
@@ -267,25 +289,19 @@ def _summary_length_plot(barcode, settings, kind, heading):
     from ..reads.browser import read_rows
     from ..reads.density import mismatch_enabled
     from ..shared.short_telomeres import short_cutoff_bp, add_cutoff_line
-    rows=read_rows(barcode,include_unfiltered=kind=='plot')
+    rows=read_rows(barcode,include_unfiltered=True)
+    if rows is None:
+        return heading + '<p class="note">Unavailable: complete exported before-filter read measurements are required for this chart.</p></section>'
     fig=go.Figure()
-    if kind=='histogram':
-        values=[r['telomere']/1000 for r in rows or [] if r['telomere'] is not None]
-        fig.add_trace(go.Histogram(x=values,name='Telomere length',marker_color='#6795de'))
-        fig.update_layout(xaxis_title='Telomere length (kb)',yaxis_title='Read count',updatemenus=[dict(buttons=[
-            dict(label='Read count',method='update',args=[{'histnorm':['']},{'yaxis.title.text':'Read count'}]),
-            dict(label='Percentage',method='update',args=[{'histnorm':['percent']},{'yaxis.title.text':'Percentage'}])])])
-        note='Imported post-filtered reads, matching the cards and read table. Original NanoTel final-filter plot data was not saved in this older Summary run.'
-    else:
-        rows=sorted(rows or [],key=lambda r:-(r['length'] or 0))
-        method='mismatch_length' if mismatch_enabled(settings) is True else 'exact_length'
-        for key,name,color in [('length','Read length','#e8735a'),(method,'Telomere length','#228b22')]:
-            fig.add_trace(go.Scatter(x=list(range(1,len(rows)+1)),y=[r[key]/1000 if r[key] is not None else None for r in rows],
-                mode='lines+markers',name=name,line=dict(color=color),marker=dict(size=4),meta='read-links',
-                customdata=[[barcode.id,r['id']] for r in rows],text=[r['label'] for r in rows],
-                hovertemplate='%{text}<br>'+name+': %{y:.3f} kb<extra></extra>'))
-        fig.update_layout(xaxis_title='Read (sorted by read length)',yaxis_title='Length (kb)',showlegend=True,legend=dict(orientation='h',y=-.2))
-        note='Imported before-filter summary reads, sorted by read length. Original NanoTel pre-edge plot/running-median data was not saved; no running median is inferred.'
+    rows=sorted(rows or [],key=lambda r:-(r['length'] or 0))
+    method='mismatch_length' if mismatch_enabled(settings) is True else 'exact_length'
+    for key,name,color in [('length','Read length','#e8735a'),(method,'Telomere length','#228b22')]:
+        fig.add_trace(go.Scatter(x=list(range(1,len(rows)+1)),y=[r[key]/1000 if r[key] is not None else None for r in rows],
+            mode='lines+markers',name=name,line=dict(color=color),marker=dict(size=4),meta='read-links',
+            customdata=[[barcode.id,r['id']] for r in rows],text=[r['label'] for r in rows],
+            hovertemplate='%{text}<br>'+name+': %{y:.3f} kb<extra></extra>'))
+    fig.update_layout(xaxis_title='Read (sorted by read length)',yaxis_title='Length (kb)',showlegend=True,legend=dict(orientation='h',y=-.2))
+    note='Before-filter summary reads, sorted by read length. Original NanoTel pre-edge plot data was not retained; no running median is inferred.'
     fig.update_layout(template='plotly_white',height=460,margin=dict(l=75,r=25,t=25,b=100),font=dict(family='Segoe UI, Arial',color='#12203c'))
-    layout=fig.layout.to_plotly_json();add_cutoff_line(layout,short_cutoff_bp(settings,barcode),axis='x' if kind=='histogram' else 'y');fig.update_layout(layout)
+    layout=fig.layout.to_plotly_json();add_cutoff_line(layout,short_cutoff_bp(settings,barcode),axis='y');fig.update_layout(layout)
     return heading+'<div class="saved-histogram"></div><script type="application/json" class="histogram-figure">'+fig.to_json().replace('<','\\u003c')+'</script><p class="note">'+escape(note)+'</p></section>'

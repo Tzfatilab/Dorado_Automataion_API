@@ -84,6 +84,27 @@ def saved_read_sequence(folder, serial, header, length):
     return None
 
 
+def motif_display_label(hit):
+    """Describe observed bases separately from the motif NanoTel searched for.
+
+    Args:
+        hit: Exported motif hit with searched motif, role and matched sequence.
+
+    Returns:
+        Exact motif label, shared Mismatch category, or explicit partial/missing label.
+        The source role and scientific call remain unchanged.
+    """
+    motif, role = hit['motif'], hit['role']
+    observed = hit.get('matched_sequence')
+    if not observed:
+        return motif + ' (searched motif; sequence unavailable)'
+    if len(observed) != len(motif):
+        return observed + ' (partial match to ' + motif + ')'
+    if observed != motif:
+        return 'Mismatch'
+    return motif + (' (canonical)' if role == 'canonical' else '')
+
+
 def read_track_data(read, folder=None):
     """Package exported samples without recalculating densities or telomere calls.
 
@@ -126,11 +147,16 @@ def read_track_data(read, folder=None):
             groups = {}
             for hit in fact.value['matches']:
                 if hit['method'] == method:
-                    groups.setdefault((hit['motif'], hit['role']), []).append([hit['start'], hit['end']])
+                    motif, role = hit['motif'], hit['role']
+                    # The source role describes the searched motif, not whether
+                    # the observed bases match it exactly. Keep that provenance
+                    # while combining imperfect hits into one display category.
+                    label = motif_display_label(hit)
+                    groups.setdefault((motif, role, label), []).append([hit['start'], hit['end']])
             result['motifs_by_method'][method] = [dict(
-                label=motif + (' (canonical)' if role == 'canonical' else ''),
-                role=role, color=motif_color(motif + (' (canonical)' if role == 'canonical' else '')),
-                positions=positions) for (motif, role), positions in sorted(groups.items())]
+                label=label, searched_motif=motif,
+                role=role, color=motif_color(label),
+                positions=positions) for (motif, role, label), positions in sorted(groups.items())]
         result['motifs'] = result['motifs_by_method'].get('tvr_inclusive')
     # Reference mappings are shown as annotations, never projected onto read
     # coordinates without an exported query interval and transformation.

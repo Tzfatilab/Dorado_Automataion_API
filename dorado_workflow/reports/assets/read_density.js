@@ -1,4 +1,40 @@
 /* Read density presentation. Source calls and exported samples are not recomputed. */
+// Function: window.reportObservedMotifs.
+// Inputs: data (saved read tracks, including analyzed sequence when exported).
+// Outputs: The same track object with legacy search labels split into observed categories.
+window.reportObservedMotifs = data => {
+  if (!data || data.observedMotifLabels) return data;
+  const sequence = data.sequence;
+  const convert = groups => {
+    if (!Array.isArray(groups)) return groups;
+    const result = new Map();
+    for (const group of groups) {
+      // Current exports already distinguish searched and observed motifs.
+      if (group.searched_motif) { result.set(JSON.stringify([group.label,group.role,group.searched_motif]),group); continue; }
+      const motif = group.label.replace(' (canonical)', '');
+      if (!/^[ACGTRYSWKMBDHVN]+$/.test(motif)) { result.set(group.label,group); continue; }
+      for (const position of group.positions || []) {
+        const [start,end] = position;
+        const observed = typeof sequence === 'string' && start >= 0 && end <= sequence.length
+          ? sequence.slice(start,end) : null;
+        const label = !observed ? motif+' (searched motif; sequence unavailable)' :
+          observed.length !== motif.length ? observed+' (partial match to '+motif+')' :
+          observed !== motif ? 'Mismatch' : motif+(group.role === 'canonical'?' (canonical)':'');
+        const key = JSON.stringify([label,group.role,motif]);
+        if (!result.has(key)) result.set(key,{...group,label,searched_motif:motif,
+          color:label==='Mismatch'?'#E66100':label.endsWith(' (canonical)')?'#3979CC':group.color,positions:[]});
+        result.get(key).positions.push(position);
+      }
+    }
+    return [...result.values()];
+  };
+  if (data.motifs_by_method) {
+    for (const method of Object.keys(data.motifs_by_method)) data.motifs_by_method[method] = convert(data.motifs_by_method[method]);
+    data.motifs = data.motifs_by_method.tvr_inclusive ?? data.motifs;
+  } else data.motifs = convert(data.motifs);
+  data.observedMotifLabels = true;
+  return data;
+};
 // Function: window.readMappingSummary.
 // Inputs: read (embedded read record); data (source/presentation data)
 // Outputs: Validated query spans and human-readable mapping-summary text.
@@ -49,6 +85,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
   if (!data && saved) {
     try { data = JSON.parse(saved.textContent); } catch (_) { data = null; }
   }
+  data = window.reportObservedMotifs(data);
   const panel = add('section', '', parent);
   panel.className = 'read-density-panel';
   add('h3', 'Telomeric repeat density', panel);
@@ -72,7 +109,8 @@ window.renderReadTracks = (parent, read, options = {}) => {
     ? data.motifs_by_method[motifMethod] ?? null : data.motifs;
   const motifs = (selectedMotifs || []).filter(m => Array.isArray(m.positions) && m.positions.length > 0).sort((a, b) =>
     Number(a.role !== 'canonical') - Number(b.role !== 'canonical') || a.label.localeCompare(b.label));
-  const canonicalName = motifs.filter(m => m.role === 'canonical').map(m => m.label.replace(' (canonical)', '')).join(', ');
+  const canonicalName = [...new Set(motifs.filter(m => m.role === 'canonical')
+    .map(m => m.searched_motif || m.label.replace(' (canonical)', '')))].join(', ');
 
   // Area layers retain the original exact, mismatch and TVR-inclusive series.
   // TVR-inclusive density is not a TVR-only density: overlaps forbid subtraction.
@@ -180,8 +218,10 @@ window.renderReadTracks = (parent, read, options = {}) => {
     if(cursor<inclusive[1])gaps.push([cursor,inclusive[1]]);
     if(gaps.length)traces.push(intervalTrace({label:'Unassigned bases',color:'#b5bdc7'},gaps,2,true));
   }
+  const shownMotifLabels = new Set();
   motifs.forEach(m => {
-    traces.push(intervalTrace(m, m.positions, 2, true));
+    traces.push(intervalTrace(m, m.positions, 2, !shownMotifLabels.has(m.label)));
+    shownMotifLabels.add(m.label);
   });
   const mapping = window.readMappingSummary(read, data);
   // Keep all source alignments, sharing a lane only for the same reference

@@ -33,6 +33,9 @@ def motif_color(label):
     """
     if label.endswith(' (canonical)'):
         return '#3979CC'
+    # Mismatch sequences are combined into one presentation category.
+    if label == 'Mismatch':
+        return '#E66100'
     motif = label.upper()
     reverse = motif.translate(str.maketrans('ACGT', 'TGCA'))[::-1]
     for key in (motif, reverse):

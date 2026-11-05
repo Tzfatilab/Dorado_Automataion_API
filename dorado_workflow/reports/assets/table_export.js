@@ -125,7 +125,7 @@
   // Outputs: Table headers and rows recovered from the current DOM/export adapter.
   const domData=table=>{
     const grid=[];
-    [...table.rows].forEach((row,index)=>{
+    [...table.rows].filter(row=>row.dataset.overviewExcluded!=='true').forEach((row,index)=>{
       grid[index]||=[];let column=0;
       for(const cell of row.cells){
         while(grid[index][column]!==undefined)column++;

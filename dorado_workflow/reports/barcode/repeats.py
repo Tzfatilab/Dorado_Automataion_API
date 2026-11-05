@@ -35,7 +35,7 @@ def motif_base_counts(start, end, hits):
     return counts
 
 
-def composition_section(row, number=5, title="TVR patterns", requested=None):
+def composition_section(row, number=5, title="TVR patterns", requested=None, method='tvr_inclusive'):
     """Show base composition in the ring and read prevalence in its center.
 
     These use different denominators: covered telomere bases versus reads.
@@ -45,11 +45,14 @@ def composition_section(row, number=5, title="TVR patterns", requested=None):
         number: Number displayed in the report section heading. Default: 5.
         title: Displayed title. Default: 'TVR patterns'.
         requested: Whether the corresponding analysis was explicitly requested. Default: None.
+        method: Exported search method; mismatch or tvr_inclusive.
 
     Returns:
         HTML markup for composition section.
     """
+    mismatch_mode = method == 'mismatch'
     attribute = ' data-tvr-requested="false"' if requested is False else ''
+    attribute += f' data-repeat-method="{method}"'
     heading = f'<section{attribute}><h2><span class="number">{number}</span>{escape(title)}</h2>'
     if requested is False:
         return heading + '<p class="note">Not requested: no TVR patterns were selected for this run.</p></section>'
@@ -57,7 +60,8 @@ def composition_section(row, number=5, title="TVR patterns", requested=None):
         return heading + '<p class="note">Unavailable: complete motif exports are required for all post-filtered reads.</p></section>'
     total = sum(row['base_counts'].values())
     if not total:
-        return heading + '<p class="note">No positive-length TVR-inclusive intervals are available.</p></section>'
+        interval_name = 'mismatch-inclusive' if mismatch_mode else 'TVR-inclusive'
+        return heading + f'<p class="note">No positive-length {interval_name} intervals are available.</p></section>'
     import plotly.graph_objects as go
     counts = row['base_counts']
     labels = sorted((label for label, count in counts.items() if count or label == 'Unassigned bases'),
@@ -69,11 +73,13 @@ def composition_section(row, number=5, title="TVR patterns", requested=None):
     figure = go.Figure(go.Pie(labels=[escape(label) for label in labels], values=values,
         hole=.7, sort=False, marker=dict(colors=colors), textinfo='none', showlegend=False,
         hovertemplate='%{label}<br>%{percent} of telomere bases<br>%{value:,} bp<extra></extra>'))
-    prevalence = 100 * row['with_tvr'] / row['total']
+    event_count = row['with_mismatch' if mismatch_mode else 'with_tvr']
+    event_label = 'Reads with mismatch hits' if mismatch_mode else 'Reads with TVRs'
+    prevalence = 100 * event_count / row['total']
     figure.update_layout(template='plotly_white', height=350, margin=dict(l=10,r=10,t=10,b=10),
         font=dict(family='Segoe UI, Arial', color='#12203c'),
         annotations=[dict(x=.5,y=.5,xref='paper',yref='paper',showarrow=False,
-            text=f'Reads with TVRs<br><b>{prevalence:.1f}%</b><br>{row["with_tvr"]:,} / {row["total"]:,} reads',font=dict(size=15))])
+            text=f'{event_label}<br><b>{prevalence:.1f}%</b><br>{event_count:,} / {row["total"]:,} reads',font=dict(size=15))])
     payload = figure.to_json().replace('<', '\\u003c')
     def percent(value):
         """Formatted percentage text, retaining a visible marker for very small positive values.
@@ -86,13 +92,17 @@ def composition_section(row, number=5, title="TVR patterns", requested=None):
         """
         return '&lt;0.1%' if 0 < 100*value/total < .1 else f'{100*value/total:.1f}%'
     legend = ''.join(f'<li><span class="motif-swatch" style="background:{color}"></span><span>{escape(label)}</span><strong>{percent(value)}</strong></li>' for label,color,value in zip(labels,colors,values))
-    return (heading + '<p class="note">Base composition within TVR-inclusive telomeres of post-filtered reads</p>'
+    interval_name = 'mismatch-inclusive' if mismatch_mode else 'TVR-inclusive'
+    method_note = (' The Mismatch category combines exported imperfect matches. '
+                   'Partial matches are shown separately and excluded from mismatch-hit counts.' if mismatch_mode else '')
+    return (heading + f'<p class="note">Base composition within {interval_name} telomeres of post-filtered reads</p>'
         '<div class="read-composition-layout"><div><div class="saved-histogram composition-plot" style="height:350px"></div>'
         f'<script type="application/json" class="histogram-figure">{payload}</script></div>'
         f'<ul class="read-composition-legend">{legend}</ul></div>'
         '<p class="note">Slices and legend: percentage of pooled telomere bases, counted once. '
         'Unmatched bases are unassigned; bases matching different motifs form an overlap slice. '
-        'Center: percentage of reads containing TVRs.</p></section>')
+        + ('Center: percentage of reads with exported mismatch hits.' if mismatch_mode else
+           'Center: percentage of reads containing TVRs.') + method_note + '</p></section>')
 
 
 def positions_section(row, requested=None):
@@ -103,20 +113,21 @@ def positions_section(row, requested=None):
 
     Args:
         row: Source row or output row values.
-        requested: Whether the corresponding analysis was explicitly requested. Default: None.
+        requested: True only when specific TVR motifs were selected.
 
     Returns:
-        HTML markup for positions section.
+        TVR-position HTML, or an empty string when TVR selection is absent/unknown.
     """
-    heading = '<section><div class="report-section-heading"><h2><span class="number">6</span>TVR Position Along Telomeres</h2></div>'
-    if requested is False:
-        return heading + '<p class="note">Not requested: no TVR patterns were selected for this run.</p></section>'
+    if requested is not True:
+        return ''
+    title = 'TVR Position Along Telomeres'
+    heading = f'<section><div class="report-section-heading"><h2><span class="number">6</span>{title}</h2></div>'
     if row is None:
         return heading + ('<p class="note">Unavailable: this run does not contain complete per-read motif-position exports. '
-                          'Summary lengths and density plots cannot reconstruct TVR sequences or positions.</p></section>')
+                          'Summary lengths and density plots cannot reconstruct motif sequences or positions.</p></section>')
     positions = row.get('positions', [])
     if not positions:
-        return heading + '<p class="note">No exported motif matches inside these TVR-inclusive telomere intervals.</p></section>'
+        return heading + '<p class="note">No exported motif matches inside the called telomere intervals.</p></section>'
     import plotly.graph_objects as go
     labels = sorted({p['motif'] for p in positions}, key=lambda label:(not label.endswith(' (canonical)'),label))
     figure = go.Figure()
@@ -152,4 +163,5 @@ def positions_section(row, requested=None):
     return (heading + '<div class="saved-histogram composition-plot"></div>'
         f'<script type="application/json" class="histogram-figure">{payload}</script>'
         f'<p class="note">{display_note}Positions are pooled across post-filtered reads and normalized to each TVR-inclusive telomere interval. '
-        'Overlapping matches are retained. Canonical repeats are shown for context. Distal/proximal orientation is not established by these exports.</p></section>')
+        'Overlapping matches are retained. Canonical repeats are shown for context. '
+        'Distal/proximal orientation is not established by these exports.</p></section>')

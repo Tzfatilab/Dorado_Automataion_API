@@ -20,6 +20,33 @@ Threshold changes filter existing measurements; they do not recalculate NanoTel 
 
 Old filtered rows, mappings and aggregate figures are not reused as new results. Source counts, motifs, repeat coverage and KM evidence are retained when available. Unavailable measurements stay unavailable. The original detected population may be smaller than all input reads; recalculation cannot recover reads never exported by NanoTel.
 
+Missing length histograms are rebuilt from the current post-filtered reads using
+the original NanoTel R histogram builder, shared with normal analysis. This keeps
+the original `pretty(..., n=45)` bins, Gaussian observed-length smoothing, and
+count/percentage controls. There is no alternate automatic-bin histogram.
+All barcodes are rendered in one R process; temporary plot requests are removed.
+
+Loose `barcodeXX_analysis.json` files are intermediate outputs. After the full
+dashboard and automatic Excel workbook save successfully, their original fields
+are retained in a hidden analysis-facts worksheet and the loose JSON files are
+removed. Rebuilding and recalculation restore those fields from Excel. Files are
+kept on failure or if their fields do not match the saved worksheet. Before-filter
+summary CSVs remain available for recalculation.
+
+When TVR motifs were not selected but one mismatch was enabled, the repeat panels
+show mismatch composition from the saved motif exports. The position panel is
+shown only when specific TVR motifs were selected.
+These use the exported mismatch-inclusive intervals and observed matched sequences;
+they do not subtract density curves or rerun repeat searches. Partial matches are
+shown separately and are not classified as mismatches. The overview uses the same
+definition when barcodes are excluded. TVR-specific Key Statistics stay distinct.
+
+Motif plots distinguish exact observed matches from the searched motif name.
+An imperfect AACCGC hit is grouped under `Mismatch`; an exact AACCGC hit keeps
+its motif label. This rule applies to composition, position and read tracks.
+TVR-positive read counts still follow NanoTel's recorded search tolerance;
+relabeling does not change scientific calls.
+
 Mapping subprocesses use direct samtools arguments rather than Unix shell pipelines, so BAM read-ID extraction and filtering work on Windows too. Mapping thresholds are unchanged.
 
 ## Disk usage

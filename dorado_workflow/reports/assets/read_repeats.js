@@ -3,6 +3,7 @@
 // Inputs: data (source/presentation data)
 // Outputs: Base composition and merged region summaries, or null without a usable interval.
 window.readRepeatSummary = data => {
+  data = window.reportObservedMotifs?.(data) || data;
   const interval = data?.intervals?.tvr_inclusive;
   if (!interval || !Array.isArray(data.motifs)) return null;
   const [start, end] = interval, groups = [], events = new Map();
@@ -16,10 +17,13 @@ window.readRepeatSummary = data => {
     events.get(position).push([index, delta]);
   };
   const regions = [], unassignedRegions = [];
-  data.motifs.forEach((motif, index) => {
+  data.motifs.forEach(motif => {
     const positions = motif.positions.map(([a, b]) => [Math.max(start, a), Math.min(end, b)])
       .filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-    groups.push({label: motif.label, color: motif.color, bases: 0});
+    // Multiple searched motifs can contribute to the shared Mismatch category.
+    // Treat their overlapping spans as one category, counting each base once.
+    let index = groups.findIndex(group => group.label === motif.label);
+    if (index < 0) { index = groups.length; groups.push({label: motif.label, color: motif.color, bases: 0}); }
     let region = null;
     positions.forEach(([a, b]) => {
       event(a, index, 1); event(b, index, -1);

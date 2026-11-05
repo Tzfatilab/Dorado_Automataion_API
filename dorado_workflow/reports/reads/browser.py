@@ -8,7 +8,7 @@ from html import escape
 from collections import Counter
 from dorado_workflow.reports.shared.colors import motif_color
 from pathlib import Path
-from dorado_workflow.reports.reads.density import read_track_data, READ_TRACK_SCRIPT
+from dorado_workflow.reports.reads.density import read_track_data, READ_TRACK_SCRIPT, motif_display_label
 
 
 def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_tracks=False, exclude_ids=()):
@@ -74,7 +74,7 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
         interval = read.calls.get('tvr_inclusive', {}).get('interval') if read else None
         if (track and interval and track.status == 'available' and interval.status == 'available'
                 and 'tvr_inclusive' in track.value['methods']):
-            counts = Counter(hit['motif'] for hit in track.value['matches']
+            counts = Counter(motif_display_label(hit) for hit in track.value['matches']
                 if hit['method'] == 'tvr_inclusive' and hit['role'] == 'tvr'
                 and hit['end'] > interval.value['start'] and hit['start'] < interval.value['end'])
             motif_counts = [dict(motif=motif, count=count, color=motif_color(motif))

@@ -1,8 +1,18 @@
 # Telomere Analyzer
 
-Process Oxford Nanopore POD5, BAM and FASTQ data with Dorado, NanoTel, minimap2,
-samtools and downstream R analysis. The GUI is the installed entry point;
-the backend commands remain available for source-based workflows.
+Analyze Oxford Nanopore telomere sequencing data through a graphical workflow
+for Human, Mouse and Zebrafish. Start from raw POD5 signals, basecalled BAM or
+FASTQ reads, or an existing NanoTel project.
+
+The workflow combines Dorado basecalling and barcode separation, NanoTel
+telomere detection, optional chromosome mapping, and downstream filtering and
+statistics. Results are saved as an interactive HTML dashboard and an Excel
+workbook, with barcode summaries and read-level measurements.
+
+Use **Recalculate results** to change post-analysis filters and rebuild reports
+from saved NanoTel measurements without repeating basecalling or sequence-level
+telomere detection. The GUI is the installed entry point; backend commands remain
+available for source-based workflows.
 
 ## Installation and tools
 
@@ -37,45 +47,122 @@ From a source checkout:
 python -m dorado_gui.main
 ```
 
-Select input, output directory, organism and workflow stages. The GUI creates a
-new timestamped run directory. Cancel stops active commands and prevents later
-stages from starting; user cancellation is recorded separately from failure.
+### Choose input and analysis steps
 
-Open **Settings & Configuration** in the sidebar. **Profile settings** contains
-the sequencing kit, organism-specific TVR patterns and analysis defaults. **App settings** contains the shared Dorado model folder,
-reference genomes for each organism, and default output folder.
-Add sequences individually or paste a list; removal and
-restoring defaults support Undo. TVR presets are separate for Mouse, Human and
-Zebrafish. Telomere and TSQ1 motifs stay in the configuration and are not editable
-in Settings; TSQ1 mode remains available on Pipeline Setup. An empty TVR
-preset is allowed. Each TVR must contain at least five A/C/G/T bases, including
-bulk-pasted, imported and run-time patterns. Kit choices come from the official
-[Dorado CLI reference](https://software-docs.nanoporetech.com/dorado/latest/barcoding/barcoding/#cli-reference).
-The dropdown also preserves existing profile kit IDs; choose a kit supported by
-your installed Dorado version.
+On **Pipeline Setup**, choose a saved **Profile**, select the organism, and set
+the input folder and **Output Path**. Then select the required **Analysis Steps**:
 
-**Save profile** activates the selected profile for subsequent GUI runs.
-**Save app settings** saves shared paths independently, without committing profile
-edits. Existing/imported profiles with different paths retain clearly marked custom
-paths; choose **Use app paths**, then **Save profile**, to adopt shared paths.
-Old settings files migrate on the next save without losing custom resource paths.
-The compact **Analysis defaults** card saves minimum read length, short telomere
-cutoff, maximum edge distance, maximum telomere start, and minimum density with
-each organism within each profile. Switching the organism in Settings loads its
-own values; older profiles use their profile-wide values until edited.
-Selecting a profile or organism fills Pipeline Setup; run-specific edits can
-still override these defaults. The existing adjustment for untrimmed reads applies.
-Choose a saved **Profile** at the bottom of the dark blue sidebar.
-The selected profile supplies the configuration for the next run.
-**Create new profile** creates a named profile, and **Import / Export** uses workflow
-configuration JSON (exports also work with the backend `--config` option).
-**Delete profile** removes a saved profile after confirmation. Lab default is
-protected; deleting the active profile switches back to Lab default.
-Changes are staged until saved, with Save/Discard/Cancel when leaving the page.
-Profiles are stored in the operating system's user configuration directory under
-`TelomereAnalyzer/profiles.json`, independently of `default_config.json`.
-Every run receives a copy of the saved configuration; editing settings during a
-run does not alter it. Pipeline Setup retains run-specific analysis overrides.
+| Input Data | Analysis Steps | Purpose |
+| --- | --- | --- |
+| **POD5 (Raw Signals)** | **Basecalling**, optionally followed by **NanoTel Analysis** | Call bases and separate barcodes; add NanoTel to analyze telomeres. |
+| **BAM (Basecalled)** | **NanoTel Analysis** | Convert existing basecalled reads to FASTQ for telomere analysis. |
+| **FASTQ** | **NanoTel Analysis** | Analyze sequence reads; use barcode folders directly or demultiplex unsplit input with the configured kit. |
+| **Existing project** | **Recalculate results** | Refilter saved NanoTel measurements and regenerate reports. |
+
+For a complete POD5-to-telomere workflow, select both **Basecalling** and
+**NanoTel Analysis**. **Recalculate results** runs separately from those steps.
+Mapping and base-modification options are available in their corresponding
+analysis panels and require the appropriate reference files and tools.
+
+Each run creates a new timestamped output directory. Follow progress in the
+execution log and open the generated HTML report when the run completes.
+**Cancel** stops active commands and prevents subsequent stages from starting.
+
+### Analysis Options
+
+Profile and organism defaults fill these controls; edit them on Pipeline Setup
+to override them for the next run.
+
+| Control | Meaning |
+| --- | --- |
+| **Minimum read length (bp)** | Minimum total read length, including sequence outside the telomere. |
+| **Latest telomere start (bp)** | Latest accepted telomere start in the analyzed read. The same value also sets the read-margin/edge-distance threshold internally. |
+| **Minimum density (%)** | Minimum telomeric repeat density, entered as a percentage in the GUI. |
+| **Short telomere cutoff (bp)** | Length strictly below which a telomere is counted as short. This reporting cutoff does not itself remove reads. |
+| **Run mapping** | Include chromosome mapping in the analysis. |
+| **Allow 1 mismatch** | Allow one difference when searching canonical and selected TVR motifs. |
+| **Summary only** | Generate the shared dashboard with barcode pages and read tables, plus Excel, while omitting individual-read pages and detailed NanoTel outputs. |
+
+Under **TVR Mode**, select **Preset**, **TSQ1**, **Manual**, or a combination.
+Leave all modes unselected to analyze canonical telomeres without selected TVR
+patterns. **Preset** forces exact matching and disables **Allow 1 mismatch**.
+**TSQ1** initially enables that checkbox; it can be cleared when Preset is not
+selected. Manual patterns must contain at least five A/C/G/T bases.
+
+### Recalculate results from an existing project
+
+1. Select **Existing project** and choose the original project or its `results` folder.
+2. Select **Recalculate results** under **Analysis Steps**.
+3. Adjust the four numeric analysis options and choose whether to run mapping.
+4. Choose **Summary only** or a full report, then set an **Output Path** outside the source project.
+5. Run the analysis to regenerate filtered results, Excel and the dashboard.
+
+Original TVR and mismatch settings are loaded from the source run and locked;
+changing them requires a new NanoTel detection run. The recorded trimming state
+is reused when available; legacy projects may require confirmation of whether
+the reads were trimmed.
+
+Recalculation requires the original before-filter NanoTel CSVs or the retained
+source worksheets in `nanotel_summary.xlsx`, together with the original analysis
+settings. A standalone dashboard or presentation-only Excel export is insufficient.
+Mapping additionally requires saved read inputs. The source project is preserved,
+and existing source files are linked where supported instead of copied.
+
+A full report can reuse saved read sequences and detail tracks. Recalculation
+does not recreate details that were never exported by the original run. See
+[recalculation details](docs/recalculate-results.md) for source requirements.
+
+### View results
+
+The dashboard provides an overview and individual barcode pages with statistics,
+length plots and searchable, sortable read tables. Available mapping and repeat
+details depend on the selected analyses and saved source data. Full reports also
+provide individual-read views; **Summary only** omits those views.
+
+Barcode display names can be edited while keeping the original barcode ID
+visible. Excluding a barcode removes it from overview graphs and the Key Statistics
+table; its barcode page remains accessible. Graphs and tables have save controls,
+and an Excel workbook is saved automatically with the run. Browser-only names
+and exclusions do not modify that automatic workbook.
+
+Short-telomere percentages use the configured cutoff and the exported
+post-filtered telomeric reads for each barcode. Missing or incomplete source
+measurements are shown as **Unavailable**, rather than as zero.
+
+### Settings and profiles
+
+Open **Settings & Configuration** in the sidebar:
+
+- **Profile settings** stores the sequencing kit, organism-specific TVR presets
+  and analysis defaults. Each organism has its own minimum read length, latest
+  telomere start, minimum density and short-telomere cutoff within the profile.
+- **App settings** stores shared Dorado model paths, reference genomes and the
+  default output folder. **Save app settings** saves these independently of profile edits.
+
+TVR presets are separate for Human, Mouse and Zebrafish. Add sequences individually
+or paste a list; removal and restoring defaults support Undo. Empty presets are
+allowed, and each pattern must contain at least five A/C/G/T bases. Canonical
+telomere and TSQ1 motifs remain in the configuration and are not editable on the
+Settings page. Choose a kit supported by your installed Dorado version; the kit
+list follows the official
+[Dorado CLI reference](https://software-docs.nanoporetech.com/dorado/latest/barcoding/barcoding/#cli-reference)
+and preserves existing profile kit IDs.
+
+Choose the active **Profile** at the bottom of the sidebar. **Save profile** saves
+and activates its settings for subsequent runs. Profiles with custom resource
+paths retain them; select **Use app paths**, then **Save profile**, to adopt shared paths.
+Older settings migrate on save without losing custom paths.
+
+Use **Create new profile**, **Import / Export**, or **Delete profile** to manage
+profiles. Import/export uses workflow configuration JSON, also usable with the
+backend `--config` option. **Lab default** cannot be deleted; deleting the active
+profile switches back to it. Unsaved edits offer Save/Discard/Cancel when leaving
+the page.
+
+Profiles are stored in the operating system's user configuration directory at
+`TelomereAnalyzer/profiles.json`, separately from `default_config.json`.
+Each run receives its own configuration snapshot, so editing settings during a
+run does not change that run's parameters.
 
 ## Run backend commands
 

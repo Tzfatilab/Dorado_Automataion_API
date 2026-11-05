@@ -439,6 +439,16 @@ class ResultImporter:
                         self.warnings.append(f"{name}: CSV is authoritative; workbook duplicate was not imported")
                     raw.setdefault(name, table)
 
+        if 'NanoTel analysis facts' not in self.saved_statistics:
+            from ..storage.analysis_metadata import analysis_rows, HEADERS
+            restored_analysis = analysis_rows(self.root, include_native=False)
+            if restored_analysis:
+                entries = []
+                for row, path, sheet in restored_analysis:
+                    source = self.source(path, 'xlsx', sheet)
+                    entries.append((row, Evidence(source.id)))
+                self.saved_statistics['NanoTel analysis facts'] = (HEADERS, entries, None)
+
         stat_rows = {}
         if stats:
             for row, ev in stats[1]:

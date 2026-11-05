@@ -290,6 +290,8 @@ def generate_run_report(results, nanotel_directory):
         destination = write_run_reports(nanotel_directory, run, page)
         from dorado_workflow.reports.exports.dashboard_workbook import write_dashboard_workbook
         write_dashboard_workbook(run, Path(nanotel_directory) / "nanotel_results.xlsx", results, comparisons=comparisons)
+        from dorado_workflow.reports.storage.analysis_metadata import cleanup_analysis_json
+        cleanup_analysis_json(results)
     # Recalculation exposes immutable detail files through links. Packing them
     # would allocate duplicate archives and defeat source reuse.
     is_recalculated_run = (Path(results) / 'reports' / 'post_analysis_source.json').is_file()

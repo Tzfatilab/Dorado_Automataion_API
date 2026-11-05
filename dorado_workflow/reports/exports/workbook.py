@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
+from ..storage.analysis_metadata import flatten_analysis
 
 def barcode_from_summary_filename(filename: str) -> Optional[str]:
     """Return a normalized barcode from a CSV filename, or None if absent.
@@ -116,23 +117,8 @@ class NanoTelWorkbookWriter:
                 data = json.loads(path.read_text(encoding="utf-8-sig"))
                 if not isinstance(data, dict) or data.get("barcode") != barcode:
                     raise ValueError(f"Analysis barcode identity mismatch: {path}")
-                def flatten(prefix, obj):
-                    """Flatten.
-
-                    Args:
-                        prefix: Field-name prefix for nested source facts.
-                        obj: Nested object being flattened.
-
-                    Yields:
-                        Values yielded by the iterator; iteration performs the documented operation.
-                    """
-                    if isinstance(obj, dict):
-                        for key, val in obj.items():
-                            yield from flatten(f"{prefix}.{key}" if prefix else key, val)
-                    else:
-                        yield prefix, (json.dumps(obj) if isinstance(obj, list) else obj)
-                analysis_rows.extend([barcode, key, val if val is not None else "Unavailable"]
-                                     for key, val in flatten("", data))
+                analysis_rows.extend([barcode, key, value]
+                                     for key, value in flatten_analysis(data))
         if analysis_rows:
             sheet = workbook.create_sheet("NanoTel analysis facts")
             sheet.append(["Barcode", "Source field", "Value"])

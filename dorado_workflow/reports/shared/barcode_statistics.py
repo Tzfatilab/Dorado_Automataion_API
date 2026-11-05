@@ -3,6 +3,25 @@ import json
 from ..reads.density import tvr_enabled
 
 
+def mismatch_statistics(barcode, composition=None):
+    """Read mismatch counts from the complete post-filtered composition.
+
+    Args:
+        barcode: Barcode record used to distinguish empty from missing populations.
+        composition: Saved-hit mismatch summary for this barcode, or None.
+
+    Returns:
+        Counts of reads with mismatch hits and distinct observed mismatch sequences;
+        missing evidence remains None, while an explicitly empty population is zero.
+    """
+    population = barcode.metrics.get('filtered_length_records')
+    if population and population.status == 'available' and not population.value:
+        return dict(reads_with_mismatch=0, mismatch_patterns=0)
+    return dict(
+        reads_with_mismatch=composition['with_mismatch'] if composition is not None else None,
+        mismatch_patterns=len(composition['motifs']) if composition is not None else None)
+
+
 def tvr_statistics(barcode, settings, composition=None):
     """Count TVR-positive filtered reads and distinct observed motifs.
 
