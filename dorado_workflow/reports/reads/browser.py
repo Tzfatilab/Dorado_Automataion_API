@@ -204,6 +204,14 @@ def reads_section(barcode, results_root=None, show_completeness=True, summary_on
         root = Path(results_root)
         candidates = [root / 'nanotel' / barcode.label, root / barcode.label, root]
         folder = next((p for p in candidates if p.name == barcode.label and p.is_dir()), None)
+        if folder is None:
+            from ..storage.saved_sources import source_folders
+            for base in (root / 'nanotel', root):
+                if barcode.label in source_folders(base):
+                    # A recalculated report references immutable original details;
+                    # no empty local barcode directory is needed to read sequences.
+                    folder = base / barcode.label
+                    break
     rows = read_rows(barcode, plot_folder=folder, include_tracks=not summary_only)
     # Serial numbers belong to the source read, including reads excluded from
     # the table's population. Never substitute plot rank for the original number.

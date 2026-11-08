@@ -77,6 +77,7 @@ class AdvancedSection:
         if post and not getattr(self, "_post_analysis_active", False):
             self._summary_before_post = self.summary_only.isChecked()
             self._mismatch_before_post = self.allow_mismatch.isChecked()
+            self.allow_mismatch.setChecked(False)
         elif not post and getattr(self, "_post_analysis_active", False):
             self.summary_only.setChecked(self._summary_before_post)
             self.allow_mismatch.setChecked(self._mismatch_before_post)

@@ -44,11 +44,19 @@ def exclusion_payload(run, comparisons=None):
             if len(names) == 1:
                 chromosomes.update(names)
         motif = composition.get(barcode.label)
+        from .measurement_statistics import METHODS, method_statistics, selected_method, tvr_read_count
+        before = method_statistics(barcode, run.settings, selected_method(run.settings), 'before')
+        measurements = {method: {population: method_statistics(barcode, run.settings, method, population)
+                                  for population in ('before', 'after')} for method, _ in METHODS}
         rows.append(dict(id=barcode.id, barcode_id=barcode.label,
                          total=value('total_reads'), filtered=value('amount_of_telomeres'),
                          population=getattr(barcode.metrics.get('amount_of_telomeres'), 'population', None),
                          length_population=getattr(barcode.metrics.get('filtered_length_records'), 'population', None),
                          lengths=[row['length_bp'] for row in lengths] if lengths is not None else None,
+                         before_lengths=before['lengths'],
+                         measurements=measurements,
+                         tvr_counts={population: tvr_read_count(barcode, run.settings, population)
+                                     for population in ('before', 'after')},
                          chromosomes=sorted(chromosomes), cutoff=short_cutoff_bp(run.settings, barcode),
                          composition=dict(base_counts=motif['base_counts'], total=motif['total'],
                              with_tvr=None if mismatch_mode else motif['with_tvr'],

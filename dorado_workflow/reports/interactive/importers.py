@@ -10,6 +10,8 @@ import hashlib
 import json
 import math
 import io
+from contextlib import ExitStack, contextmanager
+import zipfile
 from pathlib import Path
 import re
 
@@ -24,7 +26,7 @@ from .models import (Availability as A, Barcode, Evidence, Fact, Read, Run,
 
 
 class ResultImporter:
-    def __init__(self, root, metadata_path=None):
+    def __init__(self, root, metadata_path=None, progress=None):
         # Resolve the selected results root once; all discovery and provenance paths
         # are relative to this directory. Explicit metadata can override saved settings.
         """Initialize the instance and its dependencies.
@@ -40,6 +42,9 @@ class ResultImporter:
         if not self.root.is_dir():
             raise ValueError("Results directory does not exist")
         self.sources = {}
+        self.progress = progress or (lambda message: None)
+        self._archives = {}
+        self._archive_stack = ExitStack()
         self._source_digests = {}
         self.warnings = []
         self.metadata = {}
@@ -100,7 +105,11 @@ class ResultImporter:
         if key not in self.sources:
             # Workbook sheets have distinct provenance IDs but share file bytes.
             if path not in self._source_digests:
-                self._source_digests[path] = hashlib.sha256(path.read_bytes()).hexdigest()
+                digest = hashlib.sha256()
+                with self._open_binary(path) as stream:
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                        digest.update(chunk)
+                self._source_digests[path] = digest.hexdigest()
             digest = self._source_digests[path]
             self.sources[key] = Source(key, label, digest, fmt, sheet)
         return self.sources[key]
@@ -131,7 +140,24 @@ class ResultImporter:
                     self._file_index.append(path)
         return [p for p in self._file_index if fnmatch.fnmatch(p.name, pattern)]
 
-    def csv_table(self, path):
+    def close(self):
+        """Close cached read-only archives after import, including failure paths."""
+        self._archive_stack.close()
+        self._archives.clear()
+
+    @contextmanager
+    def _open_binary(self, path):
+        from ..storage.saved_sources import ArchivedDetail
+        if isinstance(path, ArchivedDetail):
+            if path.archive not in self._archives:
+                self._archives[path.archive] = self._archive_stack.enter_context(zipfile.ZipFile(path.archive))
+            with self._archives[path.archive].open(path.member) as stream:
+                yield stream
+        else:
+            with Path(path).open('rb') as stream:
+                yield stream
+
+    def csv_table(self, path, stream=False):
         # Read a header-based table with UTF-8 BOM support. Evidence row numbers
         # start at 2 because row 1 is the CSV header; malformed tables raise errors.
         """Tuple of column names, rows with Evidence, and the registered Source.
@@ -143,26 +169,24 @@ class ResultImporter:
             Tuple of column names, rows with Evidence, and the registered Source.
         """
         source = self.source(path, "csv")
-        from ..storage.saved_sources import ArchivedDetail
-        if isinstance(path, ArchivedDetail):
-            raw = path.read_bytes()
-            if path.name.endswith(".gz"):
-                raw = gzip.decompress(raw)
-            handle = io.StringIO(raw.decode("utf-8-sig"), newline="")
-        else:
-            opener = gzip.open if path.name.endswith(".gz") else open
-            handle = opener(path, "rt", encoding="utf-8-sig", newline="")
-        with handle:
-            reader = csv.DictReader(handle)
-            headers = reader.fieldnames or []
-            if len(headers) != len(set(headers)) or not headers:
-                raise ValueError(f"Invalid/duplicate CSV columns: {path.name}")
-            rows = []
-            for number, row in enumerate(reader, 2):
-                if None in row:
-                    raise ValueError(f"Extra CSV columns: {path.name}:{number}")
-                rows.append((row, Evidence(source.id, number)))
-            return headers, rows, source
+        def records():
+            with ExitStack() as stack:
+                binary = stack.enter_context(self._open_binary(path))
+                if path.name.endswith('.gz'):
+                    binary = stack.enter_context(gzip.GzipFile(fileobj=binary))
+                handle = stack.enter_context(io.TextIOWrapper(binary, encoding='utf-8-sig', newline=''))
+                reader = csv.DictReader(handle)
+                headers = reader.fieldnames or []
+                if len(headers) != len(set(headers)) or not headers:
+                    raise ValueError(f"Invalid/duplicate CSV columns: {path.name}")
+                yield headers
+                for number, row in enumerate(reader, 2):
+                    if None in row:
+                        raise ValueError(f"Extra CSV columns: {path.name}:{number}")
+                    yield row, Evidence(source.id, number)
+        rows = records()
+        headers = next(rows)
+        return headers, rows if stream else list(rows), source
 
     def detail_table(self, path):
         """Expand version-2 identities/method aliases without recalculating hits.
@@ -173,11 +197,11 @@ class ResultImporter:
         Returns:
             Tuple of headers, identity-expanded detail rows with Evidence, and Source.
         """
-        headers, rows, source = self.csv_table(path)
+        headers, rows, source = self.csv_table(path, stream=True)
         if "schema_version" not in headers:
             match = re.search(r'(?:^|_)read(\d+)_', path.name)
             if match:
-                rows = [(dict(row, Serial=row.get('Serial') or match[1]), ev) for row, ev in rows]
+                rows = ((dict(row, Serial=row.get('Serial') or match[1]), ev) for row, ev in rows)
             return headers, rows, source
         # Index lives beside the batch and stores each full FASTQ header once.
         stem = path.name.rsplit("_", 1)[0]
@@ -192,16 +216,16 @@ class ResultImporter:
             if entry.get("schema_version") != "2" or not key or not entry.get("read_id") or key in lookup:
                 raise ValueError(f"Invalid/duplicate compact read index: {index_path.name}")
             lookup[key] = entry["read_id"]
-        expanded = []
-        for row, ev in rows:
-            if row.get("schema_version") != "2" or row.get("read_id") not in lookup:
-                raise ValueError(f"Unsupported compact detail identity/schema: {path.name}")
-            methods = row.get("method", "").split("|")
-            if len(set(methods)) != len(methods) or not set(methods) <= {"exact", "mismatch", "tvr_inclusive"}:
-                raise ValueError(f"Invalid compact method aliases: {path.name}")
-            for method in methods:
-                expanded.append((dict(row, Serial=row["read_id"], read_id=lookup[row["read_id"]], method=method), ev))
-        return headers, expanded, source
+        def expanded():
+            for row, ev in rows:
+                if row.get("schema_version") != "2" or row.get("read_id") not in lookup:
+                    raise ValueError(f"Unsupported compact detail identity/schema: {path.name}")
+                methods = row.get("method", "").split("|")
+                if len(set(methods)) != len(methods) or not set(methods) <= {"exact", "mismatch", "tvr_inclusive"}:
+                    raise ValueError(f"Invalid compact method aliases: {path.name}")
+                for method in methods:
+                    yield dict(row, Serial=row["read_id"], read_id=lookup[row["read_id"]], method=method), ev
+        return headers, expanded(), source
 
     def workbook_tables(self, path):
         # Read only recognized summary sheets, using stored cell values rather than
@@ -222,7 +246,7 @@ class ResultImporter:
                 if retained_sources and not sheet.title.startswith('_source_'):
                     continue
                 name = sheet.title.removeprefix('_source_')
-                if name not in {"NanoTel Statistics", "NanoTel analysis facts", "KM by barcode", "KM run statistics", "Run metadata", "Barcode source counts", "Read mappings", "Barcode figures", "Read motifs"} and not re.fullmatch(r"(?:filtered_)?barcode\d+", name):
+                if name not in {"NanoTel Statistics", "NanoTel analysis facts", "KM by barcode", "KM run statistics", "Run metadata", "Barcode source counts", "Read mappings", "Barcode figures", "Read motifs"} and not re.fullmatch(r"(?:(?:filtered|final)_)?barcode\d+", name):
                     continue
                 source = self.source(path, "xlsx", sheet.title)
                 iterator = iter(sheet.iter_rows(values_only=True))
@@ -428,6 +452,8 @@ class ResultImporter:
         # Excel is a fallback for pipeline runs that removed their summary CSVs.
         # setdefault below keeps any already-loaded CSV authoritative.
         workbooks = self.files("nanotel_summary.xlsx")
+        if not workbooks:
+            workbooks = self.files('nanotel_results.xlsx')
         if len(workbooks) > 1:
             raise ValueError("Ambiguous NanoTel workbooks; select one results directory")
         if workbooks:
@@ -487,6 +513,7 @@ class ResultImporter:
         self.mapping_paths = self.files("mapped*.csv")
         barcodes = []
         for label in sorted(set(raw) | set(filtered) | set(stat_rows)):
+            self.progress(f"Dashboard: loading saved reads and tracks for {label}")
             b = Barcode(safe_id("b", label), label)
             table = raw.get(label) or filtered.get(label)
             if table:
@@ -657,7 +684,14 @@ class ResultImporter:
             # first read-ID token only when it identifies exactly one molecule.
             matching = index.find(rid, serial)
             record_id = matching[0].id if len(matching) == 1 else safe_id('r', 'filtered', barcode.id, rid, serial, occurrence)
-            rows.append({"original_id": rid, "read_id": record_id, "length_bp": length.value})
+            method_lengths = {}
+            for method, suffix in [('exact', ''), ('mismatch', '_mismatch'), ('tvr_inclusive', '_mismatch_tvr')]:
+                if 'Telomere_length' + suffix not in row:
+                    continue
+                fact = number(row, 'Telomere_length' + suffix, ev, unit='bp')
+                method_lengths[method] = fact.value if fact.status == A.AVAILABLE else None
+            rows.append({"original_id": rid, "read_id": record_id, "length_bp": length.value,
+                         "method_lengths_bp": method_lengths})
             if len(matching) == 1:
                 target = by_report_id[matching[0].id]
                 target.filtering = Fact(A.AVAILABLE, "present_in_filtered_output", evidence=[ev])
@@ -951,7 +985,7 @@ def text_fact(row, key, ev):
     return Fact(A.AVAILABLE, str(value), evidence=[Evidence(ev.source_id, ev.row, [key])]) if value not in (None, "") else unavailable(f"{key} missing")
 
 
-def import_results(root, metadata_path=None) -> Run:
+def import_results(root, metadata_path=None, progress=None) -> Run:
     """Read one results directory without modifying any scientific artifact.
 
     Args:
@@ -965,4 +999,8 @@ def import_results(root, metadata_path=None) -> Run:
     # source registries and warnings cannot leak between report builds.
     from dorado_workflow.reports.storage.archive import available_details
     with available_details(root):
-        return ResultImporter(root, metadata_path).run()
+        importer = ResultImporter(root, metadata_path, progress=progress)
+        try:
+            return importer.run()
+        finally:
+            importer.close()

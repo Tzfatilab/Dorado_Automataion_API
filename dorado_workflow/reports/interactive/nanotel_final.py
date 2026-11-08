@@ -25,9 +25,9 @@ def import_final_population(importer, barcode, number):
         if fact and fact.status == A.AVAILABLE:
             barcode.metrics[target] = fact
     paths = importer.files(barcode.label + '_filtered_sorted_summary.csv')
-    if len(paths) != 1:
+    table = importer.csv_table(paths[0]) if len(paths) == 1 else importer.saved_statistics.get('final_' + barcode.label)
+    if table is None:
         return
-    table = importer.csv_table(paths[0])
     from ..reads.density import mismatch_enabled
     from .models import Fact
     mode = mismatch_enabled(Fact(A.AVAILABLE, importer.metadata.get('settings')))

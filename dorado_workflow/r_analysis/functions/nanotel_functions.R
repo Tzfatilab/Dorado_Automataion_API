@@ -137,7 +137,8 @@ batch_process_nanotel_files <- function(input_files,
                                         max_telomere_start = 150,
                                         max_edge_distance = 134,
                                         min_read_length = NULL,
-                                        summary_only = FALSE) {
+                                        summary_only = FALSE,
+                                        flat_output = FALSE) {
 
   log_message(paste("Starting batch processing of", length(input_files), "NanoTel files"))
 
@@ -171,7 +172,7 @@ batch_process_nanotel_files <- function(input_files,
 
         # Summary mode keeps detailed CSVs at the run level. Full mode retains
         # the existing per-barcode output layout.
-        if (summary_only) {
+        if (summary_only || flat_output) {
           barcode_output_dir <- output_dir
         } else {
           barcode_output_dir <- file.path(output_dir, barcode)

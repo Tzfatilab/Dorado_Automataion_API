@@ -76,10 +76,10 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
     cards = []
     # Card order mirrors the approved design; notes identify each population.
     specs = [("barcode_count", "Total barcodes", ""),
-             ("total_reads", "Total barcode reads", "Input reads"),
+             ("total_reads", "Total number of reads", "Input reads"),
              ("telomeric_reads", "Post-filtered telomeric reads", "Post-filtered reads"),
              ("telomeric_percentage", "% telomeric reads", "Of total input reads"),
-             ("median_telomere_length", "Median length", "Pooled post-filtered reads"),
+             ("median_telomere_length", "Median length before filtration", "Pooled before-filtration measurements"),
              ("detected_chromosomes", "Number of Chromosomes end found", "Chromosome annotations unavailable")]
     # Reference labels are not chromosome annotations; never substitute their count.
     for index, (key, label, note) in enumerate(specs):
@@ -100,7 +100,7 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
         caption = f'<p>{escape(note)}</p>' if note else ''
         cards.append(f'<article class="stat stat-{index}" title="{escape(fact.get("reason") or note, quote=True)}"><svg viewBox="0 0 48 48" aria-hidden="true">{ICONS[index]}</svg><div><h3>{label}</h3><strong class="{"missing" if value is None else ""}">{display}</strong>{caption}</div></article>')
     from ..shared.short_telomeres import pooled_short_summary_html
-    median_index = next(i for i, card in enumerate(cards) if "<h3>Median length</h3>" in card)
+    median_index = next(i for i, card in enumerate(cards) if "<h3>Median length before filtration</h3>" in card)
     cards.insert(median_index + 1, pooled_short_summary_html(run))
     # Only source-reported post-filtered counts enter the bars. An unavailable
     # barcode count is omitted rather than fabricated as a zero-height bar.
@@ -266,7 +266,7 @@ def generate_report(results, output):
     return destination / "index.html"
 
 
-def generate_run_report(results, nanotel_directory):
+def generate_run_report(results, nanotel_directory, progress=None):
     """Save a self-contained dashboard.html directly under NanoTel.
 
     Source provenance and links to barcode reports are embedded in the HTML.
@@ -281,17 +281,30 @@ def generate_run_report(results, nanotel_directory):
     """
     from dorado_workflow.reports.storage.layout import write_run_reports, organize_barcode_reports
     from dorado_workflow.reports.storage.archive import available_details, pack_details
+    from time import perf_counter
+    progress = progress or (lambda message: None)
+    started = perf_counter()
+    progress("Dashboard: discovering saved report sources")
     organize_barcode_reports(nanotel_directory)
     # Import and embed saved plots while the archive contents are available.
     with available_details(results):
-        run = import_results(results)
+        run = import_results(results, progress=progress)
+        progress(f"Dashboard: saved data loaded in {perf_counter()-started:.1f}s; building charts and HTML")
+        started = perf_counter()
         comparisons = comparison_data(run)
         page = render_screen(run, results_root=results, comparisons=comparisons)
         destination = write_run_reports(nanotel_directory, run, page)
+        progress(f"Dashboard: HTML saved in {perf_counter()-started:.1f}s; writing unified Excel")
+        del page
+        started = perf_counter()
         from dorado_workflow.reports.exports.dashboard_workbook import write_dashboard_workbook
         write_dashboard_workbook(run, Path(nanotel_directory) / "nanotel_results.xlsx", results, comparisons=comparisons)
+        progress(f"Dashboard: Excel saved in {perf_counter()-started:.1f}s; verifying retained sources")
         from dorado_workflow.reports.storage.analysis_metadata import cleanup_analysis_json
         cleanup_analysis_json(results)
+    from ..storage.source_tables import cleanup_source_tables
+    cleanup_source_tables(results, Path(nanotel_directory) / 'nanotel_results.xlsx')
+    progress("Dashboard: source verification complete")
     # Recalculation references original details. Only native detection exports
     # belong in a new archive; never repack source details for a recalculation.
     is_recalculated_run = (Path(results) / 'reports' / 'post_analysis_source.json').is_file()

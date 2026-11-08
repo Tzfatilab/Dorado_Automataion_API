@@ -8,6 +8,7 @@ from openpyxl import load_workbook, Workbook
 from dorado_workflow.utils.source_links import link_source
 from dorado_workflow.utils.source_discovery import source_files
 from dorado_workflow.reports.storage.saved_sources import source_folders, MANIFEST
+from dorado_workflow.reports.shared.organism import is_human
 
 
 @dataclass
@@ -47,6 +48,8 @@ class ProjectSources:
         workbook = results / "nanotel_summary.xlsx"
         if not workbook.is_file():
             workbook = results / "reports" / "post_analysis_sources" / "nanotel_summary.xlsx"
+        if not workbook.is_file():
+            workbook = results / "nanotel" / "nanotel_results.xlsx"
         workbook = workbook if workbook.is_file() else None
         settings, organism = {}, None
         config = results / "reports" / "r_pipeline_config.json"
@@ -111,6 +114,9 @@ class ProjectSources:
         """
         target = context.path_manager.get_nanotel_output_dir_path()
         target.mkdir(parents=True, exist_ok=True)
+        reuse_km = not is_human(self.organism or context.config_manager.get_current_organism())
+        if not reuse_km:
+            context.logger.info("Human recalculation: KM is not run; saved KM tables are not copied.")
         book = load_workbook(self.workbook, read_only=True, data_only=True) if self.workbook else None
         referenced_folders = {}
         try:
@@ -125,7 +131,6 @@ class ProjectSources:
                     detail_folder = inherited.get(label, source.parent if source.parent.name == label else source.parent / label)
                     if detail_folder.name == label and detail_folder.is_dir():
                         referenced_folders[label] = str(detail_folder.resolve())
-                        (target / label).mkdir(exist_ok=True)
                     analysis = source.parent / (label + "_analysis.json")
                     if analysis.is_file():
                         link_source(analysis, target / analysis.name)
@@ -137,7 +142,6 @@ class ProjectSources:
                     detail_folder = source_folders(original_nanotel).get(label, original_nanotel / label)
                     if detail_folder.is_dir():
                         referenced_folders[label] = str(detail_folder.resolve())
-                        (target / label).mkdir(exist_ok=True)
             (target / MANIFEST).write_text(json.dumps(referenced_folders, indent=2), encoding="utf-8")
             # Completed detector logs retain original input counts for projects
             # that crashed before their first workbook was written.
@@ -151,12 +155,14 @@ class ProjectSources:
                 link_source(path, dest)
             for name in ("km_barcode_statistics.csv", "km_run_statistics.csv"):
                 path = self.results / "nanotel" / name
-                if path.is_file(): link_source(path, target / name)
+                if reuse_km and path.is_file(): link_source(path, target / name)
             # Keep motif/coverage provenance and input counts, never old filtered
             # rows, mappings, aggregate figures or summary statistics.
             evidence = Workbook()
             evidence.remove(evidence.active)
-            evidence_sheet_names = {"Read motifs", "Barcode source counts", "NanoTel analysis facts", "KM by barcode", "KM run statistics"}
+            evidence_sheet_names = {"Read motifs", "Barcode source counts", "NanoTel analysis facts"}
+            if reuse_km:
+                evidence_sheet_names.update({"KM by barcode", "KM run statistics"})
             if book:
                 for sheet in book:
                     name = sheet.title.removeprefix("_source_")

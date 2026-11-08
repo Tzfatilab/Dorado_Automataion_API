@@ -104,6 +104,9 @@ option_list = list(
               help = "Run post-processing filtration and produce summaries, stats TXT/JSON, KM CSV, interactive plots and PNGs.",
               metavar = "Run analysis"),
 
+  make_option("--organism", action = "store", type = "character", default = NULL,
+              help = "Organism name. Human and Homo sapiens skip KM fitting and KM exports."),
+
   make_option("--max_telomere_start", action = "store", default = 150,
               type = "integer",
               help = "Maximum telomere start position retained during post-processing.",
@@ -162,7 +165,9 @@ suppressPackageStartupMessages(require(logr))
 suppressPackageStartupMessages(require(future))
 
 suppressPackageStartupMessages(require(testit))
-suppressPackageStartupMessages(require(survival))
+if (!isTRUE(tolower(trimws(opt$organism)) %in% c("human", "homo sapiens"))) {
+  suppressPackageStartupMessages(require(survival))
+}
 #utils::globalVariables(c("start_index"))
 
 # Minimum margin (bp) between sequence end and telomere end for a read to be
@@ -287,6 +292,10 @@ format_km_report <- function(result) {
 # reads); censoring_rate (Censoring rate); med_telo (Med telo); pct_short (Pct short);
 # short_threshold (Short threshold); km_result (Already assessed KM result and reporting status)
 # Outputs: Machine-readable analysis fields with unavailable values represented explicitly.
+km_enabled_for_organism <- function(organism) {
+  !isTRUE(tolower(trimws(organism)) %in% c("human", "homo sapiens"))
+}
+
 make_analysis_report <- function(barcode, n_reads, n_complete, n_censored,
                                  censoring_rate, med_telo, pct_short,
                                  short_threshold, km_result) {
@@ -294,7 +303,7 @@ make_analysis_report <- function(barcode, n_reads, n_complete, n_censored,
   # Inputs: x (Value being checked or formatted)
   # Outputs: The finite scalar input, otherwise NULL.
   finite_or_null <- function(x) if (length(x) == 1L && is.finite(x)) x else NULL
-  list(
+  report <- list(
     barcode = barcode,
     number_of_telomeric_reads_post_filtration = n_reads,
     complete_telomeric_reads = n_complete,
@@ -309,6 +318,8 @@ make_analysis_report <- function(barcode, n_reads, n_complete, n_censored,
     km_whole_relative_ci_width_pct = finite_or_null(km_result$relative_ci_width_pct),
     km_reporting_reason = km_result$reason
   )
+  if (is.null(km_result)) report <- report[!startsWith(names(report), "km_")]
+  report
 }
 
 # KM censoring describes the pre-edge KM input, even when its median is withheld.
@@ -3133,7 +3144,13 @@ if (isTRUE(opt$analysis)) {
     telomere_length = df_step1_filtered[[analysis_columns[["length"]]]],
     telomere_end    = df_step1_filtered[[analysis_columns[["end"]]]]
   )
-  km_result <- fit_km_result(km_input)
+  km_result <- NULL
+  if (km_enabled_for_organism(opt$organism)) {
+    km_result <- fit_km_result(km_input)
+  } else {
+    log_print("Human analysis: skipping KM fitting and KM exports.",
+              hide_notes = TRUE, console = FALSE)
+  }
 
   df_filtered <- df_step1_filtered %>%
 
@@ -3233,7 +3250,7 @@ if (isTRUE(opt$analysis)) {
            " bp : ", pct_short, "%")
   )
 
-  results_lines <- c(results_lines, "", format_km_report(km_result))
+  if (!is.null(km_result)) results_lines <- c(results_lines, "", format_km_report(km_result))
   if (n_reads == 0L) {
     empty_message <- "No reads passed the NanoTel analysis filters; length and percentage statistics are unavailable."
     results_lines <- c(results_lines, "", empty_message)
@@ -3257,7 +3274,7 @@ if (isTRUE(opt$analysis)) {
     auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null", digits = NA
   )
   # One barcode row is also usable after a standalone NanoTel.R --analysis run.
-  write_csv(
+  if (!is.null(km_result)) write_csv(
     make_km_statistics(barcode_name, km_input, km_result),
     file.path(opt$save_path, paste0(barcode_name, "_km_statistics.csv")), na = ""
   )

@@ -80,7 +80,8 @@ main_nanotel_analysis <- function(config_file) {
     max_telomere_start = max_telomere_start,
     max_edge_distance = max_edge_distance,
     min_read_length = min_read_length,
-    summary_only = summary_only
+    summary_only = summary_only,
+    flat_output = isTRUE(config$flat_output)
   )
 
   if (length(processed_data) == 0) {

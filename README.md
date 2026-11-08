@@ -102,17 +102,24 @@ changing them requires a new NanoTel detection run. The recorded trimming state
 is reused when available; legacy projects may require confirmation of whether
 the reads were trimmed.
 
-Recalculation requires the original before-filter NanoTel CSVs or the retained
-source worksheets in `nanotel_summary.xlsx`, together with the original analysis
-settings. A standalone dashboard or presentation-only Excel export is insufficient.
+Recalculation uses the original before-filter NanoTel CSVs or retained source
+worksheets in `nanotel_results.xlsx` (full report) or `nanotel_summary.xlsx`
+(Summary only), together with the original analysis settings. A standalone
+dashboard or presentation-only browser export is insufficient.
 Mapping additionally requires saved read inputs. The source project is preserved,
 and each recalculation creates a new dashboard and Excel workbook. Read sequences
 and detail tracks are read from the original project without copying, per-read
 links, or ZIP extraction; keep that project available for future rebuilds.
 
 A full report can reuse saved read sequences and detail tracks. Recalculation
-does not recreate details that were never exported by the original run. See
-[recalculation details](docs/recalculate-results.md) for source requirements.
+does not recreate details that were never exported by the original run.
+
+On a successful full recalculation, `results/nanotel` contains only
+`dashboard.html` and `nanotel_results.xlsx`. Temporary raw/filtered CSVs and
+run statistics are retained in hidden Excel source sheets and removed after
+verification. Original read-detail references are also retained in Excel;
+no per-barcode folders or separate `report_sources.json` are needed in the
+completed output. Logs and configuration remain in the technical directories.
 
 ### View results
 
@@ -127,9 +134,17 @@ table; its barcode page remains accessible. Graphs and tables have save controls
 and an Excel workbook is saved automatically with the run. Browser-only names
 and exclusions do not modify that automatic workbook.
 
-Short-telomere percentages use the configured cutoff and the exported
-post-filtered telomeric reads for each barcode. Missing or incomplete source
-measurements are shown as **Unavailable**, rather than as zero.
+The unified Excel workbook combines before/after filtration data in one sheet
+per barcode, using a filtration-status column. The summary distinguishes exact,
+mismatch and TVR-inclusive measurements, their measured-read denominators and
+short-telomere percentages before/after filtration. Medians are reported only
+before filtration, in both Excel and the dashboard. TVR-positive read counts
+are included in Excel only. Source tables are retained in hidden worksheets;
+redundant per-barcode summary CSVs are removed only after their contents are
+verified against the saved workbook. Missing measurements remain **Unavailable**.
+
+Fast report checks: `python scripts/check_unified_report.py` builds and verifies
+small temporary reports without running basecalling or NanoTel detection.
 
 ### Settings and profiles
 

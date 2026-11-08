@@ -79,7 +79,8 @@ def composition_section(row, number=5, title="TVR patterns", requested=None, met
     figure.update_layout(template='plotly_white', height=350, margin=dict(l=10,r=10,t=10,b=10),
         font=dict(family='Segoe UI, Arial', color='#12203c'),
         annotations=[dict(x=.5,y=.5,xref='paper',yref='paper',showarrow=False,
-            text=f'{event_label}<br><b>{prevalence:.1f}%</b><br>{event_count:,} / {row["total"]:,} reads',font=dict(size=15))])
+            text=(f'{event_label}<br><b>{prevalence:.1f}%</b><br>{event_count:,} / {row["total"]:,} reads'
+                  if mismatch_mode else 'TVR-inclusive<br><b>Base composition</b><br>Post-filtered telomeres'),font=dict(size=15))])
     payload = figure.to_json().replace('<', '\\u003c')
     def percent(value):
         """Formatted percentage text, retaining a visible marker for very small positive values.

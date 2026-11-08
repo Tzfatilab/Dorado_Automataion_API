@@ -49,7 +49,7 @@ window.readRepeatSummary = data => {
       if (width > 0) {
         const last=unassignedRegions[unassignedRegions.length-1];
         if(last && last.end===previous) last.end=position;
-        else unassignedRegions.push({start:previous,end:position,matches:null,motif:'Unassigned bases',color:'#697586'});
+        else unassignedRegions.push({start:previous,end:position,matches:null,motif:'Unassigned bases',color:'#b5bdc7'});
       }
     }
     else if (active.size === 1) groups[active.keys().next().value].bases += width;

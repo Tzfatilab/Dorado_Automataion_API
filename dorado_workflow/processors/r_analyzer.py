@@ -169,6 +169,11 @@ class RAnalyzer(ProcessorBase):
             # 2. Add NanoTel parameters (density thresholds etc.)
             nanotel_params = config_mgr.get_nanotel_params()
             pipeline_config["nanotel_analysis"].update(nanotel_params)
+            # Recalculation has one report/workbook; its temporary CSVs need no
+            # per-barcode directories, even when the full dashboard is requested.
+            pipeline_config["nanotel_analysis"]["flat_output"] = (
+                self.reports_dir / "post_analysis_source.json"
+            ).is_file()
 
             # 3. Add mapping / methylation parameters and run flags
             r_analysis_params = config_mgr.get_r_analysis_params()

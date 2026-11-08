@@ -230,7 +230,9 @@ class InputSection:
             self._post_source_organism = source.organism
             self.nanotel_mapping.setChecked(bool(source.settings.get("run_mapping_analysis", False)))
             self.organism.setEnabled(not bool(source.organism))
-            self.allow_mismatch.setChecked(source.params.get("max_mismatch") == 1)
+            # Detection is not rerun; this disabled control is not a request to
+            # enable mismatches. The backend retains the saved source settings.
+            self.allow_mismatch.setChecked(False)
             if source.organism:
                 index = self.organism.findText(source.organism, Qt.MatchFixedString)
                 if index >= 0: self.organism.setCurrentIndex(index)

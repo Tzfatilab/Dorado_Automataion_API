@@ -131,15 +131,13 @@ def dashboard_data(run, include_details=True):
         else:
             pct = unavailable("Filtered counts exceed the reported input count", A.INVALID)
     distributions = [{"id": b.id, "label": b.label, "lengths": asdict(b.metrics["filtered_length_records"])} for b in run.barcodes]
-    length_populations = {d['lengths'].get('population') for d in distributions
-                          if d['lengths']['status'] == A.AVAILABLE}
-    complete = (bool(distributions) and len(length_populations) <= 1
-                and all(d["lengths"]["status"] == A.AVAILABLE for d in distributions))
-    # Pool individual exported lengths before taking the run median. Taking
-    # a median of barcode medians would weight small and large barcodes equally.
-    all_lengths = [r["length_bp"] for d in distributions if d["lengths"]["status"] == A.AVAILABLE for r in d["lengths"]["value"]]
-    evidence = [e for b in run.barcodes for e in b.metrics["filtered_length_records"].evidence]
-    med = aggregate(median(all_lengths), evidence, "bp", population) if complete and all_lengths else unavailable("Complete filtered per-read lengths are required; barcode medians are not averaged")
+    # Pool individual before-filtration measurements; never average barcode medians.
+    from ..shared.measurement_statistics import method_statistics, selected_method
+    before = [method_statistics(b, run.settings, selected_method(run.settings), 'before') for b in run.barcodes]
+    before_values = [n for row in before for n in row['lengths'] or []]
+    med = (aggregate(median(before_values), [e for b in run.barcodes for e in b.evidence], 'bp', 'before_filtration')
+           if before and all(row['lengths'] is not None for row in before) and before_values
+           else unavailable('Before-filtration source measurements are required'))
     result = {
         "metrics": {
             "barcode_count": asdict(run.metrics.get("barcode_count", unavailable("Barcode count was not exported"))),

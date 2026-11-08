@@ -3,6 +3,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 import zipfile
+from functools import lru_cache
 
 from .archive import member_path
 
@@ -11,10 +12,39 @@ MANIFEST = "report_sources.json"
 
 def source_folders(nanotel):
     path = Path(nanotel) / MANIFEST
-    if not path.is_file():
-        return {}
-    saved = json.loads(path.read_text(encoding="utf-8"))
-    return {label: Path(folder) for label, folder in saved.items()}
+    if path.is_file():
+        info = path.stat()
+        return dict(_source_folders(path, info.st_mtime_ns, info.st_size, False))
+    # Completed recalculations keep internal source references in their unified
+    # Excel instead of a separate JSON file in the user's results directory.
+    for book in (Path(nanotel) / 'nanotel_results.xlsx', Path(nanotel).parent / 'nanotel_summary.xlsx'):
+        if book.is_file():
+            info = book.stat()
+            return dict(_source_folders(book, info.st_mtime_ns, info.st_size, True))
+    return {}
+
+
+@lru_cache(maxsize=32)
+def _source_folders(path, modified, size, workbook):
+    if not workbook:
+        saved = json.loads(path.read_text(encoding='utf-8'))
+        return tuple((label, Path(folder)) for label, folder in saved.items())
+    from openpyxl import load_workbook
+    book = load_workbook(path, read_only=True, data_only=True)
+    try:
+        if '_source_Report sources' not in book.sheetnames:
+            return ()
+        rows = iter(book['_source_Report sources'].values)
+        if next(rows, ()) != ('Barcode', 'Original detail folder'):
+            raise ValueError('Invalid saved report source references')
+        saved = {}
+        for label, folder in rows:
+            if label in saved or not isinstance(label, str) or not isinstance(folder, str):
+                raise ValueError('Invalid or duplicate saved report source reference')
+            saved[label] = Path(folder)
+        return tuple(saved.items())
+    finally:
+        book.close()
 
 
 @dataclass(frozen=True)

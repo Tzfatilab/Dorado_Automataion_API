@@ -28,7 +28,7 @@ def short_cutoff_bp(settings, barcode=None):
         return None
 
 
-def short_statistics(barcode, settings):
+def short_statistics(barcode, settings, method=None):
     """Count lengths strictly below the cutoff over the exported filtered reads.
 
     An empty population has denominator zero and an undefined percentage;
@@ -44,6 +44,16 @@ def short_statistics(barcode, settings):
     cutoff = short_cutoff_bp(settings, barcode)
     fact = barcode.metrics.get('filtered_length_records')
     result = dict(cutoff_bp=cutoff, numerator=None, denominator=None, percent=None)
+    if method is not None:
+        from .measurement_statistics import method_statistics
+        stats = method_statistics(barcode, settings, method, 'after')
+        values = stats['lengths']
+        result['requested'] = stats['requested']
+        result['denominator'] = stats['measured']
+        if values and cutoff is not None:
+            result['numerator'] = sum(n < cutoff for n in values)
+            result['percent'] = stats['short_percent']
+        return result
     if not fact or fact.status != 'available':
         return result
     values = [row['length_bp'] for row in fact.value]
@@ -64,10 +74,12 @@ def short_summary_html(barcode, settings):
     Returns:
         HTML markup for short summary html.
     """
-    return _summary_html(short_statistics(barcode, settings))
+    from .measurement_statistics import METHODS
+    return ''.join(_summary_html(short_statistics(barcode, settings, method), method=method)
+                   for method, _ in METHODS)
 
 
-def pooled_short_statistics(run):
+def pooled_short_statistics(run, method=None):
     """Pool counts only when every barcode has complete, comparable data.
 
     Args:
@@ -76,8 +88,11 @@ def pooled_short_statistics(run):
     Returns:
         Combined short counts and percentage, available only for comparable populations.
     """
-    rows = [short_statistics(barcode, run.settings) for barcode in run.barcodes]
+    rows = [short_statistics(barcode, run.settings, method) for barcode in run.barcodes]
     result = dict(cutoff_bp=None, numerator=None, denominator=None, percent=None)
+    if method is not None and rows and all(row.get('requested') is False for row in rows):
+        result['requested'] = False
+        return result
     if not rows or any(row['denominator'] is None for row in rows):
         return result
     result['denominator'] = sum(row['denominator'] for row in rows)
@@ -100,10 +115,12 @@ def pooled_short_summary_html(run):
     Returns:
         HTML markup for pooled short summary html.
     """
-    return _summary_html(pooled_short_statistics(run), pooled=True)
+    from .measurement_statistics import METHODS
+    return ''.join(_summary_html(pooled_short_statistics(run, method), pooled=True, method=method)
+                   for method, _ in METHODS)
 
 
-def _summary_html(result, *, pooled=False):
+def _summary_html(result, *, pooled=False, method=None):
     """Summary html.
 
     Args:
@@ -115,23 +132,28 @@ def _summary_html(result, *, pooled=False):
     """
     cutoff = result['cutoff_bp']
     definition = f'Length < {cutoff:,.0f} bp ({cutoff / 1000:g} kb).' if cutoff is not None else 'Cutoff unavailable.'
-    if result['percent'] is not None:
+    if result.get('requested') is False:
+        display, note = 'Off', 'This matching mode was not requested.'
+    elif result['percent'] is not None:
         display = f"{result['percent']:.1f}%"
-        note = f"< {cutoff / 1000:g} kb · {result['numerator']:,}/{result['denominator']:,} post-filtered telomeric reads"
+        note = f"< {cutoff / 1000:g} kb · {result['numerator']:,}/{result['denominator']:,} measured post-filtered telomeric reads"
         if pooled:
             note += ' across all barcodes'
     elif result['denominator'] == 0:
-        display = 'No reads'
-        note = definition + ' Denominator: 0 post-filtered telomeric reads; percentage is undefined.'
+        display = 'No measured lengths' if method is not None else 'No reads'
+        note = definition + ' Denominator: 0 measured lengths; percentage is undefined.'
     else:
         display = 'Unavailable'
         note = definition + ' A recorded cutoff and complete post-filtered read lengths are required.'
         if pooled:
             note = definition + ' Complete lengths and a common cutoff across all barcodes are required.'
-    return ('<article class="stat stat-short short-telomere-stat">'
+    mode = {'exact': 'without mismatch or TVR', 'mismatch': 'with mismatch, without TVR',
+            'tvr_inclusive': 'with TVR (matching as configured)'}.get(method)
+    title = 'Short telomeres' + (' — ' + mode if mode else '')
+    return ('<article class="stat stat-short short-telomere-stat" data-short-method="'+(method or '')+'">'
             '<svg aria-hidden="true" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5">'
             '<path d="M8 12h32M12 8v8M20 8v8M28 8v8M36 8v8M8 34h16M12 30v8M20 30v8M34 23v18m-6-6 6 6 6-6"/></svg><div>'
-            '<h3>Short telomeres</h3><strong>' + display + '</strong><p>' + escape(note) + '</p></div></article>')
+            '<h3>'+escape(title)+'</h3><strong>' + display + '</strong><p>' + escape(note) + '</p></div></article>')
 
 
 def add_cutoff_line(layout, cutoff_bp, *, axis='y', unit='kb'):

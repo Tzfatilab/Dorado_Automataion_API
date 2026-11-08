@@ -22,7 +22,7 @@ window.reportObservedMotifs = data => {
           observed !== motif ? 'Mismatch' : motif+(group.role === 'canonical'?' (canonical)':'');
         const key = JSON.stringify([label,group.role,motif]);
         if (!result.has(key)) result.set(key,{...group,label,searched_motif:motif,
-          color:label==='Mismatch'?'#7C3AED':label.endsWith(' (canonical)')?'#3979CC':group.color,positions:[]});
+          color:label==='Mismatch'?'#008060':label.endsWith(' (canonical)')?'#7C3AED':group.color,positions:[]});
         result.get(key).positions.push(position);
       }
     }
@@ -115,9 +115,9 @@ window.renderReadTracks = (parent, read, options = {}) => {
   // Area layers retain the original exact, mismatch and TVR-inclusive series.
   // TVR-inclusive density is not a TVR-only density: overlaps forbid subtraction.
   const series = [
-    ['tvr_inclusive', 'Density + TVR', '#E87524', 'rgba(232,117,36,0.10)'],
+    ['tvr_inclusive', 'Density + TVR', '#D5B800', 'rgba(213,184,0,0.10)'],
     ['exact', 'Telomere density' + (canonicalName ? ' (' + canonicalName + ')' : ''), '#3979CC', 'rgba(57,121,204,0.08)'],
-    ['mismatch', 'Density with mismatches', '#7C3AED', null]
+    ['mismatch', 'Density with mismatches', '#E87524', null]
   ];
   series.forEach(([method, name, color, fill]) => {
     // NanoTel can export exact values under the mismatch name when disabled.
@@ -131,7 +131,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
     if (x[x.length - 1] < extent) { x.push(extent); y.push(y[y.length - 1]); }
     traces.push({type: 'scatter', mode: 'lines', name, x, y,
       line: {color, width: method === 'exact' ? 2.2 : 1.8,
-        dash: method === 'mismatch' ? 'dash' : method === 'tvr_inclusive' ? 'dot' : 'solid'},
+        dash: 'solid'},
       fill: fill ? 'tozeroy' : 'none', fillcolor: fill || undefined,
       visible: true,
       hovertemplate: 'Position: %{x:.3f} kb<br>Density: %{y:.3f}<extra>%{fullData.name}</extra>'});
@@ -145,7 +145,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
       x0: start / 1000, x1: end / 1000, y0: 0, y1: 1, layer: 'below',
       line: {width: 0}, fillcolor: color});
   };
-  if (exact) shade(exact[0], exact[1], 'rgba(57,121,204,0.06)');
+  if (exact) shade(exact[0], exact[1], 'rgba(124,58,237,0.06)');
   // Function: intervalStrip.
   // Inputs: intervals (exported coordinate intervals); name (trace/column name); color (display
   // color)
@@ -158,7 +158,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
     if(x.length) traces.push({type:'scatter',mode:'lines',name,x,y,
       line:{color,width:5},hovertemplate:'%{fullData.name}<br>%{x:.3f} kb<extra></extra>'});
   };
-  if (exact) intervalStrip([exact], 'Telomere (exact)', '#3979CC');
+  if (exact) intervalStrip([exact], 'Telomere (exact)', '#7C3AED');
   if (mismatch) {
     const extensions=[];
     if (!exact) extensions.push(mismatch);
@@ -166,12 +166,12 @@ window.renderReadTracks = (parent, read, options = {}) => {
       if(mismatch[0]<exact[0]) extensions.push([mismatch[0],Math.min(exact[0],mismatch[1])]);
       if(mismatch[1]>exact[1]) extensions.push([Math.max(exact[1],mismatch[0]),mismatch[1]]);
     }
-    extensions.forEach(([start,end])=>shade(start,end,'rgba(124,58,237,0.09)'));
-    intervalStrip(extensions,'Mismatch extension','#7C3AED');
+    extensions.forEach(([start,end])=>shade(start,end,'rgba(0,128,96,0.09)'));
+    intervalStrip(extensions,'Mismatch extension','#008060');
   }
   if (inclusive && exact) {
-    shade(inclusive[0], Math.min(exact[0], inclusive[1]), 'rgba(232,117,36,0.12)');
-    shade(Math.max(exact[1], inclusive[0]), inclusive[1], 'rgba(232,117,36,0.12)');
+    shade(inclusive[0], Math.min(exact[0], inclusive[1]), 'rgba(213,184,0,0.12)');
+    shade(Math.max(exact[1], inclusive[0]), inclusive[1], 'rgba(213,184,0,0.12)');
   }
   // NanoTel labels sequence outside the called interval as sub-telomere.
   // This is a source-call context, not a genomic mapping inference.
@@ -182,7 +182,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
       if (end > start) { x.push(start / 1000, end / 1000, null); y.push(0, 0, null); }
     });
     traces.push({type: 'scatter', mode: 'lines', name: 'Sub-telomere (NanoTel)', x, y,
-      line: {color: '#374151', width: 4}, hovertemplate: 'Outside called telomere<br>%{x:.3f} kb<extra></extra>'});
+      line: {color: '#000000', width: 4}, hovertemplate: 'Outside called telomere<br>%{x:.3f} kb<extra></extra>'});
     shapes.push({type: 'line', xref: 'x', yref: 'y', x0: called[1] / 1000,
       x1: called[1] / 1000, y0: 0, y1: 1.05, line: {color: '#243750', width: 1.5, dash: 'dash'}});
     annotations.push({xref: 'x', yref: 'y', x: called[1] / 1000, y: 1.06,
@@ -191,7 +191,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
       xshift: called[1] > read.length * 0.75 ? -8 : 8, yanchor: 'bottom', font: {size: 12, color: '#243750'}});
     if (exact && called !== exact && exact[1] !== called[1]) {
       shapes.push({type: 'line', xref: 'x', yref: 'y', x0: exact[1] / 1000,
-        x1: exact[1] / 1000, y0: 0, y1: 1, line: {color: '#3979CC', width: 1, dash: 'dot'}});
+        x1: exact[1] / 1000, y0: 0, y1: 1, line: {color: '#7C3AED', width: 1, dash: 'dot'}});
     }
   }
 

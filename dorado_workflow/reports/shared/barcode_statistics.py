@@ -104,10 +104,12 @@ def barcode_key_statistics(barcode, settings, cells, composition=None):
     chromosomes = {cell['chromosome'] for cell in cells
                    if cell['barcode'] == barcode.label}
     post_filtered = value('amount_of_telomeres')
+    from .measurement_statistics import method_statistics, selected_method
+    before = method_statistics(barcode, settings, selected_method(settings), 'before')
     return {
         'total_reads': value('total_reads'),
         'post_filtered_reads': post_filtered,
-        'median_length_bp': value('median_telomere_length'),
+        'median_length_bp': before['median_bp'],
         'reads_with_tvr': tvr['with_tvr'],
         'tvr_motifs': tvr['motifs'],
         'chromosomes': len(chromosomes) if chromosomes else 0 if post_filtered == 0 else None,

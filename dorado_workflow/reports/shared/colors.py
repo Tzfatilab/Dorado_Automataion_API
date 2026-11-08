@@ -5,18 +5,18 @@ import hashlib
 # Canonical repeats are context, never a TVR category. Preset variants receive
 # distinct colors; reverse complements share the same biological motif color.
 PRESET = {
-    'TCAGGG': '#D5B800',  # mustard
-    'TGAGGG': '#008060',  # emerald
-    'TTGGGG': '#A62128',  # brick
+    'TCAGGG': '#D03939',  # red
+    'TGAGGG': '#009CA6',  # turquoise
+    'TTGGGG': '#800E3F',  # burgundy
     'CGAGGG': '#C218A8',  # magenta
     'CTAGGG': '#E7A8B8',  # blush
-    'CTGGGG': '#16BAC5',  # cyan
+    'CTGGGG': '#77D8EB',  # light cyan, distinct from TGAGGG turquoise
     'TAAGGG': '#7C4A21',  # brown
     'TCCGGG': '#91BA22',  # lime
     'TTCGGG': '#172653',  # navy
     'CTAGG': '#6F6D00',   # olive
-    'AACCGC': '#E87524',
-    'CCCCTAGAACTCTTA': '#005566',  # deep teal
+    'AACCGC': '#005566',  # deep teal (orange is reserved for mismatch density)
+    'CCCCTAGAACTCTTA': '#537C98',  # slate blue
     'CCCCTAGTACGCTCTA': '#255B2A',  # forest
     'CCCCTAGTTCGCTCTA': '#EF476F',  # rose
     'CCCCTAGTTGACTA': '#B9A5E8',    # lavender
@@ -33,10 +33,10 @@ def motif_color(label):
         Deterministic hexadecimal display color for the motif label.
     """
     if label.endswith(' (canonical)'):
-        return '#3979CC'
+        return '#7C3AED'
     # Mismatch sequences are combined into one presentation category.
     if label == 'Mismatch':
-        return '#7C3AED'
+        return '#008060'
     motif = label.upper()
     reverse = motif.translate(str.maketrans('ACGT', 'TGCA'))[::-1]
     for key in (motif, reverse):

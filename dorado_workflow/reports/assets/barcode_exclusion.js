@@ -111,7 +111,8 @@
       const compatible=k=>new Set(rows.map(r=>r[k]).filter(v=>v!=null)).size<=1;
       const total=sum('total'),filtered=compatible('population')?sum('filtered'):null;
       const lengths=rows.length&&compatible('length_population')&&rows.every(r=>Array.isArray(r.lengths)&&r.lengths.every(numeric))?rows.flatMap(r=>r.lengths).sort((a,b)=>a-b):null;
-      const median=lengths?.length?(lengths[Math.floor((lengths.length-1)/2)]+lengths[Math.floor(lengths.length/2)])/2:null;
+      const before=rows.length&&rows.every(r=>Array.isArray(r.before_lengths)&&r.before_lengths.every(numeric))?rows.flatMap(r=>r.before_lengths).sort((a,b)=>a-b):null;
+      const median=before?.length?(before[Math.floor((before.length-1)/2)]+before[Math.floor(before.length/2)])/2:null;
       const cutoffs=new Set(rows.filter(r=>r.lengths?.length).map(r=>r.cutoff));
       const cutoff=cutoffs.size===1?[...cutoffs][0]:null;
       const short=lengths?.length&&numeric(cutoff)&&cutoff>0?lengths.filter(v=>v<cutoff).length:null;
@@ -135,14 +136,23 @@
         const title=el.querySelector('h3').textContent.trim();let value=null,note='Included barcodes only.';
         if(title==='Total barcodes'){value=String(rows.length);note=rows.length+' of '+pages.length+' barcodes included';}
         else if(!rows.length){value='No barcodes selected';note='Include a barcode to show pooled statistics.';}
-        else if(title==='Total barcode reads'){value=format(t.total);note='Input reads · included barcodes';}
+        else if(title==='Total number of reads'){value=format(t.total);note='Input reads · included barcodes';}
         else if(title==='Post-filtered telomeric reads'){value=format(t.filtered);note='Post-filtered reads · included barcodes';}
         else if(title==='% telomeric reads'){value=format(t.percent,'%',2);note='Included post-filtered reads / included input reads';}
-        else if(title==='Median length'){value=format(t.median==null?null:t.median/1000,' kb',2);note='Pooled individual post-filtered reads · included barcodes';}
+        else if(title==='Median length before filtration'){value=format(t.median==null?null:t.median/1000,' kb',2);note='Pooled individual before-filtration measurements · included barcodes';}
         else if((title==='Number of Chromosomes end found'||title==='Chromosomes')){value=t.chromosomes?format(t.chromosomes):'Unavailable';note='Distinct unambiguous mapped post-filtered chromosomes · included barcodes';}
-        else if(title==='Short telomeres'){
-          value=t.short==null?(t.lengths?.length===0?'No reads':'Unavailable'):format(100*t.short/t.lengths.length,'%',1);
-          note=t.short==null?'Complete lengths and a common cutoff are required for included barcodes.':'< '+t.cutoff/1000+' kb · '+t.short.toLocaleString('en-US')+'/'+t.lengths.length.toLocaleString('en-US')+' post-filtered telomeric reads · included barcodes';
+        else if(el.classList.contains('short-telomere-stat')){
+          const method=el.dataset.shortMethod;
+          const measured=rows.map(row=>row.measurements?.[method]?.after);
+          if(measured.every(row=>row?.requested===false)){value='Off';note='This matching mode was not requested.';}
+          else {
+            const lengths=measured.every(row=>Array.isArray(row?.lengths))?measured.flatMap(row=>row.lengths):null;
+            const cutoffs=new Set(rows.filter((row,i)=>measured[i]?.lengths?.length).map(row=>row.cutoff));
+            const cutoff=cutoffs.size===1?[...cutoffs][0]:null;
+            const short=lengths?.length&&numeric(cutoff)?lengths.filter(n=>n<cutoff).length:null;
+            value=short==null?(lengths?.length===0?'No reads':'Unavailable'):format(100*short/lengths.length,'%',1);
+            note=short==null?'Measured lengths and a common cutoff are required.':'< '+cutoff/1000+' kb ? '+short+'/'+lengths.length+' measured post-filtered reads ? included barcodes';
+          }
         }
         if(value!==null){el.querySelector('strong').textContent=value;el.querySelector('strong').classList.toggle('missing',value==='Unavailable'||value==='No barcodes selected');let p=el.querySelector('p');if(!p){p=document.createElement('p');el.querySelector('strong').after(p);}p.textContent=note;el.title=note;}
       }
@@ -226,7 +236,7 @@
       const sum=pie.values.reduce((a,b)=>a+b,0);
       figure.layout.annotations=(figure.layout.annotations||[]).filter(a=>!(a.x===.5&&a.y===.5));
       figure.layout.annotations.push({x:.5,y:.5,xref:'paper',yref:'paper',showarrow:false,
-        text:sum&&total?eventLabel+'<br><b>'+(100*withEvents/total).toFixed(1)+'%</b><br>'+withEvents.toLocaleString('en-US')+' / '+total.toLocaleString('en-US')+' reads':'No composition data<br>for included barcodes'});
+        text:sum&&total?(section.dataset.repeatMethod==='mismatch'?eventLabel+'<br><b>'+(100*withEvents/total).toFixed(1)+'%</b><br>'+withEvents.toLocaleString('en-US')+' / '+total.toLocaleString('en-US')+' reads':'TVR-inclusive<br><b>Base composition</b><br>Post-filtered telomeres'):'No composition data<br>for included barcodes'});
       section.querySelectorAll('.read-composition-legend li').forEach((li,i)=>{li.hidden=!sum||!pie.values[i];const strong=li.querySelector('strong');if(strong)strong.textContent=sum?(100*pie.values[i]/sum).toFixed(1)+'%':'Unavailable';});
       let note=section.querySelector('.exclusion-composition-coverage');
       if(!note){note=document.createElement('p');note.className='note exclusion-composition-coverage';section.appendChild(note);}
