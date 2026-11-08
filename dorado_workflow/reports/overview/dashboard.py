@@ -292,8 +292,8 @@ def generate_run_report(results, nanotel_directory):
         write_dashboard_workbook(run, Path(nanotel_directory) / "nanotel_results.xlsx", results, comparisons=comparisons)
         from dorado_workflow.reports.storage.analysis_metadata import cleanup_analysis_json
         cleanup_analysis_json(results)
-    # Recalculation exposes immutable detail files through links. Packing them
-    # would allocate duplicate archives and defeat source reuse.
+    # Recalculation references original details. Only native detection exports
+    # belong in a new archive; never repack source details for a recalculation.
     is_recalculated_run = (Path(results) / 'reports' / 'post_analysis_source.json').is_file()
     if not is_recalculated_run:
         # Archive only after a complete dashboard has been saved successfully.

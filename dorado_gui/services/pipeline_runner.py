@@ -130,11 +130,15 @@ def run_pipeline(
     context.command_executor.stop_callback = stop_cb
     check_cancelled()
 
+    input_trim_status = non_pod5_trim_status
+    if pod5_path:
+        input_trim_status = _resolve_pod5_trim_status(context.config_manager)
+
     _apply_gui_config_overrides(
         context,
         organism=organism,
         methylation_type=methylation_type,
-        non_pod5_trim_status=non_pod5_trim_status,
+        non_pod5_trim_status=input_trim_status,
         summary_only=summary_only,
         tvr_mode=tvr_mode,
         tvr_manual=tvr_manual,
@@ -145,6 +149,9 @@ def run_pipeline(
         min_density_threshold=min_density_threshold,
         short_telomere_threshold=short_telomere_threshold,
     )
+    nanotel_params = context.config_manager.get_nanotel_params()
+    log(f"Input trimming: {input_trim_status}; latest telomere start and edge distance: "
+        f"{nanotel_params.get('max_telomere_start')} bp")
 
     operator = WorkflowOperator(context=context)
     _log_bam_state(log, bam_path, bam_is_aligned, bam_has_modifications)
@@ -447,6 +454,7 @@ def _apply_gui_config_overrides(
     )
     if nanotel_overrides:
         context.config_manager.update_nanotel_params(nanotel_overrides)
+    context.config_manager.update_nanotel_params({"input_trim_status": non_pod5_trim_status})
 
 
 def _log_bam_state(log, bam_path: str, bam_is_aligned, bam_has_modifications) -> None:
@@ -854,6 +862,14 @@ def _parse_patterns(value: str) -> list:
     ]
 
 
+def _resolve_pod5_trim_status(config_manager):
+    """Infer the final read state from both Dorado stages for POD5 inputs."""
+    basecalling = config_manager.get_basecalling_params()
+    demuxing = config_manager.get_demuxing_params()
+    return "untrimmed" if (basecalling.get("no_trim", True)
+                           and demuxing.get("no_trim", True)) else "trimmed"
+
+
 def _resolve_telomere_start(nanotel_params, requested_start, trim_status):
     """Apply the same trimming adjustment in fresh and recalculation runs.
 
@@ -905,9 +921,8 @@ def _run_post_analysis(*, project_path, output_dir, organism, mapping, summary_o
     check_cancelled()
     source = ProjectSources.inspect(project_path)
     organism = source.organism or organism
-    base = Path(_resolve_base_output_dir(output_dir)).resolve()
-    if base == source.root or source.root in base.parents:
-        raise ValueError("Choose an Output Path outside the source project; Post-analysis never overwrites the original project.")
+    from dorado_workflow.utils.source_discovery import RECALCULATED_FOLDER
+    base = Path(_resolve_base_output_dir(output_dir or str(source.root / RECALCULATED_FOLDER))).resolve()
     context = _setup_pipeline_context(output_dir=str(base), organism=organism, log=log,
         do_basecalling=False, do_nanotel=True, bam_path="", nanotel_mapping=mapping,
         align_during_basecalling=False, config_data=config_data)

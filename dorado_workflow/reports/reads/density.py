@@ -60,6 +60,8 @@ def saved_read_sequence(folder, serial, header, length):
     if folder is None or serial is None or length is None:
         return None
     folder = Path(folder)
+    from dorado_workflow.reports.storage.saved_sources import source_folders
+    folder = source_folders(folder.parent).get(folder.name, folder)
     try:
         number = int(serial)
     except (ValueError, TypeError):

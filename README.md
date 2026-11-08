@@ -94,7 +94,7 @@ selected. Manual patterns must contain at least five A/C/G/T bases.
 1. Select **Existing project** and choose the original project or its `results` folder.
 2. Select **Recalculate results** under **Analysis Steps**.
 3. Adjust the four numeric analysis options and choose whether to run mapping.
-4. Choose **Summary only** or a full report, then set an **Output Path** outside the source project.
+4. Choose **Summary only** or a full report. **Output Path** defaults to `Recalculated results` inside the source project; each run creates its own timestamped folder there. You can choose another output location.
 5. Run the analysis to regenerate filtered results, Excel and the dashboard.
 
 Original TVR and mismatch settings are loaded from the source run and locked;
@@ -106,7 +106,9 @@ Recalculation requires the original before-filter NanoTel CSVs or the retained
 source worksheets in `nanotel_summary.xlsx`, together with the original analysis
 settings. A standalone dashboard or presentation-only Excel export is insufficient.
 Mapping additionally requires saved read inputs. The source project is preserved,
-and existing source files are linked where supported instead of copied.
+and each recalculation creates a new dashboard and Excel workbook. Read sequences
+and detail tracks are read from the original project without copying, per-read
+links, or ZIP extraction; keep that project available for future rebuilds.
 
 A full report can reuse saved read sequences and detail tracks. Recalculation
 does not recreate details that were never exported by the original run. See

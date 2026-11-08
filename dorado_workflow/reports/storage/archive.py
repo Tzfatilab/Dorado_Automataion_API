@@ -61,7 +61,8 @@ def available_details(root):
     created = []
     directories = set()
     try:
-        for archive in sorted(Path(root).rglob(ARCHIVE)):
+        from dorado_workflow.utils.source_discovery import source_files
+        for archive in sorted(source_files(root, ARCHIVE)):
             folder = archive.parent / 'report_details'
             with zipfile.ZipFile(archive) as source:
                 names = source.namelist()

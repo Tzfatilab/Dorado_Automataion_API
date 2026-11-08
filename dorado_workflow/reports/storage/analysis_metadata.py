@@ -5,6 +5,7 @@ import re
 import warnings
 
 from openpyxl import load_workbook
+from dorado_workflow.utils.source_discovery import source_files
 
 SHEET = 'NanoTel analysis facts'
 HEADERS = ['Barcode', 'Source field', 'Value']
@@ -66,7 +67,7 @@ def analysis_rows(results_root, include_native=True):
             book.close()
     if include_native:
         seen = set()
-        for path in root.rglob('barcode*_analysis.json'):
+        for path in source_files(root, 'barcode*_analysis.json'):
             barcode = path.name.removesuffix('_analysis.json')
             if not re.fullmatch(r'barcode\d+', barcode):
                 continue
@@ -121,7 +122,7 @@ def cleanup_analysis_json(results_root):
     saved = {(row['Barcode'], row['Source field']): row['Value']
              for row, _, _ in analysis_rows(root, include_native=False)}
     removed = 0
-    for path in root.rglob('barcode*_analysis.json'):
+    for path in source_files(root, 'barcode*_analysis.json'):
         barcode = path.name.removesuffix('_analysis.json')
         if not re.fullmatch(r'barcode\d+', barcode) or not path.parent.resolve().is_relative_to(root):
             continue

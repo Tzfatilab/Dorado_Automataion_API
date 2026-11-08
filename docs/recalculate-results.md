@@ -4,7 +4,7 @@ Select **Existing project** in Input Data, or **Recalculate results** in Analysi
 
 **Analysis Options** is the same panel in both modes. Recalculation locks TVR and mismatch options to the original settings. Editable thresholds are minimum read length, latest telomere start (also the read margin), minimum repeat density and the short-telomere cutoff. Organism is loaded from original metadata when available. For legacy metadata without an organism, select the original organism explicitly.
 
-Choose an Output Path outside the source project. A new timestamped run preserves the original data and records its source in `results/reports/post_analysis_source.json`. The **Summary only** toggle remains editable and initially follows the source run. Summary mode writes barcode pages and read tables without individual read pages; full mode uses the normal full dashboard and workbook writer. Full mode can only display saved measurements: missing sequence/density exports from a Summary source are not reconstructed. The original source evidence workbook is retained under `results/reports/post_analysis_sources` for full recalculations.
+Output Path defaults to `Recalculated results` inside the source project. Each run creates a new timestamped folder there; another output location can still be selected. Nested recalculated runs are excluded when discovering original source data. A new run preserves the original data and records its source in `results/reports/post_analysis_source.json`. The **Summary only** toggle remains editable and initially follows the source run. Summary mode writes barcode pages and read tables without individual read pages; full mode uses the normal full dashboard and workbook writer. Full mode can only display saved measurements: missing sequence/density exports from a Summary source are not reconstructed. The original source evidence workbook is retained under `results/reports/post_analysis_sources` for full recalculations.
 
 ## Source requirements
 
@@ -19,6 +19,13 @@ Choose an Output Path outside the source project. A new timestamped run preserve
 Threshold changes filter existing measurements; they do not recalculate NanoTel interval boundaries or densities. The first detection settings remain recorded separately in `source_detection_settings`, including after repeated recalculation.
 
 Old filtered rows, mappings and aggregate figures are not reused as new results. Source counts, motifs, repeat coverage and KM evidence are retained when available. Unavailable measurements stay unavailable. The original detected population may be smaller than all input reads; recalculation cannot recover reads never exported by NanoTel.
+
+Repeated read UUIDs remain separate source records, displayed as `Read X_1`,
+`Read X_2`, and so on. The original UUID and NanoTel Serial are preserved;
+Serial distinguishes their filtered lengths and saved per-read details. Duplicate
+UUIDs alone do not invalidate a barcode's short-telomere percentage. Legacy
+filtered lengths without Serial remain usable for length statistics, while
+ambiguous detail joins stay unavailable instead of being assigned to a record.
 
 Missing length histograms are rebuilt from the current post-filtered reads using
 the original NanoTel R histogram builder, shared with normal analysis. This keeps
@@ -51,14 +58,18 @@ Mapping subprocesses use direct samtools arguments rather than Unix shell pipeli
 
 ## Disk usage
 
-Recalculation links native source CSVs, read files, detail exports and saved BAM
-inputs instead of copying them. FASTQ inputs are read directly; fresh aligned
+Recalculation links native source CSVs and saved BAM inputs instead of copying
+them. Read sequences and detail exports stay in the original project: a small
+`report_sources.json` records their locations, and archived details are read
+directly from ZIP without extraction. Keep the original project accessible when
+rebuilding a full report. The generated dashboard embeds its read content and
+can be opened independently. FASTQ inputs are read directly; fresh aligned
 BAMs and their indexes are new analysis outputs. Hard links share the original file's disk
 storage; file symlinks are used when hard links are unavailable. If neither is
 supported, the run reports an error rather than silently copying large inputs.
-Linked detail exports are not repacked into duplicate archives. Inputs must be
+Referenced detail exports are not repacked into duplicate archives. Inputs must be
 treated as immutable; symlinked sources must remain accessible.
 
-Workbook-only populations still need CSV extraction for the R pipeline. Archived
-details need extraction, and evidence workbooks and updated Excel/dashboard,
+Workbook-only populations still need CSV extraction for the R pipeline. Evidence
+workbooks and updated Excel/dashboard,
 filtered tables, mapping outputs and BAM indexes are newly generated outputs.

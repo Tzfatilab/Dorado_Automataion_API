@@ -22,7 +22,7 @@ window.reportObservedMotifs = data => {
           observed !== motif ? 'Mismatch' : motif+(group.role === 'canonical'?' (canonical)':'');
         const key = JSON.stringify([label,group.role,motif]);
         if (!result.has(key)) result.set(key,{...group,label,searched_motif:motif,
-          color:label==='Mismatch'?'#E66100':label.endsWith(' (canonical)')?'#3979CC':group.color,positions:[]});
+          color:label==='Mismatch'?'#7C3AED':label.endsWith(' (canonical)')?'#3979CC':group.color,positions:[]});
         result.get(key).positions.push(position);
       }
     }
@@ -115,9 +115,9 @@ window.renderReadTracks = (parent, read, options = {}) => {
   // Area layers retain the original exact, mismatch and TVR-inclusive series.
   // TVR-inclusive density is not a TVR-only density: overlaps forbid subtraction.
   const series = [
-    ['tvr_inclusive', 'Density + TVR', '#b88719', 'rgba(245,199,64,0.19)'],
-    ['exact', 'Telomere density' + (canonicalName ? ' (' + canonicalName + ')' : ''), '#0072B2', 'rgba(0,114,178,0.10)'],
-    ['mismatch', 'Density with mismatches', '#E66100', null]
+    ['tvr_inclusive', 'Density + TVR', '#E87524', 'rgba(232,117,36,0.10)'],
+    ['exact', 'Telomere density' + (canonicalName ? ' (' + canonicalName + ')' : ''), '#3979CC', 'rgba(57,121,204,0.08)'],
+    ['mismatch', 'Density with mismatches', '#7C3AED', null]
   ];
   series.forEach(([method, name, color, fill]) => {
     // NanoTel can export exact values under the mismatch name when disabled.
@@ -130,7 +130,8 @@ window.renderReadTracks = (parent, read, options = {}) => {
     // NanoTel extends the last observed density to the end of the read.
     if (x[x.length - 1] < extent) { x.push(extent); y.push(y[y.length - 1]); }
     traces.push({type: 'scatter', mode: 'lines', name, x, y,
-      line: {color, width: method === 'exact' ? 2.2 : 1.8, dash: 'solid'},
+      line: {color, width: method === 'exact' ? 2.2 : 1.8,
+        dash: method === 'mismatch' ? 'dash' : method === 'tvr_inclusive' ? 'dot' : 'solid'},
       fill: fill ? 'tozeroy' : 'none', fillcolor: fill || undefined,
       visible: true,
       hovertemplate: 'Position: %{x:.3f} kb<br>Density: %{y:.3f}<extra>%{fullData.name}</extra>'});
@@ -144,7 +145,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
       x0: start / 1000, x1: end / 1000, y0: 0, y1: 1, layer: 'below',
       line: {width: 0}, fillcolor: color});
   };
-  if (exact) shade(exact[0], exact[1], 'rgba(142,68,173,0.07)');
+  if (exact) shade(exact[0], exact[1], 'rgba(57,121,204,0.06)');
   // Function: intervalStrip.
   // Inputs: intervals (exported coordinate intervals); name (trace/column name); color (display
   // color)
@@ -157,7 +158,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
     if(x.length) traces.push({type:'scatter',mode:'lines',name,x,y,
       line:{color,width:5},hovertemplate:'%{fullData.name}<br>%{x:.3f} kb<extra></extra>'});
   };
-  if (exact) intervalStrip([exact], 'Telomere (exact)', '#8E44AD');
+  if (exact) intervalStrip([exact], 'Telomere (exact)', '#3979CC');
   if (mismatch) {
     const extensions=[];
     if (!exact) extensions.push(mismatch);
@@ -165,12 +166,12 @@ window.renderReadTracks = (parent, read, options = {}) => {
       if(mismatch[0]<exact[0]) extensions.push([mismatch[0],Math.min(exact[0],mismatch[1])]);
       if(mismatch[1]>exact[1]) extensions.push([Math.max(exact[1],mismatch[0]),mismatch[1]]);
     }
-    extensions.forEach(([start,end])=>shade(start,end,'rgba(21,148,71,0.12)'));
-    intervalStrip(extensions,'Mismatch extension','#159447');
+    extensions.forEach(([start,end])=>shade(start,end,'rgba(124,58,237,0.09)'));
+    intervalStrip(extensions,'Mismatch extension','#7C3AED');
   }
   if (inclusive && exact) {
-    shade(inclusive[0], Math.min(exact[0], inclusive[1]), 'rgba(251,213,88,0.22)');
-    shade(Math.max(exact[1], inclusive[0]), inclusive[1], 'rgba(251,213,88,0.22)');
+    shade(inclusive[0], Math.min(exact[0], inclusive[1]), 'rgba(232,117,36,0.12)');
+    shade(Math.max(exact[1], inclusive[0]), inclusive[1], 'rgba(232,117,36,0.12)');
   }
   // NanoTel labels sequence outside the called interval as sub-telomere.
   // This is a source-call context, not a genomic mapping inference.
@@ -190,7 +191,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
       xshift: called[1] > read.length * 0.75 ? -8 : 8, yanchor: 'bottom', font: {size: 12, color: '#243750'}});
     if (exact && called !== exact && exact[1] !== called[1]) {
       shapes.push({type: 'line', xref: 'x', yref: 'y', x0: exact[1] / 1000,
-        x1: exact[1] / 1000, y0: 0, y1: 1, line: {color: '#8E44AD', width: 1, dash: 'dot'}});
+        x1: exact[1] / 1000, y0: 0, y1: 1, line: {color: '#3979CC', width: 1, dash: 'dot'}});
     }
   }
 

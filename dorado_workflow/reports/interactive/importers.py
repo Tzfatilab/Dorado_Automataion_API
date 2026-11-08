@@ -9,6 +9,7 @@ import fnmatch
 import hashlib
 import json
 import math
+import io
 from pathlib import Path
 import re
 
@@ -16,6 +17,7 @@ from openpyxl import load_workbook
 
 from dorado_workflow.reports.exports.workbook import barcode_from_summary_filename
 from .coordinates import normalize_interval
+from .identities import ReadIndex, serial_number
 from .supplementary import import_statistics, chromosome_fact, detected_chromosomes
 from .models import (Availability as A, Barcode, Evidence, Fact, Read, Run,
                      Source, safe_id, unavailable, validate)
@@ -88,8 +90,12 @@ class ResultImporter:
         Returns:
             Registered Source record with stable identity and file digest.
         """
-        path = Path(path)
-        label = path.relative_to(self.root).as_posix() if path.is_relative_to(self.root) else path.name
+        from ..storage.saved_sources import ArchivedDetail
+        if isinstance(path, ArchivedDetail):
+            label = path.archive.as_posix() + "!/" + path.member
+        else:
+            path = Path(path)
+            label = path.relative_to(self.root).as_posix() if path.is_relative_to(self.root) else path.as_posix()
         key = safe_id("s", label, sheet or "")
         if key not in self.sources:
             # Workbook sheets have distinct provenance IDs but share file bytes.
@@ -114,8 +120,15 @@ class ResultImporter:
             Deterministically ordered source paths matching the filename pattern.
         """
         if not hasattr(self, "_file_index"):
-            self._file_index = sorted(p for p in self.root.rglob("*")
+            from dorado_workflow.utils.source_discovery import source_files
+            self._file_index = sorted(p for p in source_files(self.root)
                 if "report" not in p.relative_to(self.root).parts and p.is_file())
+            from ..storage.saved_sources import referenced_details
+            local_details = {(p.parent.parent.name, p.name) for p in self._file_index
+                             if p.parent.name == "report_details"}
+            for label, path in referenced_details(self.root / "nanotel"):
+                if (label, path.name) not in local_details:
+                    self._file_index.append(path)
         return [p for p in self._file_index if fnmatch.fnmatch(p.name, pattern)]
 
     def csv_table(self, path):
@@ -130,8 +143,16 @@ class ResultImporter:
             Tuple of column names, rows with Evidence, and the registered Source.
         """
         source = self.source(path, "csv")
-        opener = gzip.open if path.name.endswith(".gz") else open
-        with opener(path, "rt", encoding="utf-8-sig", newline="") as handle:
+        from ..storage.saved_sources import ArchivedDetail
+        if isinstance(path, ArchivedDetail):
+            raw = path.read_bytes()
+            if path.name.endswith(".gz"):
+                raw = gzip.decompress(raw)
+            handle = io.StringIO(raw.decode("utf-8-sig"), newline="")
+        else:
+            opener = gzip.open if path.name.endswith(".gz") else open
+            handle = opener(path, "rt", encoding="utf-8-sig", newline="")
+        with handle:
             reader = csv.DictReader(handle)
             headers = reader.fieldnames or []
             if len(headers) != len(set(headers)) or not headers:
@@ -154,10 +175,16 @@ class ResultImporter:
         """
         headers, rows, source = self.csv_table(path)
         if "schema_version" not in headers:
+            match = re.search(r'(?:^|_)read(\d+)_', path.name)
+            if match:
+                rows = [(dict(row, Serial=row.get('Serial') or match[1]), ev) for row, ev in rows]
             return headers, rows, source
         # Index lives beside the batch and stores each full FASTQ header once.
         stem = path.name.rsplit("_", 1)[0]
         index_path = path.with_name(stem + "_index.csv.gz")
+        # A newer loose batch can share its unchanged identity index with ZIP.
+        index_path = next((p for p in self.files(stem + "_index.csv.gz")
+                           if p.parent == path.parent), index_path)
         _, identities, _ = self.csv_table(index_path)
         lookup = {}
         for entry, ev in identities:
@@ -173,7 +200,7 @@ class ResultImporter:
             if len(set(methods)) != len(methods) or not set(methods) <= {"exact", "mismatch", "tvr_inclusive"}:
                 raise ValueError(f"Invalid compact method aliases: {path.name}")
             for method in methods:
-                expanded.append((dict(row, read_id=lookup[row["read_id"]], method=method), ev))
+                expanded.append((dict(row, Serial=row["read_id"], read_id=lookup[row["read_id"]], method=method), ev))
         return headers, expanded, source
 
     def workbook_tables(self, path):
@@ -248,16 +275,14 @@ class ResultImporter:
         batched = compact or [p for p in paths if p.name == f"{barcode.label}_reads_motifs.csv"]
         if batched:
             paths = batched
-        index = {}
-        for read in barcode.reads:
-            index.setdefault(read.original_id, []).append(read)
+        index = ReadIndex(barcode.reads)
         records, completed, invalid, evidence = {}, {}, set(), {}
         for path in paths:
             _, rows, source = self.detail_table(path)
             recovery_path = path.parent / "motif_recovery.json"
             recovery = Evidence(self.source(recovery_path, "json").id) if recovery_path.is_file() else None
             for row, ev in rows:
-                targets = index.get(row.get("read_id"), [])
+                targets = index.find(row.get("read_id"), row.get("Serial"))
                 if len(targets) != 1:
                     barcode.warnings.append(f"{path.name}: unmatched or ambiguous motif read ID")
                     continue
@@ -329,14 +354,12 @@ class ResultImporter:
         batched = compact or [p for p in paths if p.name == f"{barcode.label}_reads_density.csv"]
         if batched:
             paths = batched
-        index = {}
-        for read in barcode.reads:
-            index.setdefault(read.original_id, []).append(read)
+        index = ReadIndex(barcode.reads)
         collected, invalid = {}, set()
         for path in paths:
             _, rows, source = self.detail_table(path)
             for row, ev in rows:
-                targets = index.get(row.get("read_id"), [])
+                targets = index.find(row.get("read_id"), row.get("Serial"))
                 if len(targets) != 1:
                     barcode.warnings.append(f"{path.name}: density read ID unmatched or ambiguous")
                     continue
@@ -486,9 +509,18 @@ class ResultImporter:
                         read.filtering = Fact(A.AVAILABLE, "present_in_filtered_output", evidence=[ev])
                     b.reads.append(read)
                 duplicates = {name for name, count in counts.items() if count > 1}
+                duplicate_ordinals, first_labels = {}, {}
                 for read in b.reads:
                     if read.original_id in duplicates:
-                        read.warnings.append("Duplicate source read ID; records retained separately; joins are ambiguous")
+                        source_serial = read.metrics.get('read_number')
+                        base = first_labels.setdefault(read.original_id,
+                            f'Read {int(source_serial.value)}' if source_serial and source_serial.status == A.AVAILABLE
+                            else read.original_id.split()[0])
+                        occurrence = duplicate_ordinals.get(read.original_id, 0) + 1
+                        duplicate_ordinals[read.original_id] = occurrence
+                        read.metrics['display_label'] = Fact(A.AVAILABLE, f'{base}_{occurrence}',
+                            origin='presentation_aggregate', evidence=read.evidence.copy())
+                        read.warnings.append("Duplicate source read ID; record retained separately using NanoTel Serial when available")
                 b.metrics["imported_read_records"] = Fact(A.AVAILABLE, len(b.reads), unit="records",
                     population=population, origin="presentation_aggregate", evidence=b.evidence.copy())
                 if duplicates:
@@ -607,25 +639,27 @@ class ResultImporter:
         barcode.metrics[key] = unavailable("Filtered per-read lengths were not exported")
         if not table:
             return
-        rows = []; seen = set(); counts = {}
-        cleaned = {}
+        rows = []; seen = set(); occurrences = {}
         by_report_id = {read.id: read for read in barcode.reads}
-        for read in barcode.reads:
-            counts.setdefault(read.original_id, []).append(read.id)
-            cleaned.setdefault(read.original_id.split()[0], []).append(read.id)
+        index = ReadIndex(barcode.reads)
         for row, ev in table[1]:
             rid = identity(row)
             length = number(row, length_field, ev, unit="bp")
-            if not rid or rid in seen or length.status != A.AVAILABLE:
-                barcode.metrics[key] = unavailable("Filtered lengths contain missing/duplicate IDs or invalid lengths", A.INVALID)
+            serial = serial_number(row.get('Serial'))
+            occurrence = occurrences.get(rid, 0) + 1
+            occurrences[rid] = occurrence
+            record_key = (rid, serial) if serial is not None else (rid, 'occurrence', occurrence)
+            if not rid or record_key in seen or length.status != A.AVAILABLE:
+                barcode.metrics[key] = unavailable("Filtered lengths contain missing IDs, repeated source records or invalid lengths", A.INVALID)
                 return
-            seen.add(rid)
+            seen.add(record_key)
             # R may strip FASTQ header annotations in filtered tables. Join the
             # first read-ID token only when it identifies exactly one molecule.
-            matching = counts.get(rid, []) or cleaned.get(rid.split()[0], [])
-            rows.append({"original_id": rid, "read_id": matching[0] if len(matching) == 1 else None, "length_bp": length.value})
+            matching = index.find(rid, serial)
+            record_id = matching[0].id if len(matching) == 1 else safe_id('r', 'filtered', barcode.id, rid, serial, occurrence)
+            rows.append({"original_id": rid, "read_id": record_id, "length_bp": length.value})
             if len(matching) == 1:
-                target = by_report_id[matching[0]]
+                target = by_report_id[matching[0].id]
                 target.filtering = Fact(A.AVAILABLE, "present_in_filtered_output", evidence=[ev])
         # A source count mismatch means this cannot be advertised as the complete
         # filtered distribution, even if all individual length values are valid.

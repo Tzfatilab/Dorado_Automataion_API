@@ -115,6 +115,11 @@ class InputSection:
         self.selected_input = key
         if key != "project":
             self._post_loaded_path = None
+            if hasattr(self, "output_input"):
+                output = self.output_input["edit"]
+                if output.text() == getattr(self, "_post_default_output", None):
+                    output.setText(getattr(self, "_output_before_post", ""))
+            self._post_default_output = None
         for k, card in self.cards.items():
             card.set_selected(k == key)
         if hasattr(self, "workflow_cards"):
@@ -127,6 +132,8 @@ class InputSection:
             if hasattr(self, "nanotel_options_card"):
                 self._update_advanced_options_state()
         self.input_path.setPlaceholderText("Select the original project folder..." if key == "project" else "Select input directory...")
+        if key == "project":
+            self._load_post_analysis_source()
 
 
     def _browse_input(self, edit=None):
@@ -233,6 +240,13 @@ class InputSection:
                 value = params.get(key)
                 if value is not None:
                     getattr(self, name).setText(format(value*100, '.6g') if name == 'min_density_threshold' else str(value))
+            from dorado_workflow.utils.source_discovery import RECALCULATED_FOLDER
+            if hasattr(self, "output_input"):
+                output = self.output_input["edit"]
+                if not getattr(self, "_post_default_output", None):
+                    self._output_before_post = output.text()
+                self._post_default_output = str(source.root / RECALCULATED_FOLDER)
+                output.setText(self._post_default_output)
         except (OSError, ValueError, KeyError):
             # Input validation reports errors when Run is pressed; do not
             # display backend error messages inside the options panel.

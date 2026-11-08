@@ -3,6 +3,7 @@ import json
 import math
 import re
 from .models import Availability as A, Evidence, Fact, unavailable
+from .identities import ReadIndex
 
 DEFINITION = 'union_coverage_tvr_interval_v2'
 KEYS = ('canonical_pct', 'tvr_pct', 'tvr_block_count', 'repeat_overlap_bp', 'repeat_unassigned_bp')
@@ -18,9 +19,8 @@ def import_coverage(importer, barcode):
     Returns:
         None.
     """
-    index = {}
+    index = ReadIndex(barcode.reads)
     for read in barcode.reads:
-        index.setdefault(read.original_id, []).append(read)
         for key in KEYS:
             read.metrics[key] = unavailable('Versioned NanoTel coverage export not available')
     seen = set()
@@ -28,17 +28,20 @@ def import_coverage(importer, barcode):
     for read in barcode.reads:
         fact = read.metrics.get('_repeat_coverage_export')
         if fact and fact.status == A.AVAILABLE:
-            exports.append(('summary coverage', fact.value, fact.evidence[0]))
+            exports.append(('summary coverage', fact.value, fact.evidence[0], read))
     for path in importer.files('*read*_coverage.json'):
         if path.parent.name != 'report_details' or not (path.name.startswith(barcode.label+'_read') or
                 (re.fullmatch(r'read\d+_coverage.json', path.name) and path.parent.parent.name.lower() == barcode.label.lower())):
             continue
-        exports.append((path.name, path.read_text(encoding='utf-8-sig'), Evidence(importer.source(path, 'json').id)))
-    for name, encoded, ev in exports:
+        exports.append((path.name, path.read_text(encoding='utf-8-sig'), Evidence(importer.source(path, 'json').id), None))
+    for name, encoded, ev, source_read in exports:
         targets = []
         try:
             row = json.loads(encoded)
-            targets = index.get(row.get('read_id'), [])
+            serial = re.search(r'(?:^|_)read(\d+)_', name)
+            targets = ([source_read] if source_read and
+                       source_read.original_id.split()[0] == (str(row.get('read_id') or '').split() or [''])[0]
+                       else index.find(row.get('read_id'), serial[1] if serial else row.get('Serial')))
             if len(targets) != 1:
                 raise ValueError('unmatched or ambiguous read identity')
             read = targets[0]

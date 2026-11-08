@@ -48,6 +48,9 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
         # Use saved numbers, never a page index that changes with filtering.
         label = (f'Read {int(serial.value)}' if serial and serial.status == 'available'
                  else record['original_id'].split()[0])
+        display = read.metrics.get('display_label') if read else None
+        if display and display.status == 'available':
+            label = display.value
         chromosomes, arms = set(), set()
         if read and read.alignments.status == 'available':
             # Retain multiple source assignments; never invent a chromosome arm.

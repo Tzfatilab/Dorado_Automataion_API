@@ -68,7 +68,7 @@ def composition_section(row, number=5, title="TVR patterns", requested=None, met
         key=lambda label: (label in ('Unassigned bases', 'Overlapping motifs'), not label.endswith(' (canonical)'), label))
     if 'Unassigned bases' not in labels:
         labels.append('Unassigned bases')
-    colors = [('#b5bdc7' if label == 'Unassigned bases' else '#806b93' if label == 'Overlapping motifs' else motif_color(label)) for label in labels]
+    colors = [('#b5bdc7' if label == 'Unassigned bases' else '#5F6875' if label == 'Overlapping motifs' else motif_color(label)) for label in labels]
     values = [counts.get(label, 0) for label in labels]
     figure = go.Figure(go.Pie(labels=[escape(label) for label in labels], values=values,
         hole=.7, sort=False, marker=dict(colors=colors), textinfo='none', showlegend=False,

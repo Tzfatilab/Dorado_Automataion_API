@@ -2,11 +2,12 @@
 import csv
 import json
 import re
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from openpyxl import load_workbook, Workbook
 from dorado_workflow.utils.source_links import link_source
+from dorado_workflow.utils.source_discovery import source_files
+from dorado_workflow.reports.storage.saved_sources import source_folders, MANIFEST
 
 
 @dataclass
@@ -37,7 +38,7 @@ class ProjectSources:
             raise ValueError("Choose an existing project folder or its results folder.")
         root = results.parent if results.name == "results" else root
         summaries = {}
-        for path in (results / "nanotel").rglob("barcode*_summary.csv"):
+        for path in source_files(results / "nanotel", "barcode*_summary.csv"):
             if re.fullmatch(r"barcode\d+_summary.csv", path.name):
                 label = path.name[:-12]
                 if label in summaries:
@@ -111,49 +112,37 @@ class ProjectSources:
         target = context.path_manager.get_nanotel_output_dir_path()
         target.mkdir(parents=True, exist_ok=True)
         book = load_workbook(self.workbook, read_only=True, data_only=True) if self.workbook else None
+        referenced_folders = {}
         try:
             for label, source in self.summaries.items():
                 check_cancelled()
                 output = target / (label + "_summary.csv")
                 if isinstance(source, Path):
                     link_source(source, output)
-                    # Detailed source tracks remain useful; aggregate plots and
-                    # old filtered populations must not be reused after refiltering.
-                    details = source.parent / "report_details"
-                    if details.is_dir():
-                        shutil.copytree(details, target / label / "report_details", dirs_exist_ok=True, copy_function=link_source,
-                                        ignore=shutil.ignore_patterns("*telomere*.plotly.json", "*.html"))
-                    archive = source.parent / "report_details.zip"
-                    if archive.is_file():
-                        import zipfile
-                        from dorado_workflow.reports.storage.archive import member_path
-                        with zipfile.ZipFile(archive) as zipped:
-                            for info in zipped.infolist():
-                                if info.is_dir() or "telomere" in info.filename or info.filename.endswith(".html"):
-                                    continue
-                                extracted_path = member_path(target / label / "report_details", info.filename)
-                                # Loose exports take precedence over archived
-                                # versions. Never overwrite a linked source file.
-                                if extracted_path.exists():
-                                    continue
-                                extracted_path.parent.mkdir(parents=True, exist_ok=True)
-                                with zipped.open(info) as archive_stream, extracted_path.open("xb") as output_stream:
-                                    shutil.copyfileobj(archive_stream, output_stream)
-                    if not context.config_manager.get_nanotel_params().get("summary_only", False):
-                        reads = source.parent / "reads"
-                        if reads.is_dir():
-                            shutil.copytree(reads, target / label / "reads", dirs_exist_ok=True, copy_function=link_source)
-                    for path in source.parent.glob(label + "_*.json"):
-                        if not path.name.endswith(".plotly.json"):
-                            link_source(path, target / path.name)
+                    # Keep only a directory reference: no per-read links, copies,
+                    # or ZIP extraction in the recalculated project.
+                    inherited = source_folders(source.parent)
+                    detail_folder = inherited.get(label, source.parent if source.parent.name == label else source.parent / label)
+                    if detail_folder.name == label and detail_folder.is_dir():
+                        referenced_folders[label] = str(detail_folder.resolve())
+                        (target / label).mkdir(exist_ok=True)
+                    analysis = source.parent / (label + "_analysis.json")
+                    if analysis.is_file():
+                        link_source(analysis, target / analysis.name)
                 else:
                     sheet = book[source]
                     with output.open("w", newline="", encoding="utf-8") as stream:
                         csv.writer(stream).writerows(sheet.values)
+                    original_nanotel = self.results / "nanotel"
+                    detail_folder = source_folders(original_nanotel).get(label, original_nanotel / label)
+                    if detail_folder.is_dir():
+                        referenced_folders[label] = str(detail_folder.resolve())
+                        (target / label).mkdir(exist_ok=True)
+            (target / MANIFEST).write_text(json.dumps(referenced_folders, indent=2), encoding="utf-8")
             # Completed detector logs retain original input counts for projects
             # that crashed before their first workbook was written.
             logs = context.path_manager.get_results_dir_path() / "logs"
-            for path in self.results.rglob("nanotel_barcode*.log"):
+            for path in source_files(self.results, "nanotel_barcode*.log"):
                 check_cancelled()
                 logs.mkdir(parents=True, exist_ok=True)
                 dest = logs / path.name

@@ -61,7 +61,7 @@ window.readRepeatSummary = data => {
     });
     previous = position;
   });
-  if (overlap) groups.push({label: 'Overlapping motifs', color: '#806b93', bases: overlap});
+  if (overlap) groups.push({label: 'Overlapping motifs', color: '#5F6875', bases: overlap});
   if (unassigned) groups.push({label: 'Unassigned bases', color: '#b5bdc7', bases: unassigned});
   regions.sort((a, b) => a.start - b.start || a.end - b.end || a.motif.localeCompare(b.motif));
   return {start, end, regions, unassignedRegions, composition: groups.filter(g => g.bases > 0)};
