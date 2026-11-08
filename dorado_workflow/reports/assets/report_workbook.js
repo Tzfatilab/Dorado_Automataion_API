@@ -77,17 +77,18 @@
       const retained=new Set(filtered.map(row=>row.id));
       const columns=[['Read number',r=>r.label||unavailable],['Read ID',r=>r.header||unavailable],
         ['Filtration status',r=>rowsFor(page)==null?'Unavailable':retained.has(r.id)?'Passed':'Not retained'],
-        ['Exact telomere length (kb)',r=>kb(r.exact_length),'decimal'],
-        ['Exact repeat density (%)',r=>scalar(r.exact_density),'percent'],
+        ['Canonical telomere length (kb)',r=>kb(r.exact_length),'decimal'],
+        ['Canonical repeat density (%)',r=>scalar(r.exact_density),'percent'],
         ...(mismatch?[
           ['Telomere length (1 mismatch, kb)',r=>kb(r.mismatch_length),'decimal'],
           ['Repeat density (1 mismatch, %)',r=>scalar(r.mismatch_density),'percent']]:[]),
         ...(!noTVR?[
           ['Telomere length with TVRs (kb)',r=>kb(r.tvr_length),'decimal'],
           ['TVR content (%)',r=>pct(r.tvr),'percent'],
-          ['Canonical content (%)',r=>pct(r.canonical),'percent'],
-          ['TVR blocks',r=>scalar(r.blocks),'integer']]:[]),
+          ['Canonical content (%)',r=>pct(r.canonical),'percent']]:[]),
         ['Read length (bp)',r=>scalar(r.length),'integer'],
+        ['Filtration reason',r=>r.filtration_reason||r.filter_reason||unavailable],
+        ['Telomere start (bp)',r=>scalar(mismatch?r.mismatch_start:r.canonical_start),'integer'],
         ['Mapping',r=>r.chromosomes?.length?r.chromosomes.join(', '):unavailable]];
       return {name:identity(page).id,headers:columns.map(c=>c[0]),formats:columns.map(c=>c[2]),freezeColumns:1,rows:records.map(r=>columns.map(c=>c[1](r)))};
     };
@@ -108,31 +109,34 @@
         const parsed=text?.replace(/,/g,'');
         return parsed&&/^\d+$/.test(parsed)?Number(parsed):text||unavailable;
       };
-      const headers=['Barcode ID','Total number of reads','Measurement method',
-        'Telomeric reads before filtration','Post-filtered telomeric reads',
-        'Measured lengths before filtration','Measured lengths after filtration',
-        'Median telomere length before filtration (kb)',
-        'Short telomeres before filtration (%)','Short telomeres after filtration (%)',
+      const methods=['exact','mismatch','tvr_inclusive'];
+      const methodLabels=['Canonical','Including mismatch',
+        selected.every(page=>page.dataset.mismatchEnabled==='false')?'Including TVRs (without mismatch)':
+        selected.every(page=>page.dataset.mismatchEnabled==='true')?'Including TVRs (with mismatch)':'Including TVRs (run matching settings)'];
+      const methodFields=[['Measured lengths before filtration','before','measured',1],
+        ['Measured lengths after filtration','after','measured',1],
+        ['Median telomere length before filtration (kb)','before','median_bp',1000],
+        ['Short telomeres before filtration (%)','before','short_percent',100],
+        ['Short telomeres after filtration (%)','after','short_percent',100]];
+      const headers=['Barcode ID','Total number of reads',
+        'Telomeric reads before filtration','Number of telomeric reads after filtration',
+        ...methodFields.flatMap(([title])=>methodLabels.map(label=>title+' ? '+label)),
         'Short telomere cutoff (bp)','Number of reads with TVRs before filtration',
         'Number of reads with TVRs after filtration','Chromosomes'];
-      const formats=headers.map((_,i)=>i===7?'decimal':[8,9].includes(i)?'percent':null);
-      const rows=selected.flatMap(page=>{
+      const formats=[null,null,null,null,...methodFields.flatMap(([, ,key])=>
+        methods.map(()=>key==='median_bp'?'decimal':key==='short_percent'?'percent':null)),null,null,null,null];
+      const rows=selected.map(page=>{
         const fact=source.find(row=>row.id===page.id)||{};
         const number=(entry,key,scale=1)=>entry?.requested===false?'Not requested':valid(entry?.[key])?entry[key]/scale:unavailable;
-        return [['exact','Without mismatch or TVR'],['mismatch','With mismatch, without TVR'],
-                ['tvr_inclusive',page.dataset.mismatchEnabled==='false'?'With TVR, without mismatch':'With mismatch and TVR']].map(([method,label])=>{
-          const measurement=fact.measurements?.[method],before=measurement?.before,after=measurement?.after;
-          return [identity(page).id,scalar(fact.total),label,scalar(before?.records),scalar(fact.filtered),
-            number(before,'measured'),number(after,'measured'),number(before,'median_bp',1000),
-            number(before,'short_percent',100),number(after,'short_percent',100),scalar(fact.cutoff),
-            fact.tvr_counts?.before??unavailable,fact.tvr_counts?.after??unavailable,
-            fact.chromosomes?.length||unavailable];
-        });
+        return [identity(page).id,scalar(fact.total),scalar(fact.measurements?.exact?.before?.records),scalar(fact.filtered),
+          ...methodFields.flatMap(([,population,key,scale])=>methods.map(method=>number(fact.measurements?.[method]?.[population],key,scale))),
+          scalar(fact.cutoff),fact.tvr_counts?.before??unavailable,fact.tvr_counts?.after??unavailable,
+          fact.chromosomes?.length||unavailable];
       });
       const definitions={name:'Definitions',headers:['Field','Definition'],widths:[38,110],rows:[
         ['Export scope',scope==='included'?'Included barcodes only.':'All barcodes, including excluded barcodes.'],
         ['Barcode sheets','Barcode summary contains barcode-level Key Statistics. Each barcode sheet combines detected source reads with their filtration status; these are not necessarily every input read.'],
-        ['Telomere statistics','Median telomere lengths use before-filtration source measurements only. Exact, mismatch and TVR-inclusive methods are distinct recorded calls.'],
+        ['Telomere statistics','Median telomere lengths use before-filtration source measurements only. Canonical, mismatch and TVR-inclusive methods are distinct recorded calls.'],
         ['Short telomeres',cutoffDefinition+' Length is strictly less than the cutoff. Before/after percentages use the non-missing measured lengths for that method and population as denominator. No additional filtering or repeat search is performed.'],
         ['Units','Telomere lengths: kb. Percent cells store fractions with Excel percentage formatting. Counts are integers.'],
         ['Unavailable and empty populations','Unavailable means a required value is missing or the population is incomplete. Not applicable means a statistic has no defined value, for example a median or percentage with zero reads. Zero counts remain numeric zero.'],
@@ -140,7 +144,7 @@
         ['Workbook snapshot','Values reflect the dashboard data and barcode names/selection when exported. Export again after changing the dashboard. Editing workbook values does not recalculate this snapshot.'],
         ['Source','Embedded read-data and barcode source-count/cutoff exports in this standalone NanoTel dashboard. Original barcode IDs are preserved.']
       ]};
-      return [{name:'Barcode summary',headers,formats,freezeColumns:3,rows},...selected.map(p=>readSheet(p,true)),definitions];
+      return [{name:'Barcode summary',headers,formats,freezeColumns:2,rows},...selected.map(p=>readSheet(p,true)),definitions];
     };
     // Function: workbook.
     // Inputs: scope (all or included barcodes)

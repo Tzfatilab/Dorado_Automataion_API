@@ -246,7 +246,7 @@ class ResultImporter:
                 if retained_sources and not sheet.title.startswith('_source_'):
                     continue
                 name = sheet.title.removeprefix('_source_')
-                if name not in {"NanoTel Statistics", "NanoTel analysis facts", "KM by barcode", "KM run statistics", "Run metadata", "Barcode source counts", "Read mappings", "Barcode figures", "Read motifs"} and not re.fullmatch(r"(?:(?:filtered|final)_)?barcode\d+", name):
+                if name not in {"NanoTel Statistics", "NanoTel analysis facts", "KM by barcode", "KM run statistics", "Run metadata", "Barcode source counts", "Read mappings", "Barcode figures", "Read motifs"} and not re.fullmatch(r"(?:(?:filtered|final|audit)_)?barcode\d+", name):
                     continue
                 source = self.source(path, "xlsx", sheet.title)
                 iterator = iter(sheet.iter_rows(values_only=True))
@@ -581,6 +581,7 @@ class ResultImporter:
             # These adapters attach existing exports to the barcode model. They
             # do not select reads using thresholds or recalculate scientific calls.
             self.filtered_lengths(b, filtered.get(label))
+            self.filter_reasons(b)
             self.log_counts(b)
             self.mapping(b)
             self.density_details(b)
@@ -647,6 +648,28 @@ class ResultImporter:
         # contributed its sources, before handing the model to the renderer.
         validate(run)
         return run
+
+    def filter_reasons(self, barcode):
+        """Import current R filtration decisions without inferring old reasons."""
+        paths = self.files(barcode.label + '_filtration_reasons.csv')
+        if len(paths) > 1:
+            barcode.warnings.append('Ambiguous filtration reason exports; reasons not imported')
+            return
+        table = self.csv_table(paths[0]) if len(paths) == 1 else self.saved_statistics.get('audit_' + barcode.label)
+        if not table:
+            return
+        index = ReadIndex(barcode.reads)
+        found = {}
+        for row, evidence in table[1]:
+            targets = index.find(row.get('read_id'), row.get('Serial'))
+            if len(targets) == 1 and isinstance(row.get('reason'), str) and row['reason']:
+                found.setdefault(targets[0].id, []).append((row['reason'], evidence))
+        for read in barcode.reads:
+            entries = found.get(read.id, [])
+            if len(entries) == 1:
+                reason, evidence = entries[0]
+                read.metrics['filter_reason'] = Fact(A.AVAILABLE, reason, evidence=[evidence],
+                    population='current R post-analysis filtration')
 
     def filtered_lengths(self, barcode, table, length_field="Telomere_length_mismatch", population="post_filtered_telomeres"):
         """Use already-filtered lengths; reject inconsistent partial distributions.
@@ -787,7 +810,7 @@ class ResultImporter:
                 if coords["end"] - coords["start"] != reported.value:
                     warnings.append(f"{method}: reported length differs from interval span; reported value retained")
         tracks = {key: unavailable("No compatible detailed export supplied")
-                  for key in ("density", "motifs", "tvr_regions")}
+                  for key in ("density", "motifs")}
         if self.metadata.get("stages", {}).get("summary_only") is True:
             tracks = {key: unavailable("Summary-only run: detailed tracks were not requested", A.NOT_REQUESTED) for key in tracks}
         tracks["methylation"] = self.unavailable_stage("methylation", "No molecule-level methylation export supplied")

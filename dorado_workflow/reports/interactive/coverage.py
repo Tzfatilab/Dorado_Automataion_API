@@ -6,11 +6,11 @@ from .models import Availability as A, Evidence, Fact, unavailable
 from .identities import ReadIndex
 
 DEFINITION = 'union_coverage_tvr_interval_v2'
-KEYS = ('canonical_pct', 'tvr_pct', 'tvr_block_count', 'repeat_overlap_bp', 'repeat_unassigned_bp')
+KEYS = ('canonical_pct', 'tvr_pct', 'tvr_bp', 'repeat_overlap_bp', 'repeat_unassigned_bp')
 
 
 def import_coverage(importer, barcode):
-    """Validate source identity, denominator, coverage consistency and block bounds.
+    """Validate source identity, denominator, coverage consistency.
 
     Args:
         importer: ResultImporter providing saved tables and source provenance.
@@ -53,7 +53,7 @@ def import_coverage(importer, barcode):
                 row.get('method') != 'tvr_inclusive' or row.get('convention') != 'one_based_inclusive' or
                 row.get('space') != 'nanotel_analyzed_read'):
                 raise ValueError('unsupported coverage definition')
-            fields = ('start','end','denominator_bp','canonical_bp','tvr_bp','overlap_bp','unassigned_bp','tvr_block_count')
+            fields = ('start','end','denominator_bp','canonical_bp','tvr_bp','overlap_bp','unassigned_bp')
             if any(type(row.get(k)) is not int or row[k] < 0 for k in fields):
                 raise ValueError('invalid coverage counts')
             interval = read.calls['tvr_inclusive']['interval']
@@ -67,27 +67,13 @@ def import_coverage(importer, barcode):
                 v=row.get(key)
                 if type(v) not in (int,float) or not math.isfinite(v) or not math.isclose(v,100*bases/n,abs_tol=1e-7):
                     raise ValueError('inconsistent percentage')
-            blocks = row.get('blocks')
-            if not isinstance(blocks,list) or len(blocks)!=row['tvr_block_count']:
-                raise ValueError('invalid block count')
-            previous=row['start']-2; total=0
-            for block in blocks:
-                a,b=block.get('start'),block.get('end')
-                if type(a) is not int or type(b) is not int or a<row['start'] or b>row['end'] or b<a or a<=previous+1:
-                    raise ValueError('invalid or unmerged TVR blocks')
-                total+=b-a+1;previous=b
-            if total!=t:
-                raise ValueError('TVR block lengths disagree with coverage')
             for key,field,unit in [('canonical_pct','canonical_pct','%'),('tvr_pct','tvr_pct','%'),
-                    ('tvr_block_count','tvr_block_count','blocks'),('repeat_overlap_bp','overlap_bp','bp'),
+                    ('tvr_bp','tvr_bp','bp'),('repeat_overlap_bp','overlap_bp','bp'),
                     ('repeat_unassigned_bp','unassigned_bp','bp')]:
                 read.metrics[key]=Fact(A.AVAILABLE,row[field],unit=unit,population=DEFINITION,evidence=[ev])
-            read.tracks['tvr_regions']=Fact(A.AVAILABLE,[dict(start=b['start']-1,end=b['end'],
-                convention='zero_based_half_open',space='nanotel_analyzed_read') for b in blocks],evidence=[ev])
             read.evidence.append(ev)
         except (ValueError,TypeError,KeyError,AttributeError) as exc:
             barcode.warnings.append(f'{name}: invalid coverage export: {exc}')
             for read in targets:
                 for key in KEYS:
                     read.metrics[key]=unavailable('Invalid or conflicting coverage export',A.INVALID)
-                read.tracks['tvr_regions']=unavailable('Invalid or conflicting coverage export',A.INVALID)

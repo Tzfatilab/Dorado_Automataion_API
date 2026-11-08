@@ -11,6 +11,9 @@ from dorado_workflow.utils.source_discovery import source_files
 
 
 def table_name(filename):
+    audit = re.fullmatch(r'(barcode\d+)_filtration_reasons.csv', filename, re.I)
+    if audit:
+        return 'audit_' + audit[1].lower()
     if filename in {'km_barcode_statistics.csv', 'km_run_statistics.csv'}:
         return 'KM by barcode' if filename == 'km_barcode_statistics.csv' else 'KM run statistics'
     match = re.fullmatch(r'(barcode\d+)_summary.csv', filename, re.I)
@@ -30,7 +33,7 @@ def retained_name(name):
     return name in {'NanoTel Statistics', 'Run metadata', 'Barcode source counts',
                     'Read motifs', 'Read mappings', 'Barcode figures', 'KM by barcode',
                     'KM run statistics', 'NanoTel analysis facts', 'Report sources'} or bool(
-        re.fullmatch(r'(?:(?:filtered|final)_)?barcode\d+', name))
+        re.fullmatch(r'(?:(?:filtered|final|audit)_)?barcode\d+', name))
 
 
 def append_text(sheet, row):

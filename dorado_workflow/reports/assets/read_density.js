@@ -158,7 +158,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
     if(x.length) traces.push({type:'scatter',mode:'lines',name,x,y,
       line:{color,width:5},hovertemplate:'%{fullData.name}<br>%{x:.3f} kb<extra></extra>'});
   };
-  if (exact) intervalStrip([exact], 'Telomere (exact)', '#7C3AED');
+  if (exact) intervalStrip([exact], 'Telomere (canonical)', '#7C3AED');
   if (mismatch) {
     const extensions=[];
     if (!exact) extensions.push(mismatch);
@@ -186,7 +186,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
     shapes.push({type: 'line', xref: 'x', yref: 'y', x0: called[1] / 1000,
       x1: called[1] / 1000, y0: 0, y1: 1.05, line: {color: '#243750', width: 1.5, dash: 'dash'}});
     annotations.push({xref: 'x', yref: 'y', x: called[1] / 1000, y: 1.06,
-      text: 'Telomere end' + (inclusive ? ' (including TVRs)' : mismatch ? ' (1 mismatch)' : ' (exact)') + '<br>' + (called[1] / 1000).toFixed(3) + ' kb',
+      text: 'Telomere end' + (inclusive ? ' (including TVRs)' : mismatch ? ' (1 mismatch)' : ' (canonical)') + '<br>' + (called[1] / 1000).toFixed(3) + ' kb',
       showarrow: false, xanchor: called[1] > read.length * 0.75 ? 'right' : 'left',
       xshift: called[1] > read.length * 0.75 ? -8 : 8, yanchor: 'bottom', font: {size: 12, color: '#243750'}});
     if (exact && called !== exact && exact[1] !== called[1]) {

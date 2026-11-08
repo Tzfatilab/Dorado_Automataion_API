@@ -77,7 +77,7 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
     # Card order mirrors the approved design; notes identify each population.
     specs = [("barcode_count", "Total barcodes", ""),
              ("total_reads", "Total number of reads", "Input reads"),
-             ("telomeric_reads", "Post-filtered telomeric reads", "Post-filtered reads"),
+             ("telomeric_reads", "Number of telomeric reads", "After filtering"),
              ("telomeric_percentage", "% telomeric reads", "Of total input reads"),
              ("median_telomere_length", "Median length before filtration", "Pooled before-filtration measurements"),
              ("detected_chromosomes", "Number of Chromosomes end found", "Chromosome annotations unavailable")]
@@ -114,7 +114,7 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
         marker_color="#5996E8", width=0.55, text=[str(y) for _, y in counts], textposition="outside", cliponaxis=False,
         hovertemplate="%{x}<br>%{y} telomeric reads<extra></extra>"))
     # Leave headroom for count labels, including an all-zero dataset.
-    bars.update_layout(xaxis_title="Barcode", yaxis_title="Post-filtered telomeric reads",
+    bars.update_layout(xaxis_title="Barcode", yaxis_title="Number of telomeric reads",
                        yaxis_range=[0, max([y for _, y in counts] or [1]) * 1.18 or 1])
     # Plot individual exported lengths, not summaries of barcode summaries.
     boxes = go.Figure()

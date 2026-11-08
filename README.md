@@ -93,7 +93,9 @@ selected. Manual patterns must contain at least five A/C/G/T bases.
 
 1. Select **Existing project** and choose the original project or its `results` folder.
 2. Select **Recalculate results** under **Analysis Steps**.
-3. Adjust the four numeric analysis options and choose whether to run mapping.
+3. Adjust the four numeric analysis options. If the original run included mapping,
+   its saved alignments are refiltered automatically; there is no mapping toggle
+   or new alignment step in Recalculate.
 4. Choose **Summary only** or a full report. **Output Path** defaults to `Recalculated results` inside the source project; each run creates its own timestamped folder there. You can choose another output location.
 5. Run the analysis to regenerate filtered results, Excel and the dashboard.
 
@@ -106,7 +108,11 @@ Recalculation uses the original before-filter NanoTel CSVs or retained source
 worksheets in `nanotel_results.xlsx` (full report) or `nanotel_summary.xlsx`
 (Summary only), together with the original analysis settings. A standalone
 dashboard or presentation-only browser export is insufficient.
-Mapping additionally requires saved read inputs. The source project is preserved,
+Mapping recalculation reuses the original unfiltered BAMs and alignment summary
+in `processing/aligned`, applying the current filters without running alignment
+again. Already filtered mapping outputs or Excel alone are insufficient; missing
+original alignments produce an error instead of silently rerunning alignment.
+The source project is preserved,
 and each recalculation creates a new dashboard and Excel workbook. Read sequences
 and detail tracks are read from the original project without copying, per-read
 links, or ZIP extraction; keep that project available for future rebuilds.

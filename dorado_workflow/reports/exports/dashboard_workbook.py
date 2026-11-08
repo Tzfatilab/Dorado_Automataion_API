@@ -111,14 +111,19 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     mismatch_mode = tvr_requested is False and mismatch_requested is True
     mismatch_rows = {row['barcode']: row for row in comparisons.get('mismatch_composition', [])}
     from ..shared.measurement_statistics import METHODS, method_statistics, tvr_read_count
-    summary = sheet('Barcode summary', ['Barcode ID', 'Total number of reads', 'Measurement method',
-        'Telomeric reads before filtration', 'Post-filtered telomeric reads',
-        'Measured lengths before filtration', 'Measured lengths after filtration',
-        'Median telomere length before filtration (kb)',
-        'Short telomeres before filtration (%)', 'Short telomeres after filtration (%)',
+    method_labels = ['Canonical', 'Including mismatch',
+                     'Including TVRs (without mismatch)' if mismatch_requested is False else 'Including TVRs (with mismatch)']
+    method_fields = [('Measured lengths before filtration', 'before', 'measured', 1),
+                     ('Measured lengths after filtration', 'after', 'measured', 1),
+                     ('Median telomere length before filtration (kb)', 'before', 'median_bp', 1000),
+                     ('Short telomeres before filtration (%)', 'before', 'short_percent', 100),
+                     ('Short telomeres after filtration (%)', 'after', 'short_percent', 100)]
+    summary = sheet('Barcode summary', ['Barcode ID', 'Total number of reads',
+        'Telomeric reads before filtration', 'Number of telomeric reads after filtration',
+        *[f'{title} ? {label}' for title, _, _, _ in method_fields for label in method_labels],
         'Short telomere cutoff (bp)', 'Number of reads with TVRs before filtration',
         'Number of reads with TVRs after filtration', 'Chromosomes'])
-    summary.freeze_panes = 'D2'
+    summary.freeze_panes = 'C2'
     cutoffs = set()
     facts = sheet('Source facts', ['Barcode ID', 'Read ID', 'Field', 'Availability', 'Unit',
         'Population', 'Reason', 'Value part', 'Value', 'Evidence'])
@@ -163,28 +168,28 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
         stats = barcode_key_statistics(barcode, run.settings, comparisons['cells'], motif)
         before_tvr = tvr_read_count(barcode, run.settings, 'before')
         after_tvr = tvr_read_count(barcode, run.settings, 'after')
-        for method, method_label in METHODS:
-            if method == 'tvr_inclusive' and mismatch_requested is False:
-                method_label = 'With TVR, without mismatch'
-            before = method_statistics(barcode, run.settings, method, 'before')
-            after = method_statistics(barcode, run.settings, method, 'after')
-            def measured(result, key, scale=1):
-                if result['requested'] is False:
-                    return 'Not requested'
-                return result[key] / scale if numeric(result[key]) else MISSING
-            row_number = append(summary, [barcode.label, value(barcode.metrics.get('total_reads')), method_label,
-                before['records'] if before['records'] is not None else MISSING,
-                source_count, measured(before, 'measured'), measured(after, 'measured'),
-                measured(before, 'median_bp', 1000),
-                measured(before, 'short_percent', 100), measured(after, 'short_percent', 100),
-                cutoff if cutoff is not None else MISSING,
-                before_tvr if before_tvr is not None else MISSING,
-                after_tvr if after_tvr is not None else MISSING,
-                stats['chromosomes'] if stats['chromosomes'] is not None else MISSING])
-            for column in (8,):
-                summary.cell(row_number, column).number_format = '0.000'
-            for column in (9, 10):
-                summary.cell(row_number, column).number_format = '0.00%'
+        measurements = {population: {method: method_statistics(barcode, run.settings, method, population)
+                        for method, _ in METHODS} for population in ('before', 'after')}
+        def measured(result, key, scale=1):
+            if result['requested'] is False:
+                return 'Not requested'
+            return result[key] / scale if numeric(result[key]) else MISSING
+        row_number = append(summary, [barcode.label, value(barcode.metrics.get('total_reads')),
+            measurements['before']['exact']['records'] if measurements['before']['exact']['records'] is not None else MISSING,
+            source_count,
+            *[measured(measurements[population][method], key, scale)
+              for _, population, key, scale in method_fields for method, _ in METHODS],
+            cutoff if cutoff is not None else MISSING,
+            before_tvr if before_tvr is not None else MISSING,
+            after_tvr if after_tvr is not None else MISSING,
+            stats['chromosomes'] if stats['chromosomes'] is not None else MISSING])
+        for field_index, (_, _, key, _) in enumerate(method_fields):
+            for method_index in range(len(METHODS)):
+                column = 5 + field_index * len(METHODS) + method_index
+                if key == 'median_bp':
+                    summary.cell(row_number, column).number_format = '0.000'
+                elif key == 'short_percent':
+                    summary.cell(row_number, column).number_format = '0.00%'
         def kb(v):
             """Length converted from base pairs to kilobases, or the missing-value marker.
 
@@ -207,8 +212,8 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
             return v/100 if numeric(v) else MISSING
         columns = [('Read number', lambda r:r['label'], None), ('Read ID', lambda r:r['header'], None),
             ('Filtration status', lambda r:r['filtration_status'], None),
-            ('Exact telomere length (kb)', lambda r:kb(r['exact_length']), '0.000')]
-        columns += [('Exact repeat density (%)', lambda r:r['exact_density'], '0.00%')]
+            ('Canonical telomere length (kb)', lambda r:kb(r['exact_length']), '0.000')]
+        columns += [('Canonical repeat density (%)', lambda r:r['exact_density'], '0.00%')]
         if mismatch_requested is True:
             columns += [('Telomere length (1 mismatch, kb)',lambda r:kb(r['mismatch_length']),'0.000'),
                         ('Repeat density (1 mismatch, %)',lambda r:r['mismatch_density'],'0.00%')]
@@ -219,9 +224,10 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
         else:
             columns += [('Telomere length with TVRs (kb)',lambda r:kb(r['tvr_length']),'0.000'),
                 ('TVR content (%)',lambda r:pct(r['tvr']),'0.00%'),
-                ('Canonical content (%)',lambda r:pct(r['canonical']),'0.00%'),
-                ('TVR blocks',lambda r:r['blocks'],'#,##0')]
+                ('Canonical content (%)',lambda r:pct(r['canonical']),'0.00%')]
         columns += [('Read length (bp)',lambda r:r['length'],'#,##0'),
+                    ('Filtration reason',lambda r:r.get('filtration_reason'),None),
+                    ('Telomere start (bp)',lambda r:r.get('mismatch_start' if mismatch_requested is True else 'canonical_start'),'#,##0'),
                     ('Mapping',lambda r:', '.join(r['chromosomes']) or MISSING,None)]
         retained_ids = {record['read_id'] for record in barcode.metrics['filtered_length_records'].value} if filtered is not None else set()
         before_filter = list(filtered or []) + read_rows(barcode, include_unfiltered=True, exclude_ids=retained_ids)
@@ -255,11 +261,11 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     definitions = sheet('Definitions', ['Field', 'Definition'])
     cutoff_note = ('Length < '+str(next(iter(cutoffs)))+' bp. ') if len(cutoffs)==1 and None not in cutoffs else 'Per-barcode cutoffs are retained in Source facts. '
     for row in [
-        ['Measurement methods', 'Exact: without mismatch or TVR. Mismatch: recorded canonical mismatch-inclusive call without TVR. TVR: recorded TVR-inclusive call using the run matching settings. Methods share the saved filtered membership; no new filtering or detection is run.'],
+        ['Measurement methods', 'Canonical: without mismatch or TVR. Mismatch: recorded canonical mismatch-inclusive call without TVR. TVR: recorded TVR-inclusive call using the run matching settings. Methods share the saved filtered membership; no new filtering or detection is run.'],
         ['Before/after filtration', 'Before uses the complete exported detected population. After uses saved filtered record identities. Medians use measured lengths only; short percentages use those same non-missing lengths as denominator and length strictly below the recorded cutoff. Zero measured lengths have no defined median or percentage.'],
         ['Barcode sheets', 'Barcode summary contains barcode-level Key Statistics. Each barcode sheet combines all imported before-filtration telomeric records with a Filtration status column. These are detected summary records, not necessarily all input reads.'],
         ['After filtering', 'The same exported filtered population used by the dashboard.'],
-        ['Short telomeres', cutoff_note+'Length strictly below the recorded cutoff. Denominator: all exported post-filtered reads. Percent values are 0 to 100.'],
+        ['Short telomeres', cutoff_note+'Length strictly below the recorded cutoff. Each method and population uses its non-missing measured lengths as denominator. Excel stores fractions formatted as percentages.'],
         ['Median telomere length', 'Reported only before filtration, separately for each recorded measurement method. Post-filtration medians are not displayed.'],
         ['KM', 'Source-assessed pre-edge KM population; distinct from final-filtered reads. No refitting or pooling of KM medians. Estimates withheld by the source remain unavailable. KM sheet is shown for explicitly non-human runs.'],
         ['Missing values', 'Unavailable is missing/invalid/incomplete information. Not applicable is an undefined statistic for an empty population. Zero remains numeric.'],
@@ -272,7 +278,7 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
             raise ValueError(f'Excel worksheet size limit exceeded: {ws.title}')
         ws.auto_filter.ref = ws.dimensions
         ws.sheet_view.showGridLines = False
-        ws.row_dimensions[1].height = 48
+        ws.row_dimensions[1].height = 90 if ws is summary else 48
         for c in ws[1]:
             c.font = Font(bold=True, color='FFFFFF')
             c.fill = PatternFill('solid', fgColor='18324D')

@@ -228,7 +228,6 @@ class InputSection:
             self._post_loaded_path = path
             self.summary_only.setChecked(bool(source.params.get("summary_only", False)))
             self._post_source_organism = source.organism
-            self.nanotel_mapping.setChecked(bool(source.settings.get("run_mapping_analysis", False)))
             self.organism.setEnabled(not bool(source.organism))
             # Detection is not rerun; this disabled control is not a request to
             # enable mismatches. The backend retains the saved source settings.

@@ -723,11 +723,8 @@ report_repeat_coverage <- function(read_id, boundary, hits) {
     canonical_bp=canonical_bp, tvr_bp=tvr_bp, overlap_bp=overlap_bp,
     unassigned_bp=denominator-canonical_bp-tvr_bp+overlap_bp,
     canonical_pct=100*canonical_bp/denominator, tvr_pct=100*tvr_bp/denominator,
-    tvr_block_count=length(tvr),
     tvr_motifs=as.list(unique(as.character(hits$motif[hits$role == "tvr" &
-      hits$end >= start(boundary) & hits$start <= end(boundary)]))),
-    blocks=lapply(seq_along(tvr), function(i) list(start=as.integer(start(tvr)[i]),
-      end=as.integer(end(tvr)[i]))))
+      hits$end >= start(boundary) & hits$start <= end(boundary)]))))
 }
 
 # Each parallel search group owns two buffered connections in the local temp

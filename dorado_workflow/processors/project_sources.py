@@ -208,10 +208,10 @@ class ProjectSources:
             if book: book.close()
 
     def prepare_mapping(self, operator, check_cancelled):
-        """Align saved sequences again through the shared alignment processor.
+        """Reuse complete saved alignments and refilter them without realignment.
 
-        Prefer FASTQ inputs to potentially partial aligned outputs. Existing BAMs
-        are sequence sources only: their old alignment calls are not reused.
+        Only processing/aligned inputs are eligible. Filtered BAMs and mapped
+        result tables cannot recover reads excluded by the previous thresholds.
 
         Args:
             operator: WorkflowOperator coordinating the shared processors.
@@ -222,52 +222,67 @@ class ProjectSources:
         """
         check_cancelled()
         required_barcodes = self._mapping_barcodes(check_cancelled)
-        processing = self.root / "processing"
-        candidates = (
-            (processing / "fastq", "fastq"),
-            (processing / "demultiplexed", "fastq"),
-            (processing / "demultiplexed", "bam"),
-            (processing / "aligned", "bam"),
-        )
-        incomplete_sources = []
-        for folder, input_type in candidates:
+        mapping = self.settings.get('mapping_analysis', {})
+        candidates = [self.root / 'processing/aligned']
+        recorded = mapping.get('bam_dir')
+        if recorded and Path(recorded).name == 'aligned':
+            candidates.append(Path(recorded))
+        problems = []
+        selected = None
+        for folder in dict.fromkeys(path.resolve() for path in candidates):
             check_cancelled()
             if not folder.is_dir():
                 continue
-            inputs = operator.aligner._find_alignment_inputs(folder, input_type)
-            if not inputs:
-                continue
-            available_barcodes = {
-                operator.aligner._extract_barcode(path.relative_to(folder))
-                for path in inputs
-            }
+            inputs = [path for path in sorted(folder.rglob('*.bam'))
+                      if not path.name.lower().startswith('filtered_')]
+            from dorado_workflow.reports.exports.workbook import barcode_from_summary_filename
+            available_barcodes = {barcode_from_summary_filename(path.name) or
+                                 barcode_from_summary_filename(path.parent.name) for path in inputs}
             missing = required_barcodes - available_barcodes
             if missing:
-                incomplete_sources.append(f"{folder}: missing {', '.join(sorted(missing))}")
+                problems.append(f"{folder}: missing {', '.join(sorted(missing))}")
                 continue
-            operator.context.logger.info(
-                f"Recalculating alignment from saved {input_type.upper()} reads: {folder}"
-            )
-            result = operator.aligner.execute(
-                str(folder),
-                organism=operator.context.config_manager.get_current_organism(),
-                input_type=input_type,
-                use_existing_alignment=False,
-                link_inputs_only=True,
-            )
-            if not result.success:
-                raise RuntimeError(result.error or "Alignment recalculation failed")
-            return
-        if incomplete_sources:
+            summary = next((path for path in (folder / 'alignment_summary.txt',
+                                              folder / 'sequencing_summary.txt') if path.is_file()), None)
+            if not inputs or summary is None:
+                problems.append(f'{folder}: original alignment BAMs/summary are missing')
+                continue
+            with summary.open(encoding='utf-8-sig', newline='') as stream:
+                headers = next(csv.reader(stream, delimiter='\t'), [])
+            required = {'read_id', 'alignment_direction', 'alignment_genome',
+                        'alignment_genome_start', 'alignment_genome_end'}
+            mapq = {'alignment_mapq', 'mapq', 'mapping_quality', 'alignment_mapping_quality'}
+            if not required.issubset(headers) or not mapq.intersection(headers):
+                problems.append(f'{summary}: required alignment/MAPQ columns are missing')
+                continue
+            selected = folder, inputs, summary
+            break
+        if selected is None:
             raise ValueError(
-                "Saved sequence inputs do not cover all nonempty NanoTel barcodes. "
-                "Select the complete original project to recalculate alignment. "
-                + "; ".join(incomplete_sources)
+                'Mapping recalculation requires the original unfiltered BAMs and alignment summary '
+                'under processing/aligned. Filtered mapping outputs and Excel alone are insufficient. '
+                'No alignment was rerun. ' + '; '.join(problems)
             )
-        raise ValueError(
-            "Alignment recalculation requires saved FASTQ reads or barcode BAMs "
-            "under processing/fastq, processing/demultiplexed or processing/aligned. "
-            "The Excel workbook alone does not contain the original sequences."
+        folder, inputs, summary = selected
+        target = operator.context.path_manager.get_aligned_dir_path()
+        target.mkdir(parents=True, exist_ok=True)
+        # Preflight every destination before staging immutable links. The R
+        # mapper reads them and writes new filtered outputs in results/mapping.
+        sources = [(summary, target / summary.name)]
+        for path in inputs:
+            sources.append((path, target / path.relative_to(folder)))
+            index = Path(str(path) + '.bai')
+            if index.is_file():
+                sources.append((index, target / index.relative_to(folder)))
+        for _, destination in sources:
+            if destination.exists() or destination.is_symlink():
+                raise FileExistsError(f'Mapping input destination already exists: {destination}')
+        for path, destination in sources:
+            check_cancelled()
+            link_source(path, destination)
+        operator.context.logger.info(
+            f'Reusing {len(inputs)} saved alignment BAMs and {summary.name}; '
+            'applying current NanoTel and mapping filters without rerunning Dorado/minimap2.'
         )
 
     def _mapping_barcodes(self, check_cancelled):

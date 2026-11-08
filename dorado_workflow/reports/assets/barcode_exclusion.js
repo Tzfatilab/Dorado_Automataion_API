@@ -33,7 +33,7 @@
       if(!fact){
         // Older reports: use only explicitly exported filtered rows and source count cards.
         let rows=null;try{rows=JSON.parse(page.querySelector('script.read-data')?.textContent||'null');}catch{}
-        const filtered=countText((card(page,'Post-filtered telomeric reads')||card(page,'NanoTel final-filtered telomeric reads'))?.querySelector('strong'));
+        const filtered=countText((card(page,'Number of telomeric reads')||card(page,'Post-filtered telomeric reads')||card(page,'NanoTel final-filtered telomeric reads'))?.querySelector('strong'));
         const short=page.querySelector('.short-telomere-stat');
         const cutoff=Number(page.dataset.shortCutoffBp||short?.dataset.cutoffBp);
         const lengths=Array.isArray(rows)&&rows.every(r=>numeric(r.telomere))&&rows.length===filtered?rows.map(r=>r.telomere):null;
@@ -54,7 +54,7 @@
     const key='telomere-barcode-exclusion-v1:'+location.pathname+':'+pages.map(p=>p.id).join(',');
     let excluded=new Set();try{excluded=new Set(JSON.parse(localStorage.getItem(key)||'[]').filter(id=>facts.has(id)));}catch{}
     const inputs=new Map(),snapshots=new Map(),messages=new Map();
-    const originals=[...overview.querySelectorAll('.stats>.stat')].map(el=>({el,strong:el.querySelector('strong')?.textContent,strongClass:el.querySelector('strong')?.className,note:el.querySelector('p')?.textContent||'',title:el.title}));
+    const originals=[...overview.querySelectorAll('.stats>.stat:not(.stat-short-compact), .stat-short-compact .short-telomere-stat')].map(el=>({el,strong:el.querySelector('strong')?.textContent,strongClass:el.querySelector('strong')?.className,note:el.querySelector('p')?.textContent||'',title:el.title}));
     const heading=overview.querySelector('.stats')?.closest('section')?.querySelector('h2');
     const headingText=heading?[...heading.childNodes].find(n=>n.nodeType===3):null,originalHeading=headingText?.textContent;
     // Function: label.
@@ -133,11 +133,11 @@
       // Outputs: Formatted value with the selected precision and suffix, or Unavailable.
       const format=(v,suffix='',digits=0)=>v==null?'Unavailable':v.toLocaleString('en-US',{minimumFractionDigits:digits,maximumFractionDigits:digits})+suffix;
       for(const {el} of originals){
-        const title=el.querySelector('h3').textContent.trim();let value=null,note='Included barcodes only.';
+        const title=el.querySelector('h3,h4').textContent.trim();let value=null,note='Included barcodes only.';
         if(title==='Total barcodes'){value=String(rows.length);note=rows.length+' of '+pages.length+' barcodes included';}
         else if(!rows.length){value='No barcodes selected';note='Include a barcode to show pooled statistics.';}
         else if(title==='Total number of reads'){value=format(t.total);note='Input reads · included barcodes';}
-        else if(title==='Post-filtered telomeric reads'){value=format(t.filtered);note='Post-filtered reads · included barcodes';}
+        else if(title==='Number of telomeric reads'||title==='Post-filtered telomeric reads'){value=format(t.filtered);note='After filtering · included barcodes';}
         else if(title==='% telomeric reads'){value=format(t.percent,'%',2);note='Included post-filtered reads / included input reads';}
         else if(title==='Median length before filtration'){value=format(t.median==null?null:t.median/1000,' kb',2);note='Pooled individual before-filtration measurements · included barcodes';}
         else if((title==='Number of Chromosomes end found'||title==='Chromosomes')){value=t.chromosomes?format(t.chromosomes):'Unavailable';note='Distinct unambiguous mapped post-filtered chromosomes · included barcodes';}
@@ -294,7 +294,7 @@
         summary.textContent='Include or exclude barcodes ('+(pages.length-excluded.size)+' / '+pages.length+' included)';
         updateStatisticsTables();
         // Do not redraw the original overview until the selection actually changes.
-        if(!excluded.size&&!snapshots.size)return;
+        if(!excluded.size&&!snapshots.size){updateStats();return;}
         updateStats();
         for(const graph of overview.querySelectorAll('.js-plotly-plot')){
           const snapshot=snapshotsFor(graph);if(!snapshot)continue;

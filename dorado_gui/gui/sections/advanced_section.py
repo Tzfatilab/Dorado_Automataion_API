@@ -72,6 +72,7 @@ class AdvancedSection:
         )
 
         post = "post_analysis" in selected
+        self.nanotel_mapping.setVisible(not post)
         self.tvr_mode_widget.setLocked(post)
         self.allow_mismatch.setEnabled(not post)
         if post and not getattr(self, "_post_analysis_active", False):

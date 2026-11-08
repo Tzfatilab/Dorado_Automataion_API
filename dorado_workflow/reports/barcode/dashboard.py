@@ -64,7 +64,7 @@ def barcode_views(run, icons, histograms=None, results_root=None, summary_only=F
                     f"{100*tvr_stats['with_tvr']/telomeric:.2f}% of post-filtered reads" if telomeric and isinstance(tvr_stats['with_tvr'],int) else 'Complete coverage required')
         specs = [
             ('Total number of reads', total, 'Input reads', icons[0]),
-            ('Post-filtered telomeric reads', telomeric, percent, icons[2]),
+            ('Number of telomeric reads', telomeric, 'After filtering · ' + percent, icons[2]),
             ('Median length before filtration', med, 'Detected telomeric reads before filtration', icons[4]),
             ('Reads with mismatches' if mismatch_panels else 'Reads with TVRs', tvr_stats['with_tvr'] if isinstance(tvr_stats['with_tvr'],int) else None, tvr_note,
              '<path d="M8 40V23M19 40V8M30 40V17M41 40V4"/>'),
@@ -121,7 +121,7 @@ def barcode_summary_section(run, comparisons, key_statistics=False):
     composition={r['barcode']:r for r in comparisons['composition']}
     mismatch_mode = tvr_enabled(run.settings) is False and mismatch_enabled(run.settings) is True
     mismatch_rows = {r['barcode']: r for r in comparisons.get('mismatch_composition', [])}
-    headers = ['Barcode', 'Total number of reads', 'Post-filtered telomeric reads',
+    headers = ['Barcode', 'Total number of reads', 'Number of telomeric reads',
                'Median length before filtration (kb)',
                'Short telomeres without mismatch or TVR (%)',
                'Short telomeres with mismatch, without TVR (%)',

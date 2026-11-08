@@ -28,6 +28,33 @@ if (!exists("log_message", mode = "function")) {
   source(file.path(script_dir, "utils.R"))
 }
 
+# Record decisions in the current filtration run, retaining source Serial IDs.
+nanotel_filter_audit <- function(original, ordered, density_threshold,
+                                 max_telomere_start, max_edge_distance, min_read_length) {
+  edge <- rep(NA_real_, nrow(original))
+  edge[ordered$.report_audit_row] <- ordered$seqLen_runningMED
+  reasons <- vapply(seq_len(nrow(original)), function(i) {
+    failed <- character()
+    density <- original$telo_density_mismatch[i]
+    start <- original$Telomere_start_mismatch[i]
+    if (is.na(density)) failed <- c(failed, "Telomere density unavailable")
+    else if (density < density_threshold) failed <- c(failed, sprintf("Telomere density %g below minimum %g", density, density_threshold))
+    if (is.na(start)) failed <- c(failed, "Telomere start unavailable")
+    else if (start > max_telomere_start) failed <- c(failed, sprintf("Telomere start %g bp exceeds maximum %g bp", start, max_telomere_start))
+    if (!is.null(min_read_length) && !is.na(min_read_length)) {
+      size <- original$sequence_length[i]
+      if (is.na(size)) failed <- c(failed, "Read length unavailable")
+      else if (size < min_read_length) failed <- c(failed, sprintf("Read length %g bp below minimum %g bp", size, min_read_length))
+    }
+    if (!length(failed) && (is.na(edge[i]) || edge[i] <= max_edge_distance))
+      failed <- c(failed, if (is.na(edge[i])) "Edge-filter measurement unavailable" else
+        sprintf("Edge filter: read length minus running median (%g bp) is not greater than %g bp", edge[i], max_edge_distance))
+    if (length(failed)) paste(failed, collapse="; ") else "Passed filters"
+  }, character(1))
+  data.frame(read_id=original$read_id,
+    Serial=if ("Serial" %in% names(original)) original$Serial else rep(NA_integer_, nrow(original)), reason=reasons)
+}
+
 # Process a single NanoTel summary file
 # Inputs: nanotel_csv_path (Original before-filter NanoTel summary CSV); density_threshold (Minimum
 # accepted repeat density as a fraction); max_telomere_start (Latest allowed telomere start in base
@@ -62,6 +89,7 @@ process_nanotel_barcode <- function(nanotel_csv_path,
 
   # Store original count
   original_count <- nrow(nanotel_data)
+  nanotel_data$.report_audit_row <- seq_len(original_count)
 
   # Apply filters
   filtered_data <- nanotel_data %>%
@@ -89,6 +117,9 @@ process_nanotel_barcode <- function(nanotel_csv_path,
     filtered_data$running_median <- numeric(0)
     filtered_data$seqLen_runningMED <- numeric(0)
     filtered_data$barcode <- character(0)
+    attr(filtered_data, "filter_audit") <- nanotel_filter_audit(nanotel_data, filtered_data,
+      density_threshold, max_telomere_start, max_edge_distance, min_read_length)
+    filtered_data$.report_audit_row <- NULL
     return(filtered_data)
   }
 
@@ -106,6 +137,8 @@ process_nanotel_barcode <- function(nanotel_csv_path,
 
   # Compare the remaining read margin to the configured edge threshold below.
   filtered_data$seqLen_runningMED <- filtered_data$sequence_length - filtered_data$running_median
+  audit <- nanotel_filter_audit(nanotel_data, filtered_data,
+    density_threshold, max_telomere_start, max_edge_distance, min_read_length)
 
   # FASTQ annotations can follow either spaces or tabs; SAM retains only the ID.
   filtered_data$read_id <- sub("[[:space:]].*$", "", filtered_data$read_id)
@@ -117,6 +150,8 @@ process_nanotel_barcode <- function(nanotel_csv_path,
 
   # Add barcode identifier
   final_data$barcode <- rep(barcode, nrow(final_data))
+  final_data$.report_audit_row <- NULL
+  attr(final_data, "filter_audit") <- audit
 
   log_message(paste("Final filtering complete:",
                     nrow(filtered_data), "->", nrow(final_data), "reads for", barcode))
@@ -183,6 +218,10 @@ batch_process_nanotel_files <- function(input_files,
         output_file <- file.path(barcode_output_dir, paste0("filtered_summary",
                                                             toupper(gsub("bc", "BC", barcode)), ".csv"))
         safe_write_csv(processed_data, output_file)
+        audit <- attr(processed_data, "filter_audit")
+        if (!is.null(audit)) safe_write_csv(audit,
+          file.path(output_dir, paste0(barcode, "_filtration_reasons.csv")))
+        attr(processed_data, "filter_audit") <- NULL
         all_processed_data[[barcode]] <- processed_data
       }
 

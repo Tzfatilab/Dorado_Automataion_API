@@ -97,7 +97,7 @@ def run_pipeline(
     if do_post_analysis:
         return _run_post_analysis(
             project_path=project_path, output_dir=output_dir, organism=organism,
-            mapping=nanotel_mapping, summary_only=summary_only, read_length=read_length,
+            summary_only=summary_only, read_length=read_length,
             max_telomere_start=max_telomere_start, density=min_density_threshold,
             short_cutoff=short_telomere_threshold, config_data=config_data,
             trim_status=non_pod5_trim_status,
@@ -891,7 +891,7 @@ def _resolve_telomere_start(nanotel_params, requested_start, trim_status):
     return str(requested_start).strip() or str(nanotel_params.get("max_telomere_start", trimmed_start_default))
 
 
-def _run_post_analysis(*, project_path, output_dir, organism, mapping, summary_only, read_length,
+def _run_post_analysis(*, project_path, output_dir, organism, summary_only, read_length,
                        max_telomere_start, density, short_cutoff, config_data,
                        log, check_cancelled, stop_cb, report_cb, trim_status="auto"):
     """Use the same R filtering/mapping and report writers as a normal run.
@@ -900,7 +900,6 @@ def _run_post_analysis(*, project_path, output_dir, organism, mapping, summary_o
         project_path: Project path.
         output_dir: Directory for generated outputs.
         organism: Organism label selecting reference and analysis defaults.
-        mapping: Whether recalculation includes chromosome mapping.
         summary_only: Whether to omit individual-read pages from the report.
         read_length: Read-length value in base pairs.
         max_telomere_start: Latest allowed telomere start in base pairs.
@@ -920,6 +919,11 @@ def _run_post_analysis(*, project_path, output_dir, organism, mapping, summary_o
     import json
     check_cancelled()
     source = ProjectSources.inspect(project_path)
+    # Recalculate preserves the original analysis stages. The fresh-run mapping
+    # checkbox cannot enable alignment or disable refiltering saved mapping.
+    mapping = bool(source.settings.get("run_mapping_analysis", False))
+    log("Recalculate: refiltering saved alignments; no new alignment will run."
+        if mapping else "Recalculate: telomere filtering only; the original run had no mapping stage.")
     organism = source.organism or organism
     from dorado_workflow.utils.source_discovery import RECALCULATED_FOLDER
     base = Path(_resolve_base_output_dir(output_dir or str(source.root / RECALCULATED_FOLDER))).resolve()

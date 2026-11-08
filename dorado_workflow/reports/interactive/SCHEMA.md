@@ -80,7 +80,7 @@ The machine-readable `report-data.json` contains:
 * **Alignment:** reference, strand, mapq, chromosome, arm, raw and normalized
   interval Facts. Reference labels remain exact; Head/Tail does not imply p/q.
   SAM MAPQ 255 is unavailable rather than a quality score of 255.
-* **Tracks:** density, motifs, tvr_regions, methylation Facts, reserved for later
+* **Tracks:** density, motifs, methylation Facts, reserved for later
   source-export adapters. No new calling or region merging occurs.
 
 Every **Fact** has `status`, `value`, `reason`, `unit`, `population`, `origin`,

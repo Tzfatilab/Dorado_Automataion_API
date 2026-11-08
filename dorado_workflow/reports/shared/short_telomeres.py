@@ -75,8 +75,7 @@ def short_summary_html(barcode, settings):
         HTML markup for short summary html.
     """
     from .measurement_statistics import METHODS
-    return ''.join(_summary_html(short_statistics(barcode, settings, method), method=method)
-                   for method, _ in METHODS)
+    return _combined_summary_html([(method, short_statistics(barcode, settings, method)) for method, _ in METHODS])
 
 
 def pooled_short_statistics(run, method=None):
@@ -116,8 +115,18 @@ def pooled_short_summary_html(run):
         HTML markup for pooled short summary html.
     """
     from .measurement_statistics import METHODS
-    return ''.join(_summary_html(pooled_short_statistics(run, method), pooled=True, method=method)
-                   for method, _ in METHODS)
+    return _combined_summary_html([(method, pooled_short_statistics(run, method)) for method, _ in METHODS], pooled=True)
+
+
+def _combined_summary_html(results, pooled=False):
+    cutoffs = {row['cutoff_bp'] for _, row in results if row.get('requested') is not False}
+    cutoff = next(iter(cutoffs)) if len(cutoffs) == 1 else None
+    caption = 'After filtering'
+    caption += f' · Length < {cutoff / 1000:g} kb' if cutoff is not None else ' · Cutoff unavailable'
+    values = ''.join(_summary_html(row, pooled=pooled, method=method) for method, row in results)
+    return ('<article class="stat stat-short-compact"><h3>Short telomeres</h3>'
+            '<div class="short-method-values">' + values + '</div><p class="short-card-note">'
+            + escape(caption) + '</p></article>')
 
 
 def _summary_html(result, *, pooled=False, method=None):
@@ -147,13 +156,12 @@ def _summary_html(result, *, pooled=False, method=None):
         note = definition + ' A recorded cutoff and complete post-filtered read lengths are required.'
         if pooled:
             note = definition + ' Complete lengths and a common cutoff across all barcodes are required.'
-    mode = {'exact': 'without mismatch or TVR', 'mismatch': 'with mismatch, without TVR',
-            'tvr_inclusive': 'with TVR (matching as configured)'}.get(method)
-    title = 'Short telomeres' + (' — ' + mode if mode else '')
-    return ('<article class="stat stat-short short-telomere-stat" data-short-method="'+(method or '')+'">'
-            '<svg aria-hidden="true" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5">'
-            '<path d="M8 12h32M12 8v8M20 8v8M28 8v8M36 8v8M8 34h16M12 30v8M20 30v8M34 23v18m-6-6 6 6 6-6"/></svg><div>'
-            '<h3>'+escape(title)+'</h3><strong>' + display + '</strong><p>' + escape(note) + '</p></div></article>')
+    mode = {'exact': 'Canonical', 'mismatch': '+ Mismatch', 'tvr_inclusive': '+ TVR'}.get(method, 'Short telomeres')
+    description = {'exact': 'Without mismatch or TVR. ', 'mismatch': 'With mismatch, without TVR. ',
+                   'tvr_inclusive': 'Including TVRs, using the recorded matching settings. '}.get(method, '')
+    return ('<div class="short-telomere-stat" data-compact-card="true" data-short-method="'+(method or '')
+            +'" title="'+escape(description + note, quote=True)+'"><h4>'+escape(mode)+'</h4><strong>'
+            + display + '</strong><p class="short-method-note">' + escape(note) + '</p></div>')
 
 
 def add_cutoff_line(layout, cutoff_bp, *, axis='y', unit='kb'):
