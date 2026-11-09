@@ -6,10 +6,11 @@
 }
 
 /* Light report canvas and desktop-GUI typography. */
+:root{--report-section-heading-size:23px}
 body {
     margin:0;
     padding:12px;
-    background:#f7f9fc;
+    background:#fff;
     color:#101f3b;
     font-family:Segoe UI,Arial,sans-serif
 }
@@ -392,7 +393,7 @@ button.km-info{border:0;padding:0;vertical-align:middle;cursor:pointer}button.km
 
 /* Export actions share the simple Linear/Logarithmic control style. */
 .table-export-controls,.graph-export-controls{justify-content:flex-end!important;gap:8px!important}
-.table-export-controls button,.graph-export-controls button{font:600 15px Segoe UI,Arial,sans-serif!important;padding:10px 18px!important;border:1px solid #ccd8e8!important;border-radius:7px!important;background:white!important;color:#20324c!important;box-shadow:none!important;cursor:pointer}
+.table-export-controls button,.graph-export-controls button,.report-workbook-controls button{font:600 15px Segoe UI,Arial,sans-serif!important;padding:10px 18px!important;border:1px solid #ccd8e8!important;border-radius:7px!important;background:white!important;color:#20324c!important;box-shadow:none!important;cursor:pointer}
 .table-export-controls button:hover,.graph-export-controls button:hover{background:#f0f5ff!important;border-color:#8faedc!important}
 .table-export-controls button:focus-visible,.graph-export-controls button:focus-visible{outline:2px solid #2d65ce;outline-offset:3px}
 .table-export-controls button:disabled,.graph-export-controls button:disabled{opacity:.55;cursor:wait}
@@ -459,12 +460,84 @@ button.km-info{border:0;padding:0;vertical-align:middle;cursor:pointer}button.km
 body[data-summary-only] .reads-table tr:focus{outline:2px solid #d59a15}
 
 /* Three measurements share one card; method-specific counts remain in tooltips. */
-:is(#run-overview,.barcode-page) .stats>.stat-short-compact{grid-template-columns:minmax(0,1fr);gap:10px}
+:is(#run-overview,.barcode-page) .stats>.stat-short-compact{grid-column:span 2;grid-template-columns:minmax(0,1fr);gap:10px}
 :is(#run-overview,.barcode-page) .stats>.stat-short-compact>.short-method-values{display:grid;grid-column:1/-1;grid-row:2;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .short-method-values>.short-telomere-stat{min-width:0;text-align:center;padding:2px 4px}
 .short-method-values>.short-telomere-stat+.short-telomere-stat{border-left:1px solid #e3e9f3}
-.short-method-values h4{font-size:11px;font-weight:500;color:#607087;margin:0 0 6px;line-height:1.35;min-height:2.7em;display:flex;align-items:center;justify-content:center}
+.short-method-values h4{font-size:11px;font-weight:500;color:#607087;margin:0 0 8px;line-height:1.35;white-space:nowrap}
 :is(#run-overview,.barcode-page) .stats>.stat-short-compact strong{display:block;font-size:20px;line-height:1.2;overflow-wrap:anywhere}
 .short-method-values .short-method-note{display:none}
 
-.read-browser .reads-table [data-column-key="filter_reason"]{min-width:180px;max-width:280px;white-space:normal;overflow-wrap:anywhere}
+.read-browser .reads-table [data-column-key="filter_reason"]{min-width:180px;max-width:280px;white-space:normal;overflow-wrap:normal}
+.read-browser .read-values-table{table-layout:fixed}
+.read-browser .read-values-table th,.read-browser .read-values-table td{padding:8px 10px}
+.read-browser .read-values-table th{white-space:normal;vertical-align:bottom;overflow-wrap:normal;word-break:normal;hyphens:none}
+.read-browser .read-values-table .read-column-filter{padding:0;white-space:normal;overflow-wrap:normal;word-break:normal;hyphens:none;line-height:1.35;text-align:left}
+.read-browser .read-values-table td{font-variant-numeric:tabular-nums}
+.read-browser .read-values-table [data-column-key="filter_reason"]{min-width:0;max-width:none}
+.read-browser .read-values-table td:is([data-column-key="read_status"],[data-column-key="chromosomes"],[data-column-key="arms"],[data-column-key="tvr_patterns"]){white-space:normal;overflow-wrap:normal;word-break:normal;hyphens:none}
+.barcode-statistics-table th.short-summary-heading{width:330px}
+.barcode-statistics-table th.short-summary-heading .stat-column-heading{justify-content:center}
+.barcode-statistics-table td.short-summary-cell{padding:20px 10px 14px;border-right:1px solid #dce4ef}
+.short-summary-card{padding:0;background:transparent;border:0;border-radius:0}
+.short-summary-methods{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
+.short-summary-method{display:flex;flex-direction:column;align-items:center;gap:7px;min-width:0}
+.short-summary-method+.short-summary-method{border-left:1px solid #bacbe2}
+.short-summary-method>span{font-size:12px;font-weight:400;color:#70809d;white-space:nowrap}
+.short-summary-method>strong{font-size:19px;font-weight:600;color:#102650;white-space:nowrap}
+.short-summary-note{font-size:12px;font-weight:400;color:#70809d;margin-top:14px;text-align:center}
+
+/* Per-barcode statistics: soft tinted panels with a shared value baseline. */
+.barcode-page>.barcode-key-statistics{background:transparent;border:0;border-radius:0;box-shadow:none;margin-top:0;padding:0 16px 10px}
+.barcode-key-statistics>h2{position:relative;margin:0 0 10px;font-size:23px;color:#0b1737}
+:is(#run-overview,.barcode-page) .barcode-stat-cards{grid-template-columns:repeat(2,minmax(0,1fr)) repeat(2,minmax(0,1.65fr)) repeat(2,minmax(0,1fr));gap:12px;align-items:stretch}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat{--stat-tint:#edf5ff;--stat-accent:#d8eaff;--stat-icon:#1579de;position:relative;isolation:isolate;overflow:hidden;display:grid;grid-template-columns:40px minmax(0,1fr);grid-template-rows:48px minmax(60px,1fr) 52px;grid-row:auto;grid-column:auto;column-gap:10px;row-gap:10px;min-height:214px;padding:16px 12px;border:1px solid #d6e3f3;border-radius:16px;background:var(--stat-tint);box-shadow:none;color:#0b1737}
+/* Each card has a distinct, flat pastel fill. */
+:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat-1{--stat-tint:#eff9f4;--stat-accent:#dcefe6;--stat-icon:#38884d}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat-2{--stat-tint:#fbf0fa;--stat-accent:#edddf2;--stat-icon:#93679b}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat-4{--stat-tint:#fbf5ee;--stat-accent:#eee6dc;--stat-icon:#ac6225}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat-5{--stat-tint:#effbfc;--stat-accent:#cfedf4;--stat-icon:#25849a}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat>div{display:contents;grid-column:auto;grid-row:auto}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat>svg{grid-column:1;grid-row:1;align-self:start;justify-self:start;width:40px;height:40px;padding:9px;border-radius:12px;box-sizing:border-box;background:var(--stat-accent);color:var(--stat-icon);stroke-width:2.3}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat h3{grid-column:2;grid-row:1;text-align:left;align-self:start;margin:4px 0 0;font-size:14px;font-weight:600;line-height:1.35;white-space:normal;overflow-wrap:normal}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat strong{grid-column:1/-1;grid-row:2;align-self:center;text-align:center;font-size:26px;font-weight:650;line-height:1.2;color:#0b1737;white-space:nowrap}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat p{grid-column:1/-1;grid-row:3;align-self:start;text-align:center;margin:0;font-size:12px;font-weight:400;line-height:1.4;color:#53627f;border-top:1px solid #dfE8f6;padding-top:9px}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>:is(.stat-short-compact,.stat-median-compact){border-color:#d6e3f3;box-shadow:none}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>:is(.stat-short-compact,.stat-median-compact) h3{font-size:14px;align-self:start;margin-top:6px}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>:is(.stat-short-compact,.stat-median-compact)>:is(.short-method-values,.median-method-values){display:grid;grid-column:1/-1;grid-row:2;grid-template-columns:repeat(3,minmax(0,1fr));align-self:center;gap:0}
+.barcode-stat-cards :is(.short-method-values,.median-method-values)>:is(.short-telomere-stat,.median-method){padding:0 5px;display:flex;flex-direction:column;gap:9px}
+.barcode-stat-cards :is(.short-method-values,.median-method-values)>:is(.short-telomere-stat,.median-method)+:is(.short-telomere-stat,.median-method){border-left:1px solid #a9cdf8}
+.barcode-stat-cards :is(.short-method-values,.median-method-values) h4{font-size:12px;font-weight:400;color:#53627f;margin:0;white-space:nowrap}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>:is(.stat-short-compact,.stat-median-compact) strong{font-size:26px;overflow-wrap:normal}
+.barcode-stat-cards .short-method-values .short-method-note{display:none}
+/* Paired barcode charts share header, figure and caption rows. */
+.barcode-length-charts>section{display:grid;grid-template-rows:auto 620px auto auto;align-content:start;min-width:0}
+.barcode-length-charts>section>.histogram-heading{grid-row:1;margin-bottom:0;align-content:start}
+.barcode-length-charts>section>.saved-histogram{grid-row:2;height:620px;min-height:620px;min-width:0}
+.barcode-length-charts>section>p.note{grid-row:3;align-self:start}
+.barcode-length-charts>section>details{grid-row:4;align-self:start}
+@supports(grid-template-rows:subgrid){
+  .barcode-length-charts{grid-template-rows:auto 620px auto auto;row-gap:12px}
+  .barcode-length-charts>section{grid-row:span 4;grid-template-rows:subgrid}
+}
+@media(max-width:850px){
+  .barcode-length-charts{grid-template-rows:none}
+  .barcode-length-charts>section{grid-row:auto;grid-template-rows:auto 620px auto auto;row-gap:12px}
+}
+@media(max-width:1250px){:is(#run-overview,.barcode-page) .barcode-stat-cards{grid-template-columns:repeat(3,minmax(0,1fr))}:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat-short-compact{grid-column:auto}}
+@media(max-width:850px){:is(#run-overview,.barcode-page) .barcode-stat-cards{grid-template-columns:repeat(2,minmax(0,1fr))}:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat-2,:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat-short-compact{grid-column:1/-1}}
+@media(max-width:520px){.barcode-page>.barcode-key-statistics{padding:0 12px 10px}.barcode-key-statistics>h2{font-size:21px}:is(#run-overview,.barcode-page) .barcode-stat-cards{grid-template-columns:minmax(0,1fr)}:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat{min-height:210px}}
+
+/* Overview, barcode and read section titles use the barcode heading size. */
+main h2,:is(#run-overview,.barcode-page,#read-detail) h2{font-size:var(--report-section-heading-size)}
+@media(max-width:520px){:root{--report-section-heading-size:21px}}
+
+/* Compact overview heading: title and export actions share one wrapping row. */
+.barcode-statistics-section{padding:12px 14px}
+.barcode-statistics-heading{gap:8px 14px;margin-bottom:10px;justify-content:flex-start}
+.barcode-statistics-heading>div:first-child{display:contents}
+.barcode-statistics-heading h2{margin:0;gap:10px}
+.barcode-statistics-heading h2 .number{min-width:36px;width:36px;height:36px;line-height:36px;font-size:22px}
+.barcode-statistics-heading .report-workbook-controls{margin:0 0 0 auto!important;gap:8px!important}
+.barcode-statistics-heading .table-export-controls{margin:0!important;gap:8px!important}
+.barcode-statistics-heading .report-workbook-controls [role=status]:empty{display:none}

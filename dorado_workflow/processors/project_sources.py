@@ -8,7 +8,6 @@ from openpyxl import load_workbook, Workbook
 from dorado_workflow.utils.source_links import link_source
 from dorado_workflow.utils.source_discovery import source_files
 from dorado_workflow.reports.storage.saved_sources import source_folders, MANIFEST
-from dorado_workflow.reports.shared.organism import is_human
 
 
 @dataclass
@@ -99,6 +98,25 @@ class ProjectSources:
         """
         return self.settings.get("nanotel_analysis", self.settings)
 
+    @property
+    def includes_km(self):
+        """Retain the source run's KM choice, including legacy artifact evidence."""
+        if "include_km" in self.params:
+            return self.params["include_km"] is True
+        # Older runs predate the opt-in setting. Their saved KM exports record
+        # whether KM was included; the currently active profile is irrelevant.
+        if any(source_files(self.results / "nanotel", "*km*statistics.csv")):
+            return True
+        if self.workbook:
+            book = load_workbook(self.workbook, read_only=True, data_only=True)
+            try:
+                return any(name.removeprefix("_source_") in
+                           {"KM by barcode", "KM run statistics", "Kaplan-Meier"}
+                           for name in book.sheetnames)
+            finally:
+                book.close()
+        return False
+
     def restore(self, context, check_cancelled):
         """Stage immutable inputs as links and extract workbook-only populations.
 
@@ -114,9 +132,9 @@ class ProjectSources:
         """
         target = context.path_manager.get_nanotel_output_dir_path()
         target.mkdir(parents=True, exist_ok=True)
-        reuse_km = not is_human(self.organism or context.config_manager.get_current_organism())
+        reuse_km = self.includes_km
         if not reuse_km:
-            context.logger.info("Human recalculation: KM is not run; saved KM tables are not copied.")
+            context.logger.info("KM disabled for recalculation; saved KM tables are not copied.")
         book = load_workbook(self.workbook, read_only=True, data_only=True) if self.workbook else None
         referenced_folders = {}
         try:
@@ -160,7 +178,7 @@ class ProjectSources:
             # rows, mappings, aggregate figures or summary statistics.
             evidence = Workbook()
             evidence.remove(evidence.active)
-            evidence_sheet_names = {"Read motifs", "Barcode source counts", "NanoTel analysis facts"}
+            evidence_sheet_names = {"Read motifs", "Read repeat summaries", "Barcode source counts", "NanoTel analysis facts"}
             if reuse_km:
                 evidence_sheet_names.update({"KM by barcode", "KM run statistics"})
             if book:

@@ -31,7 +31,7 @@ def table_name(filename):
 
 def retained_name(name):
     return name in {'NanoTel Statistics', 'Run metadata', 'Barcode source counts',
-                    'Read motifs', 'Read mappings', 'Barcode figures', 'KM by barcode',
+                    'Read motifs', 'Read repeat summaries', 'Read mappings', 'Barcode figures', 'KM by barcode',
                     'KM run statistics', 'NanoTel analysis facts', 'Report sources'} or bool(
         re.fullmatch(r'(?:(?:filtered|final|audit)_)?barcode\d+', name))
 
@@ -97,13 +97,32 @@ def retain_source_tables(workbook, results_root, run):
             previous.close()
     if '_source_Barcode source counts' not in workbook.sheetnames:
         sheet = workbook.create_sheet('_source_Barcode source counts')
-        sheet.append(['barcode', 'total_reads', 'detected_telomeric_reads'])
+        sheet.append(['barcode', 'total_reads', 'detected_telomeric_reads', 'total_read_length_median_bp'])
         for barcode in run.barcodes:
             def value(key):
                 fact = barcode.metrics.get(key)
                 return fact.value if fact and fact.status == 'available' else None
-            sheet.append([barcode.label, value('total_reads'), value('detected_telomeric_reads')])
+            sheet.append([barcode.label, value('total_reads'), value('detected_telomeric_reads'),
+                          value('total_read_length_median_bp')])
         sheet.sheet_state = 'hidden'
+    # Legacy retained count tables predate the all-input read-length median.
+    # Carry the imported log/JSON value into the workbook before those original
+    # files are unavailable on a later workbook-only recalculation.
+    counts = workbook['_source_Barcode source counts']
+    headers = [cell.value for cell in counts[1]]
+    median_key = 'total_read_length_median_bp'
+    if median_key not in headers:
+        counts.cell(1, counts.max_column + 1, median_key)
+        headers.append(median_key)
+    if 'barcode' in headers:
+        label_column = headers.index('barcode') + 1
+        median_column = headers.index(median_key) + 1
+        by_label = {barcode.label: barcode for barcode in run.barcodes}
+        for row in range(2, counts.max_row + 1):
+            barcode = by_label.get(counts.cell(row, label_column).value)
+            fact = barcode.metrics.get(median_key) if barcode else None
+            if counts.cell(row, median_column).value is None and fact and fact.status == 'available':
+                counts.cell(row, median_column, fact.value)
     if '_source_Run metadata' not in workbook.sheetnames:
         sheet = workbook.create_sheet('_source_Run metadata')
         append_text(sheet, ['Field', 'Part', 'Value'])

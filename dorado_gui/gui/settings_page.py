@@ -13,7 +13,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QScrollArea, QFileDialog, QInputDialog,
-    QMessageBox, QSizePolicy, QSpinBox, QDoubleSpinBox, QTabWidget,
+    QMessageBox, QSizePolicy, QSpinBox, QDoubleSpinBox, QTabWidget, QCheckBox,
 )
 
 from gui.app_settings_page import AppSettingsPage
@@ -84,6 +84,20 @@ class SettingsPage(QWidget):
             QWidget#settingsPage QSpinBox, QWidget#settingsPage QDoubleSpinBox {
                 background: white; color: #162238; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; min-height: 18px; }
             QWidget#settingsPage QLineEdit:focus, QWidget#settingsPage QComboBox:focus { border-color: #2563eb; }
+            QWidget#settingsPage QCheckBox {
+                color: #162238; background: transparent; spacing: 8px; padding: 4px 0;
+            }
+            QWidget#settingsPage QCheckBox:disabled { color: #52627a; }
+            QWidget#settingsPage QCheckBox::indicator {
+                width: 16px; height: 16px; border: 1px solid #748198;
+                border-radius: 3px; background: white;
+            }
+            QWidget#settingsPage QCheckBox::indicator:checked {
+                background: #2563eb; border-color: #2563eb;
+            }
+            QWidget#settingsPage QCheckBox::indicator:disabled {
+                background: #e8edf5; border-color: #94a3b8;
+            }
             QWidget#settingsPage QScrollArea { border: none; background: transparent; }
             QWidget#settingsPage QTabWidget::pane { border: none; }
             QWidget#settingsPage QTabBar::tab {
@@ -287,6 +301,35 @@ class SettingsPage(QWidget):
             fields.addWidget(control, row, 1)
             self.analysis_fields[key] = control
         analysis_layout.addLayout(fields)
+        km_help_text = (
+            "Kaplan-Meier (KM) estimates the telomere-length distribution while accounting "
+            "for reads that contain only part of a telomere (censored measurements). "
+            "These partial measurements are treated as lower bounds rather than complete telomere lengths.\n\n"
+            "Select this option to calculate KM estimates and include the results in the report. "
+            "Estimates may be unavailable when the data are insufficient. "
+            "Off by default for every organism, including Human."
+        )
+        self.include_km = QCheckBox("Include Kaplan-Meier (KM) results")
+        self.include_km.setToolTip(km_help_text)
+        self.include_km.toggled.connect(self.mark_dirty)
+        km_row = QHBoxLayout()
+        km_row.setSpacing(8)
+        km_row.addWidget(self.include_km)
+        self.km_help = QPushButton("?")
+        self.km_help.setAccessibleName("About Kaplan-Meier results")
+        self.km_help.setFixedSize(24, 24)
+        self.km_help.setToolTip(km_help_text)
+        self.km_help.setStyleSheet(
+            "QPushButton { color: #2563eb; background: white; border: 1px solid #94a3b8; "
+            "border-radius: 12px; padding: 0; font-weight: bold; } "
+            "QPushButton:hover, QPushButton:focus { background: #eff6ff; border-color: #2563eb; }"
+        )
+        self.km_help.clicked.connect(
+            lambda: QMessageBox.information(self, "Kaplan-Meier (KM)", km_help_text)
+        )
+        km_row.addWidget(self.km_help)
+        km_row.addStretch()
+        analysis_layout.addLayout(km_row)
         # Absorb spare column height inside this card so both columns end together.
         analysis_layout.addStretch()
         left_layout.addWidget(analysis_card, 1)
@@ -456,6 +499,8 @@ class SettingsPage(QWidget):
         # Write only changed values into this organism's override dictionary.
         # Legacy profiles keep their profile-wide fallback without becoming dirty.
         effective = organism_nanotel_settings(self.draft, self.current_org)
+        if self.include_km.isChecked() != effective.get("include_km", False):
+            c["organism_specific"][self.current_org].setdefault("nanotel", {})["include_km"] = self.include_km.isChecked()
         for key, control in self.analysis_fields.items():
             value = control.value()
             # Merely opening a rounded spin box must not alter imported precision.
@@ -531,6 +576,7 @@ class SettingsPage(QWidget):
             None.
         """
         defaults = organism_nanotel_settings(self.draft, self.current_org)
+        self.include_km.setChecked(defaults.get("include_km", False))
         for key, control in self.analysis_fields.items():
             value = defaults[key]
             control.setValue(-1 if value is None else value * 100 if key == "min_density" else value)

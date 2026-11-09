@@ -1,8 +1,8 @@
 /* Offline exports for existing and lazily rendered report figures. */
 (() => {
-  if (window.reportGraphExportInstalled === 'v21') return;
+  if (window.reportGraphExportInstalled === 'v23') return;
   window.reportGraphExportCleanup?.();
-  window.reportGraphExportInstalled = 'v21';
+  window.reportGraphExportInstalled = 'v23';
   const attached = new WeakSet();
   const NS = 'http://www.w3.org/2000/svg';
   // Function: save.
@@ -249,6 +249,30 @@
     } finally {URL.revokeObjectURL(url);}
   };
   window.reportExportGraph=exportGraph;
+  // Plotly's camera omits page headings and external composition legends.
+  // Use the shared complete-figure export for every report camera.
+  const exportingGraphs = new WeakSet();
+  const nativeGraphExport = async event => {
+    const button=event.target.closest?.('.modebar-btn');
+    const graph=button?.closest('.js-plotly-plot');
+    if(!graph?.closest('main'))return;
+    const camera=window.Plotly?.Icons?.camera?.path;
+    if(!camera||![...button.querySelectorAll('path')].some(path=>path.getAttribute('d')===camera))return;
+    event.preventDefault();event.stopImmediatePropagation();
+    if(exportingGraphs.has(graph))return;
+    exportingGraphs.add(graph);button.disabled=true;
+    const status=graph.closest('section')?.querySelector('.graph-export-controls [role="status"]');
+    if(status)status.textContent='Preparing image...';
+    try {
+      await exportGraph(graph,'png');
+      if(status)status.textContent='Saved';
+    } catch(error) {
+      if(status)status.textContent=error.message||'Image export failed.';
+    } finally {
+      exportingGraphs.delete(graph);button.disabled=false;
+    }
+  };
+
   // Function: attach.
   // Inputs: graph (Plotly graph element)
   // Outputs: Adds export controls or related handlers to the supplied report element.
@@ -299,12 +323,14 @@
   // Outputs: Disconnects the observer and removes generated graph-export controls.
   window.reportGraphExportCleanup=()=>{
     observer?.disconnect();
+    document.removeEventListener('click',nativeGraphExport,true);
     document.querySelectorAll('.graph-export-controls').forEach(toolbar=>toolbar.remove());
   };
   // Function: start.
   // Inputs: None; uses the current report/browser state.
   // Outputs: Initializes this report feature and registers its event listeners.
   const start = () => {
+    document.addEventListener('click',nativeGraphExport,true);
     document.querySelectorAll('.graph-export-controls').forEach(toolbar=>toolbar.remove());
     scan(document);
     observer=new MutationObserver(records=>records.forEach(record=>{

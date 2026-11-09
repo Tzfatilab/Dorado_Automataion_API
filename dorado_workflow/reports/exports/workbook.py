@@ -134,7 +134,7 @@ class NanoTelWorkbookWriter:
             sheet.column_dimensions["C"].width = 42
         definitions = workbook.create_sheet("Definitions")
         for row in [
-            ["Output", "Summary-only numeric results with a separate compact dashboard. No per-read plots, FASTA or density tracks. Original barcode figures and motif evidence are retained for the shared dashboard."],
+            ["Output", "Summary-only numeric results with a separate compact dashboard. No per-read plots, FASTA or density tracks. Original barcode figures and compact per-read motif summaries are retained for the shared dashboard, without motif coordinates."],
             ["NanoTel Statistics", "R post-analysis filtered population. Source column names and units are retained."],
             ["barcodeXX", "Imported NanoTel summary reads before post-analysis filtering; not every input/basecalled read."],
             ["filtered_barcodeXX", "R post-analysis filtered reads; an empty table means zero retained reads."],
@@ -149,10 +149,10 @@ class NanoTelWorkbookWriter:
         definitions.column_dimensions["B"].width = 110
         if run is not None:
             counts = workbook.create_sheet('Barcode source counts')
-            counts.append(['barcode','total_reads','detected_telomeric_reads'])
+            counts.append(['barcode','total_reads','detected_telomeric_reads','total_read_length_median_bp'])
             for barcode in run.barcodes:
                 counts.append([barcode.label,*[barcode.metrics[k].value if k in barcode.metrics and
-                    barcode.metrics[k].status == 'available' else None for k in ('total_reads','detected_telomeric_reads')]])
+                    barcode.metrics[k].status == 'available' else None for k in ('total_reads','detected_telomeric_reads','total_read_length_median_bp')]])
             mappings = workbook.create_sheet('Read mappings')
             mappings.append(['barcode','read_id','Part','Value'])
             from dataclasses import asdict
@@ -166,6 +166,7 @@ class NanoTelWorkbookWriter:
                         mappings.cell(mappings.max_row,4).data_type='s'
             figures=workbook.create_sheet('Barcode figures');figures.append(['barcode','Kind','Part','Value'])
             motifs=workbook.create_sheet('Read motifs');motifs.append(['barcode','read_id','Part','Value'])
+            compact_motifs=workbook.create_sheet('Read repeat summaries');compact_motifs.append(['barcode','read_id','Part','Value'])
             for barcode in run.barcodes:
                 saved=barcode.metrics.get('saved_barcode_figures')
                 if saved and saved.status=='available':
@@ -173,6 +174,10 @@ class NanoTelWorkbookWriter:
                         encoded=json.dumps(figure,ensure_ascii=True,allow_nan=False)
                         for i in range(0,len(encoded),30000):figures.append([barcode.label,kind,i//30000+1,encoded[i:i+30000]])
                 for read in barcode.reads:
+                    summary=read.metrics.get('repeat_summary')
+                    if summary and summary.status=='available':
+                        encoded=json.dumps(summary.value,ensure_ascii=True,allow_nan=False)
+                        for i in range(0,len(encoded),30000):compact_motifs.append([barcode.label,read.id,i//30000+1,encoded[i:i+30000]])
                     if read.tracks['motifs'].status!='available':continue
                     encoded=json.dumps(read.tracks['motifs'].value,ensure_ascii=True,allow_nan=False)
                     for i in range(0,len(encoded),30000):motifs.append([barcode.label,read.id,i//30000+1,encoded[i:i+30000]])

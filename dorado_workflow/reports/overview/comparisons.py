@@ -102,9 +102,17 @@ def comparison_data(run):
             read = by_id.get(item["read_id"])
             if read is None:
                 continue
+            compact = read.metrics.get('repeat_summary')
+            if not mismatch_mode and compact and compact.status == 'available':
+                summary = compact.value
+                covered += 1
+                base_counts.update(summary['base_counts'])
+                match_counts.update(summary['match_counts'])
+                with_tvr += bool(summary['tvr_motifs'])
+                motifs.update(summary['tvr_motifs'].keys())
             track = read.tracks.get("motifs")
             interval = read.calls.get("tvr_inclusive", {}).get("interval")
-            if (not mismatch_mode and track and interval and track.status == "available" and interval.status == "available"
+            if (not (compact and compact.status == 'available') and not mismatch_mode and track and interval and track.status == "available" and interval.status == "available"
                     and "tvr_inclusive" in track.value["methods"]):
                 covered += 1
                 base_counts.update(motif_base_counts(interval.value['start'], interval.value['end'],
@@ -241,9 +249,9 @@ def comparison_figures(run, data=None):
             z=[[lookup.get((b,c),{}).get("mean_kb") for c in chroms] for b in barcodes],
             customdata=[[lookup.get((b,c),{}).get("reads",0) for c in chroms] for b in barcodes],
             colorscale="RdYlBu_r",xgap=1,ygap=1,hoverongaps=False,
-            colorbar=dict(title="Average<br>length (kb)"),
+            colorbar=dict(title="Average telomere<br>length (kb)"),
             hovertemplate="%{y} / %{x}<br>Average: %{z:.3f} kb<br>%{customdata} reads<extra></extra>"))
     heatmap.update_layout(xaxis_title="Chromosome",yaxis_title="Barcode",yaxis_autorange="reversed")
     return [(4,"Mismatch patterns" if data.get('repeat_method') == 'mismatch' else "TVR patterns",None,overview_composition_section(data, requested=tvr_enabled(run.settings))),
             (5,"Average Telomere Length by Chromosome and Barcode",heatmap,
-             "Post-filtered lengths; explicit chromosome annotations or chrN/chrN_Head/chrN_Tail labels. Cross-chromosome ambiguous reads excluded; gaps mean unavailable.")]
+             "Post-filtered telomere lengths; explicit chromosome annotations or chrN/chrN_Head/chrN_Tail labels. Cross-chromosome ambiguous reads excluded; gaps mean unavailable.")]

@@ -131,13 +131,13 @@ def dashboard_data(run, include_details=True):
         else:
             pct = unavailable("Filtered counts exceed the reported input count", A.INVALID)
     distributions = [{"id": b.id, "label": b.label, "lengths": asdict(b.metrics["filtered_length_records"])} for b in run.barcodes]
-    # Pool individual before-filtration measurements; never average barcode medians.
+    # Pool individual after-filtration measurements; never average barcode medians.
     from ..shared.measurement_statistics import method_statistics, selected_method
-    before = [method_statistics(b, run.settings, selected_method(run.settings), 'before') for b in run.barcodes]
-    before_values = [n for row in before for n in row['lengths'] or []]
-    med = (aggregate(median(before_values), [e for b in run.barcodes for e in b.evidence], 'bp', 'before_filtration')
-           if before and all(row['lengths'] is not None for row in before) and before_values
-           else unavailable('Before-filtration source measurements are required'))
+    after = [method_statistics(b, run.settings, selected_method(run.settings), 'after') for b in run.barcodes]
+    after_values = [n for row in after for n in row['lengths'] or []]
+    med = (aggregate(median(after_values), [e for b in run.barcodes for e in b.evidence], 'bp', 'after_filtration')
+           if after and all(row['lengths'] is not None for row in after) and after_values
+           else unavailable('After-filtration source measurements are required'))
     result = {
         "metrics": {
             "barcode_count": asdict(run.metrics.get("barcode_count", unavailable("Barcode count was not exported"))),

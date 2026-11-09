@@ -60,6 +60,10 @@ def tvr_read_count(barcode, settings, population):
         return None
     count = 0
     for read in reads:
+        summary = read.metrics.get('repeat_summary') if read else None
+        if summary and summary.status == 'available':
+            count += bool(summary.value['tvr_motifs'])
+            continue
         motifs = read.tracks.get('motifs') if read else None
         interval = read.calls.get('tvr_inclusive', {}).get('interval') if read else None
         if not motifs or motifs.status != 'available' or 'tvr_inclusive' not in motifs.value['methods']:
@@ -70,3 +74,25 @@ def tvr_read_count(barcode, settings, population):
                      and hit['end'] > interval.value['start'] and hit['start'] < interval.value['end']
                      for hit in motifs.value['matches'])
     return count
+
+
+def barcode_table_statistics(barcode, settings):
+    """Summary populations shared by automatic and browser Excel exports."""
+    def metric(key):
+        fact = barcode.metrics.get(key)
+        return fact.value if fact and fact.status == 'available' else None
+    reads = population_reads(barcode, 'before')
+    lengths = [read.metrics.get('read_length') for read in reads] if reads is not None else []
+    complete = reads is not None and all(f and f.status == 'available' for f in lengths)
+    detected = len(reads) if reads is not None else None
+    total = metric('total_reads')
+    retained = population_reads(barcode, 'after')
+    positive = tvr_read_count(barcode, settings, 'after')
+    return dict(sample_name=metric('sample_name') or '',
+                total_read_length_median_bp=metric('total_read_length_median_bp'),
+                detected_reads=detected,
+                detected_percent=100 * detected / total if detected is not None and total else None,
+                detected_read_length_median_bp=median([f.value for f in lengths]) if complete and lengths else None,
+                tvr_read_percent_after=(100 * positive / len(retained)
+                    if isinstance(positive, (int, float)) and retained else
+                    'Not requested' if positive == 'Not requested' else None))

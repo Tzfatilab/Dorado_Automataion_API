@@ -129,7 +129,7 @@ window.renderReadRepeats = (parent, read) => {
   const scroll = add('div', '', detected); scroll.className = 'reads-scroll';
   const table = add('table', '', scroll); table.className = 'reads-table read-tvr-table';
   const heading = add('tr', '', add('thead', '', table));
-  const columns=[['Motif / category','motif'],['Region','number'],['Start (bp)','start'],['End (bp)','end'],['Length (bp)','length'],['Repeats (matches)','matches'],['Relative position','start']];
+  const columns=[['Motif / category','motif'],['Region','number'],['Start (bp)','start'],['End (bp)','end'],['Region length (bp)','length'],['Repeats (matches)','matches'],['Relative position','start']];
   let sortKey=null,ascending=true;
   columns.forEach(([label,key])=>{
     const th=add('th','',heading),button=add('button',label+' \u2195',th);button.type='button';button.className='read-column-filter';

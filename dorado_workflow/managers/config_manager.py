@@ -28,6 +28,7 @@ def organism_nanotel_settings(config, organism):
         organism = "zebrafish"
     settings = deepcopy(config.get("nanotel", {}))
     settings.update(config.get("organism_specific", {}).get(organism, {}).get("nanotel", {}))
+    settings.setdefault("include_km", False)
     return settings
 
 class ConfigManager:

@@ -3,6 +3,24 @@ import json
 from ..reads.density import tvr_enabled
 
 
+def median_summary_html(barcode, settings, icon):
+    """Show each enabled call's telomere median in the retained population."""
+    from .measurement_statistics import method_statistics
+    parts = []
+    for method, label in [('exact', 'Canonical'), ('mismatch', '+ Mismatch'), ('tvr_inclusive', '+ TVRs')]:
+        result = method_statistics(barcode, settings, method, 'after')
+        if result['requested'] is False:
+            display = 'Off'
+        elif result['median_bp'] is None:
+            display = 'Unavailable'
+        else:
+            display = f"{result['median_bp'] / 1000:,.2f}"
+        parts.append('<div class="median-method"><h4>' + label + '</h4><strong>' + display + '</strong></div>')
+    return ('<article class="stat stat-2 stat-median-compact"><svg aria-hidden="true" viewBox="0 0 48 48">'
+            + icon + '</svg><h3>Median telomere length (kb)</h3><div class="median-method-values">'
+            + ''.join(parts) + '</div><p>After filtering</p></article>')
+
+
 def mismatch_statistics(barcode, composition=None):
     """Read mismatch counts from the complete post-filtered composition.
 
@@ -101,16 +119,16 @@ def barcode_key_statistics(barcode, settings, cells, composition=None):
         return fact.value if fact and fact.status == 'available' else None
 
     tvr = tvr_statistics(barcode, settings, composition)
-    chromosomes = {cell['chromosome'] for cell in cells
-                   if cell['barcode'] == barcode.label}
+    from .mapping_labels import chromosome_ends
+    ends = chromosome_ends(barcode)
     post_filtered = value('amount_of_telomeres')
     from .measurement_statistics import method_statistics, selected_method
-    before = method_statistics(barcode, settings, selected_method(settings), 'before')
+    before = method_statistics(barcode, settings, selected_method(settings), 'after')
     return {
         'total_reads': value('total_reads'),
         'post_filtered_reads': post_filtered,
         'median_length_bp': before['median_bp'],
         'reads_with_tvr': tvr['with_tvr'],
         'tvr_motifs': tvr['motifs'],
-        'chromosomes': len(chromosomes) if chromosomes else 0 if post_filtered == 0 else None,
+        'chromosomes': len(ends) if ends is not None else None,
     }

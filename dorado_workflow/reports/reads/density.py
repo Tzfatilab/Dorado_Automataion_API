@@ -165,7 +165,7 @@ def read_track_data(read, folder=None):
     if read.alignments.status == 'available':
         for record in read.alignments.value:
             alignment = {key: value.value for key, value in record.items()
-                if key in ('reference', 'chromosome', 'arm', 'strand', 'raw', 'normalized',
+                if key in ('reference', 'display_reference', 'chromosome', 'arm', 'strand', 'raw', 'normalized',
                            'query_interval', 'query_strand', 'mapq')
                 and value.status == 'available'}
             query = record.get('query_interval')

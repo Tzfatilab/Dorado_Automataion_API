@@ -34,18 +34,10 @@ def exclusion_payload(run, comparisons=None):
             return fact.value if fact and fact.status == 'available' else None
 
         lengths = value('filtered_length_records')
-        ids = {row['read_id'] for row in lengths or []}
-        chromosomes = set()
-        for read in barcode.reads:
-            if read.id not in ids or read.alignments.status != 'available':
-                continue
-            names = {str(a['chromosome'].value) for a in read.alignments.value
-                     if a.get('chromosome') and a['chromosome'].status == 'available'}
-            if len(names) == 1:
-                chromosomes.update(names)
+        from .mapping_labels import chromosome_ends
+        ends = chromosome_ends(barcode)
         motif = composition.get(barcode.label)
-        from .measurement_statistics import METHODS, method_statistics, selected_method, tvr_read_count
-        before = method_statistics(barcode, run.settings, selected_method(run.settings), 'before')
+        from .measurement_statistics import METHODS, method_statistics, selected_method, tvr_read_count, barcode_table_statistics
         measurements = {method: {population: method_statistics(barcode, run.settings, method, population)
                                   for population in ('before', 'after')} for method, _ in METHODS}
         rows.append(dict(id=barcode.id, barcode_id=barcode.label,
@@ -53,11 +45,12 @@ def exclusion_payload(run, comparisons=None):
                          population=getattr(barcode.metrics.get('amount_of_telomeres'), 'population', None),
                          length_population=getattr(barcode.metrics.get('filtered_length_records'), 'population', None),
                          lengths=[row['length_bp'] for row in lengths] if lengths is not None else None,
-                         before_lengths=before['lengths'],
+                         after_lengths=method_statistics(barcode, run.settings, selected_method(run.settings), 'after')['lengths'],
+                         table_statistics=barcode_table_statistics(barcode, run.settings),
                          measurements=measurements,
                          tvr_counts={population: tvr_read_count(barcode, run.settings, population)
                                      for population in ('before', 'after')},
-                         chromosomes=sorted(chromosomes), cutoff=short_cutoff_bp(run.settings, barcode),
+                         chromosomes=ends, cutoff=short_cutoff_bp(run.settings, barcode),
                          composition=dict(base_counts=motif['base_counts'], total=motif['total'],
                              with_tvr=None if mismatch_mode else motif['with_tvr'],
                              with_events=motif['with_mismatch' if mismatch_mode else 'with_tvr']) if motif else None))

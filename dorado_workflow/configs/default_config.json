@@ -38,6 +38,7 @@
     "min_density": 0.75,
     "use_filter": true,
     "summary_only": false,
+    "include_km": false,
     "density_threshold": 0.75,
     "min_read_length": 2000,
     "short_telomere_threshold_bp": 2000,

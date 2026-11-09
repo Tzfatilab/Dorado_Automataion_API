@@ -18,6 +18,7 @@ import re
 from openpyxl import load_workbook
 
 from dorado_workflow.reports.exports.workbook import barcode_from_summary_filename
+from ..shared.mapping_labels import annotate_alignment
 from .coordinates import normalize_interval
 from .identities import ReadIndex, serial_number
 from .supplementary import import_statistics, chromosome_fact, detected_chromosomes
@@ -246,7 +247,7 @@ class ResultImporter:
                 if retained_sources and not sheet.title.startswith('_source_'):
                     continue
                 name = sheet.title.removeprefix('_source_')
-                if name not in {"NanoTel Statistics", "NanoTel analysis facts", "KM by barcode", "KM run statistics", "Run metadata", "Barcode source counts", "Read mappings", "Barcode figures", "Read motifs"} and not re.fullmatch(r"(?:(?:filtered|final|audit)_)?barcode\d+", name):
+                if name not in {"NanoTel Statistics", "NanoTel analysis facts", "KM by barcode", "KM run statistics", "Run metadata", "Barcode source counts", "Read mappings", "Barcode figures", "Read motifs", "Read repeat summaries"} and not re.fullmatch(r"(?:(?:filtered|final|audit)_)?barcode\d+", name):
                     continue
                 source = self.source(path, "xlsx", sheet.title)
                 iterator = iter(sheet.iter_rows(values_only=True))
@@ -590,6 +591,8 @@ class ResultImporter:
             restore_summary_sources(self,b)
             from .coverage import import_coverage
             import_coverage(self, b)
+            from .repeat_summary import prepare_repeat_summaries
+            prepare_repeat_summaries(self, b)
             import_statistics(self, b, number)
             # R omits empty barcodes from its statistics table. An explicit
             # NanoTel zero plus an empty imported population establishes zero
@@ -746,9 +749,9 @@ class ResultImporter:
             rows = [(r,e) for r,e in table[1] if r.get('barcode') == barcode.label] if table else []
             if len(rows) == 1:
                 row,ev=rows[0]
-                for key in ('total_reads','detected_telomeric_reads'):
-                    barcode.metrics[key] = number(row,key,ev,unit='reads',
-                        population='input_reads' if key=='total_reads' else 'detected_telomeric_reads')
+                for key in ('total_reads','detected_telomeric_reads','total_read_length_median_bp'):
+                    barcode.metrics[key] = number(row,key,ev,unit='bp' if key=='total_read_length_median_bp' else 'reads',
+                        population='detected_telomeric_reads' if key=='detected_telomeric_reads' else 'input_reads')
             elif rows:
                 barcode.warnings.append('Ambiguous workbook input counts; counts not imported')
             return
@@ -758,6 +761,24 @@ class ResultImporter:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
         if not any(line.startswith("Work ended at:") for line in lines):
             return
+        # Older runs retain this statistic in the completed detector log only.
+        starts = [i for i, line in enumerate(lines)
+                  if line.strip() == 'Summary statistics of the sample reads length:']
+        if len(starts) == 1:
+            section = lines[starts[0]+1:starts[0]+6]
+            for i, line in enumerate(section[:-1]):
+                if 'Median' in line and 'Min.' in line and 'Max.' in line:
+                    values = section[i+1].strip().split()
+                    if len(values) == 6:
+                        try:
+                            med = float(values[2])
+                            if math.isfinite(med) and med >= 0:
+                                barcode.metrics['total_read_length_median_bp'] = Fact(
+                                    A.AVAILABLE, med, unit='bp', population='input_reads',
+                                    evidence=[Evidence(self.source(path, 'log').id, starts[0]+i+3)])
+                        except ValueError:
+                            pass
+                    break
         for key, pattern in (("total_reads", r"Total reads in sample: (\d+)"),
                              ("detected_telomeric_reads", r"Number of reads which identified as Telomeric: (\d+)")):
             found = [(i, re.fullmatch(pattern, line.strip())) for i, line in enumerate(lines, 1)]
@@ -790,6 +811,8 @@ class ResultImporter:
         if serial.status == A.AVAILABLE and (serial.value < 1 or serial.value != int(serial.value)):
             serial = unavailable("Invalid NanoTel read number", A.INVALID)
         metrics["read_number"] = serial
+        if row.get("repeat_summary") not in (None, "", "NA", "Unavailable"):
+            metrics["_repeat_summary_export"] = Fact(A.AVAILABLE, row["repeat_summary"], evidence=[ev])
         if row.get("repeat_coverage") not in (None, "", "NA", "Unavailable"):
             metrics["_repeat_coverage_export"] = Fact(A.AVAILABLE, row["repeat_coverage"], evidence=[ev])
         calls = {}
@@ -831,7 +854,7 @@ class ResultImporter:
             None.
         """
         # Prefer a single combined mapping export over its component files. Join cleaned
-        # read IDs only when unique, retain all alignments, and never infer arms from labels.
+        # read IDs only when unique, retain all alignments and explicit chromosome-end labels.
         candidates = [p for p in self.mapping_paths
                       if barcode_from_summary_filename(p.name) == barcode.label]
         combined = [p for p in candidates if p.name.endswith("_combined.csv")]
@@ -874,6 +897,8 @@ class ResultImporter:
                         if saved['status']!='available' or not isinstance(saved.get('value'),list):
                             raise ValueError('Invalid saved alignment availability')
                         records=[{k:restored(f) for k,f in alignment.items()} for alignment in saved['value']]
+                        for record in records:
+                            annotate_alignment(record, self.metadata.get("organism"), [ev])
                         read.alignments=Fact(A.AVAILABLE,records,evidence=[e for _,e in parts])
                         barcode.evidence.append(ev)
                     except (ValueError,TypeError,KeyError,AttributeError):
@@ -927,8 +952,9 @@ class ResultImporter:
                     "strand": text_fact(row, "alignment_direction", ev),
                     "mapq": number(row, "alignment_mapq", ev, maximum=255),
                     "chromosome": chromosome_fact(row.get("alignment_genome"), ev),
-                    "arm": unavailable("Head/Tail does not establish a chromosome arm"),
+                    "arm": unavailable("Reference has no explicit chromosome-end label"),
                     **interval}
+                annotate_alignment(alignment, self.metadata.get("organism"), [ev])
                 from .query_alignment import query_alignment
                 alignment.update(query_alignment(row, targets[0].metrics['read_length'].value,
                     reversed_read, [ev] + orientation_evidence))

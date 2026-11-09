@@ -122,9 +122,9 @@ def _combined_summary_html(results, pooled=False):
     cutoffs = {row['cutoff_bp'] for _, row in results if row.get('requested') is not False}
     cutoff = next(iter(cutoffs)) if len(cutoffs) == 1 else None
     caption = 'After filtering'
-    caption += f' · Length < {cutoff / 1000:g} kb' if cutoff is not None else ' · Cutoff unavailable'
+    caption += f' \u00b7 Telomere length < {cutoff / 1000:g} kb' if cutoff is not None else ' \u00b7 Cutoff unavailable'
     values = ''.join(_summary_html(row, pooled=pooled, method=method) for method, row in results)
-    return ('<article class="stat stat-short-compact"><h3>Short telomeres</h3>'
+    return ('<article class="stat stat-short-compact"><svg aria-hidden="true" viewBox="0 0 48 48"><path d="M6 20A18 18 0 0 1 36 8l6 6M42 4v10H32M42 28A18 18 0 0 1 12 40l-6-6M6 44V34h10M18 28v-6M24 28V16M30 28v-8"/></svg><h3>Short telomeres (%)</h3>'
             '<div class="short-method-values">' + values + '</div><p class="short-card-note">'
             + escape(caption) + '</p></article>')
 
@@ -140,7 +140,7 @@ def _summary_html(result, *, pooled=False, method=None):
         HTML markup for summary html.
     """
     cutoff = result['cutoff_bp']
-    definition = f'Length < {cutoff:,.0f} bp ({cutoff / 1000:g} kb).' if cutoff is not None else 'Cutoff unavailable.'
+    definition = f'Telomere length < {cutoff:,.0f} bp ({cutoff / 1000:g} kb).' if cutoff is not None else 'Cutoff unavailable.'
     if result.get('requested') is False:
         display, note = 'Off', 'This matching mode was not requested.'
     elif result['percent'] is not None:
@@ -149,19 +149,39 @@ def _summary_html(result, *, pooled=False, method=None):
         if pooled:
             note += ' across all barcodes'
     elif result['denominator'] == 0:
-        display = 'No measured lengths' if method is not None else 'No reads'
-        note = definition + ' Denominator: 0 measured lengths; percentage is undefined.'
+        display = 'No measured telomere lengths' if method is not None else 'No reads'
+        note = definition + ' Denominator: 0 measured telomere lengths; percentage is undefined.'
     else:
         display = 'Unavailable'
-        note = definition + ' A recorded cutoff and complete post-filtered read lengths are required.'
+        note = definition + ' A recorded cutoff and complete post-filtered telomere lengths are required.'
         if pooled:
-            note = definition + ' Complete lengths and a common cutoff across all barcodes are required.'
-    mode = {'exact': 'Canonical', 'mismatch': '+ Mismatch', 'tvr_inclusive': '+ TVR'}.get(method, 'Short telomeres')
+            note = definition + ' Complete telomere lengths and a common cutoff across all barcodes are required.'
+    mode = {'exact': 'Canonical', 'mismatch': '+ Mismatch', 'tvr_inclusive': '+ TVRs'}.get(method, 'Short telomeres')
     description = {'exact': 'Without mismatch or TVR. ', 'mismatch': 'With mismatch, without TVR. ',
                    'tvr_inclusive': 'Including TVRs, using the recorded matching settings. '}.get(method, '')
     return ('<div class="short-telomere-stat" data-compact-card="true" data-short-method="'+(method or '')
             +'" title="'+escape(description + note, quote=True)+'"><h4>'+escape(mode)+'</h4><strong>'
             + display + '</strong><p class="short-method-note">' + escape(note) + '</p></div>')
+
+
+def short_table_summary_html(barcode, settings):
+    """One overview-table cell retaining three distinct post-filter percentages."""
+    results = [(label, short_statistics(barcode, settings, method)) for method, label in
+               [('exact', 'Canonical'), ('mismatch', '+ Mismatch'), ('tvr_inclusive', '+ TVRs')]]
+    parts = []
+    for label, result in results:
+        if result.get('requested') is False:
+            display = 'Off'
+        elif result['percent'] is not None:
+            display = f"{result['percent']:.2f}%"
+        else:
+            display = 'Unavailable'
+        parts.append('<div class="short-summary-method"><span>' + label + '</span><strong>'
+                     + display + '</strong></div>')
+    cutoff = short_cutoff_bp(settings, barcode)
+    note = f'After filtering \u00b7 Telomere length < {cutoff / 1000:g} kb' if cutoff is not None else 'After filtering \u00b7 Cutoff unavailable'
+    return ('<div class="short-summary-card"><div class="short-summary-methods">' + ''.join(parts)
+            + '</div><div class="short-summary-note">' + escape(note) + '</div></div>')
 
 
 def add_cutoff_line(layout, cutoff_bp, *, axis='y', unit='kb'):
@@ -182,7 +202,7 @@ def add_cutoff_line(layout, cutoff_bp, *, axis='y', unit='kb'):
     shape = dict(type='line', name='short-telomere-cutoff',
                  line=dict(color='#b45309', width=1.5, dash='dash'))
     annotation = dict(name='short-telomere-cutoff-label', showarrow=False,
-                      text=f'Short: < {cutoff_bp / 1000:g} kb', font=dict(size=12, color='#92400e'))
+                      text=f'Short telomeres: < {cutoff_bp / 1000:g} kb', font=dict(size=12, color='#92400e'))
     if axis == 'y':
         shape.update(xref='paper', x0=0, x1=1, yref='y', y0=value, y1=value)
         annotation.update(xref='paper', x=1, xanchor='right', yref='y', y=value, yanchor='bottom')

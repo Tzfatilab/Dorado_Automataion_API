@@ -66,6 +66,14 @@ def import_statistics(importer, barcode, number):
                 source_row, key, field_evidence.get(key, ev), unit=unit, population="NanoTel final-filtered reads",
                 maximum=100 if unit == "%" else None)
 
+    if analysis:
+        row, ev, field_evidence = analysis
+        raw = row.get('total_read_length_median_bp')
+        if raw not in (None, 'Unavailable'):
+            barcode.metrics['total_read_length_median_bp'] = number(
+                {'value': raw}, 'value', field_evidence.get('total_read_length_median_bp', ev),
+                unit='bp', population='input_reads')
+
     paths = importer.files(f"{barcode.label}_km_statistics.csv")
     if len(paths) == 1:
         _, rows, _ = importer.csv_table(paths[0])

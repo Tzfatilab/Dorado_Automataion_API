@@ -47,7 +47,7 @@ def barcode_views(run, icons, histograms=None, results_root=None, summary_only=F
         label = barcode.label.replace('barcode', 'Barcode ')
         route = '#/barcode/' + barcode.id
         links.append(f'<a class="barcode-link" href="{route}">{escape(label)}</a>')
-        from ..shared.barcode_statistics import barcode_key_statistics, mismatch_statistics
+        from ..shared.barcode_statistics import barcode_key_statistics, mismatch_statistics, median_summary_html
         motifs = composition.get(barcode.label)
         repeat_row = repeat_composition.get(barcode.label) if mismatch_panels else motifs
         stats = barcode_key_statistics(barcode, run.settings, comparisons['cells'], motifs)
@@ -65,7 +65,7 @@ def barcode_views(run, icons, histograms=None, results_root=None, summary_only=F
         specs = [
             ('Total number of reads', total, 'Input reads', icons[0]),
             ('Number of telomeric reads', telomeric, 'After filtering · ' + percent, icons[2]),
-            ('Median length before filtration', med, 'Detected telomeric reads before filtration', icons[4]),
+            ('Median telomere length (kb)', med, 'Retained telomeric reads after filtration', icons[4]),
             ('Reads with mismatches' if mismatch_panels else 'Reads with TVRs', tvr_stats['with_tvr'] if isinstance(tvr_stats['with_tvr'],int) else None, tvr_note,
              '<path d="M8 40V23M19 40V8M30 40V17M41 40V4"/>'),
             ('Mismatch patterns' if mismatch_panels else 'TVR motifs', tvr_stats['motifs'] if isinstance(tvr_stats['motifs'],int) else None,
@@ -76,9 +76,12 @@ def barcode_views(run, icons, histograms=None, results_root=None, summary_only=F
         ]
         cards = []
         for index, (title, number, note, icon) in enumerate(specs):
+            if index == 2:
+                cards.append(median_summary_html(barcode, run.settings, icon))
+                continue
             if title == 'Reads with TVRs':
                 continue
-            display = 'Unavailable' if number is None else f'{number/1000:,.2f} kb' if index == 2 else f'{number:,}'
+            display = 'Unavailable' if number is None else f'{number:,}'
             if tvr is False and not mismatch_panels and index in (3, 4):
                 display = 'Off'
                 note = 'No TVR patterns selected'
@@ -88,10 +91,10 @@ def barcode_views(run, icons, histograms=None, results_root=None, summary_only=F
         cards.insert(3, short_summary_html(barcode, run.settings))
         cutoff = short_cutoff_bp(run.settings, barcode)
         cutoff_attribute = f'{cutoff:g}' if cutoff is not None else ''
-        key_heading = escape(label) if summary_only else '<span class="number">1</span>Key Statistics ('+escape(label)+')'
+        key_heading = '<span class="number">1</span>Key Statistics (' + escape(label) + ')'
         pages.append(f'<div class="barcode-page" id="{barcode.id}" data-barcode-id="{escape(barcode.label, quote=True)}" data-short-cutoff-bp="{cutoff_attribute}" data-km-enabled="{str(km_enabled).lower()}" data-mismatch-enabled="{mismatch_attribute}" data-tvr-enabled="{tvr_attribute}" data-label="{escape(label, quote=True)}" data-chart-label="{escape(barcode.label.replace("barcode", "BC"), quote=True)}" hidden>'
             f'<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#/">All Barcodes</a> <span>› {escape(label)}</span></nav>'
-            f'<section><h2>{key_heading}</h2><div class="stats">{"".join(cards)}</div></section>'
+            f'<section class="barcode-key-statistics"><h2>{key_heading}</h2><div class="stats barcode-stat-cards">{"".join(cards)}</div></section>'
             + ('<p class="note">One-mismatch analysis: repeat composition shows exported canonical and mismatch hits.</p>' if mismatch_panels else
                '<p class="note">TVR analysis was not requested: no TVR patterns were selected.</p>' if tvr is False else
                '<p class="note">TVR counts use exported noncanonical matches overlapping TVR-inclusive telomere intervals of post-filtered reads. Missing details remain unavailable.</p>')
@@ -105,49 +108,48 @@ def barcode_views(run, icons, histograms=None, results_root=None, summary_only=F
     return navigation, ''.join(pages)
 
 
-def barcode_summary_section(run, comparisons, key_statistics=False):
+def barcode_summary_section(run, comparisons):
     """Render the same Key Statistics as the barcode cards in a single table.
 
     Args:
         run: Imported run model containing barcodes, reads and source evidence.
         comparisons: Precomputed report comparisons; reused when supplied.
-        key_statistics: Precomputed per-barcode Key Statistics. Default: False.
 
     Returns:
         HTML for the per-barcode Key Statistics table.
     """
     from ..shared.barcode_statistics import barcode_key_statistics, mismatch_statistics
-    from ..shared.short_telomeres import short_statistics
+    from ..shared.short_telomeres import short_table_summary_html
     composition={r['barcode']:r for r in comparisons['composition']}
     mismatch_mode = tvr_enabled(run.settings) is False and mismatch_enabled(run.settings) is True
     mismatch_rows = {r['barcode']: r for r in comparisons.get('mismatch_composition', [])}
-    headers = ['Barcode', 'Total number of reads', 'Number of telomeric reads',
-               'Median length before filtration (kb)',
-               'Short telomeres without mismatch or TVR (%)',
-               'Short telomeres with mismatch, without TVR (%)',
-               'Short telomeres with TVR (%)',
+    headers = ['Barcode', 'Total number of reads', 'Number of telomeric reads after filtration',
+               'Telomeric reads after filtration (%)',
+               'Median telomere length after filtration (kb)',
+               'Short telomeres (%)',
                'Mismatch patterns' if mismatch_mode else 'TVR motifs',
                'Number of Chromosomes end found']
     cells = comparisons['cells']; rows = []
     for barcode in run.barcodes:
         stats = barcode_key_statistics(barcode, run.settings, cells, composition.get(barcode.label))
-        shorts = [short_statistics(barcode, run.settings, method)
-                  for method in ('exact', 'mismatch', 'tvr_inclusive')]
         motif_count = (mismatch_statistics(barcode, mismatch_rows.get(barcode.label))['mismatch_patterns']
                        if mismatch_mode else stats['tvr_motifs'])
         values = [stats['total_reads'], stats['post_filtered_reads'],
+                  f"{100 * stats['post_filtered_reads'] / stats['total_reads']:.2f}%"
+                  if stats['total_reads'] and stats['post_filtered_reads'] is not None
+                  and stats['post_filtered_reads'] <= stats['total_reads'] else None,
                   f"{stats['median_length_bp']/1000:.2f}" if stats['median_length_bp'] is not None else None,
-                  *['Off' if short.get('requested') is False else
-                    f"{short['percent']:.2f}%" if short['percent'] is not None else None for short in shorts],
+                  None,  # Replaced by the shared three-method short-telomere cell below.
                   motif_count, stats['chromosomes']]
         row = '<tr><td><a class="barcode-stat-link" href="#/barcode/'+barcode.id+'"><span class="barcode-stat-dot" aria-hidden="true"></span><span class="barcode-stat-name">'+escape(barcode.label.replace('barcode', 'Barcode '))+'</span></a></td>'
         for index, value in enumerate(values, 1):
-            text = escape('Unavailable' if value is None else f'{value:,}' if isinstance(value, int) else str(value))
-            if index in (4, 5, 6):
-                text = '<span class="short-stat-badge">'+text+'</span>'
-            row += '<td>'+text+'</td>'
+            if index == 5:
+                row += '<td class="short-summary-cell">' + short_table_summary_html(barcode, run.settings) + '</td>'
+            else:
+                text = escape('Unavailable' if value is None else f'{value:,}' if isinstance(value, int) else str(value))
+                row += '<td>'+text+'</td>'
         rows.append(row+'</tr>')
-    heading = '<span class="number">1</span>Key Statistics (All Barcodes)' if key_statistics else '<span class="number">6</span>Barcode summary'
+    heading = '<span class="number">1</span>Barcode summary'
     icon_paths = [
         '<path d="M3 5v14m4-14v14m3-14v14m4-14v14m3-14v14m4-14v14"/>',
         '<path d="M5 3h10l4 4v14H5zM14 3v6h5M8 12h8M8 16h6"/>',
@@ -158,9 +160,10 @@ def barcode_summary_section(run, comparisons, key_statistics=False):
         '<path d="m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/>',
         '<path d="M7 3c-7 7 9 11 2 18M17 3c7 7-9 11-2 18M9 3c-4 7 8 11 4 18M15 3c4 7-8 11-4 18"/>',
     ]
-    header_cells = ''.join('<th><span class="stat-column-heading"><svg viewBox="0 0 24 24" aria-hidden="true">'+icon+'</svg><span>'+escape(title)+'</span></span></th>' for title, icon in zip(headers, (icon_paths + icon_paths)[:len(headers)]))
+    short_icon = '<path d="M3 10a9 9 0 0 1 15-6l3 3M21 2v5h-5M21 14a9 9 0 0 1-15 6l-3-3M3 22v-5h5"/><path d="M9 14v-3M12 14V8M15 14v-4"/>'
+    header_cells = ''.join('<th'+(' class="short-summary-heading"' if title == 'Short telomeres (%)' else '')+'><span class="stat-column-heading"><svg viewBox="0 0 24 24" aria-hidden="true">'+(short_icon if title == 'Short telomeres (%)' else icon)+'</svg><span>'+escape(title)+'</span></span></th>' for title, icon in zip(headers, (icon_paths + icon_paths)[:len(headers)]))
     table = ('<section class="barcode-statistics-section"><div class="barcode-statistics-heading"><div><h2>'+heading+'</h2>'
-             '<p>Summary of telomere analysis metrics for each barcode.</p></div></div>'
+             '</div></div>'
              '<div class="reads-scroll barcode-statistics-wrap"><table class="barcode-statistics-table"><thead><tr>'+header_cells+'</tr></thead><tbody>'+''.join(rows)+'</tbody></table></div></section>')
     return table
 

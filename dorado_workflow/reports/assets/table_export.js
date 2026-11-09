@@ -1,9 +1,9 @@
 /* Offline CSV and genuine XLSX exports; no network or spreadsheet formulas. */
 (() => {
-  if(window.reportTableExportInstalled==='v6')return;
+  if(window.reportTableExportInstalled==='v7')return;
   window.reportTableExportObserver?.disconnect();
   document.querySelectorAll('.table-export-controls').forEach(node=>node.remove());
-  window.reportTableExportInstalled='v6';
+  window.reportTableExportInstalled='v7';
   const encoder=new TextEncoder(),attached=new WeakSet();
   // Function: text.
   // Inputs: value (value to inspect or format)
@@ -69,7 +69,7 @@
     const used=new Set(),names=[];
     for(const data of sheets){
       if(!data.headers.length)throw Error('This table has no columns to export.');
-      if(data.rows.length>1048575||data.headers.length>16384)throw Error('This table exceeds the Excel worksheet size limit. Save CSV instead.');
+      if(data.rows.length+(data.headerRows?.length||1)>1048576||data.headers.length>16384)throw Error('This table exceeds the Excel worksheet size limit. Save CSV instead.');
       const base=(data.name||'Table').replace(/[\\/*?:\[\]\x00-\x1f]/g,' ').replace(/^'+|'+$/g,'').trim().slice(0,31)||'Table';
       let name=base,index=2;
       while(used.has(name.toLowerCase())){const suffix='_'+index++;name=base.slice(0,31-suffix.length)+suffix;}
@@ -80,10 +80,11 @@
       '_rels/.rels':declaration+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
       'xl/workbook.xml':declaration+`<workbook xmlns="${ns}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${names.map((name,i)=>`<sheet name="${xml(name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')}</sheets></workbook>`,
       'xl/_rels/workbook.xml.rels':declaration+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+sheets.map((_,i)=>'<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')+'<Relationship Id="rId'+(sheets.length+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
-      'xl/styles.xml':declaration+`<styleSheet xmlns="${ns}"><numFmts count="4"><numFmt numFmtId="164" formatCode="0.##########"/><numFmt numFmtId="165" formatCode="#,##0"/><numFmt numFmtId="166" formatCode="#,##0.000"/><numFmt numFmtId="167" formatCode="0.0%"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF18324D"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="167" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`
+      'xl/styles.xml':declaration+`<styleSheet xmlns="${ns}"><numFmts count="4"><numFmt numFmtId="164" formatCode="0.##########"/><numFmt numFmtId="165" formatCode="#,##0"/><numFmt numFmtId="166" formatCode="#,##0.000"/><numFmt numFmtId="167" formatCode="0.0%"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF18324D"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="center"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="167" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`
     };
     sheets.forEach((data,index)=>{
-      const rows=[data.headers,...data.rows],last=columnName(data.headers.length-1)+rows.length;
+      const headerCount=data.headerRows?.length||1;
+      const rows=[...(data.headerRows||[data.headers]),...data.rows],last=columnName(data.headers.length-1)+rows.length;
       const widths=data.headers.map((header,column)=>data.widths?.[column]||Math.min(44,Math.max(13,text(header).length+2,...data.rows.slice(0,500).map(row=>Math.min(40,text(row[column]).length+2)))));
       // Function: cell.
       // Inputs: value (value to inspect or format); column (zero-based column index); row (row)
@@ -92,15 +93,15 @@
         const reference=columnName(column)+(row+1);
         if(typeof value==='number'&&Number.isFinite(value)){
           const style={integer:3,decimal:4,percent:5}[data.formats?.[column]]||2;
-          return `<c r="${reference}" s="${row?style:1}"><v>${value}</v></c>`;
+          return `<c r="${reference}" s="${row<headerCount?1:style}"><v>${value}</v></c>`;
         }
         if(text(value).length>32767)throw Error('A cell exceeds Excel\u2019s text limit. Save CSV instead.');
-        return `<c r="${reference}" s="${row?0:1}" t="inlineStr"><is><t xml:space="preserve">${xml(value)}</t></is></c>`;
+        return `<c r="${reference}" s="${row<headerCount?1:0}" t="inlineStr"><is><t xml:space="preserve">${xml(value)}</t></is></c>`;
       };
       const frozen=Math.max(0,Math.min(data.freezeColumns||0,data.headers.length-1));
-      const first=columnName(frozen)+'2';
-      const pane=`<pane${frozen?' xSplit="'+frozen+'"':''} ySplit="1" topLeftCell="${first}" activePane="${frozen?'bottomRight':'bottomLeft'}" state="frozen"/>`;
-      files['xl/worksheets/sheet'+(index+1)+'.xml']=declaration+`<worksheet xmlns="${ns}"><dimension ref="A1:${last}"/><sheetViews><sheetView workbookViewId="0">${pane}</sheetView></sheetViews><cols>${widths.map((width,i)=>`<col min="${i+1}" max="${i+1}" width="${width}" customWidth="1"/>`).join('')}</cols><sheetData>${rows.map((row,i)=>`<row r="${i+1}"${i===0?' ht="54" customHeight="1"':''}>${row.map((value,column)=>cell(value,column,i)).join('')}</row>`).join('')}</sheetData><autoFilter ref="A1:${last}"/></worksheet>`;
+      const first=columnName(frozen)+(headerCount+1);
+      const pane=`<pane${frozen?' xSplit="'+frozen+'"':''} ySplit="${headerCount}" topLeftCell="${first}" activePane="${frozen?'bottomRight':'bottomLeft'}" state="frozen"/>`;
+      files['xl/worksheets/sheet'+(index+1)+'.xml']=declaration+`<worksheet xmlns="${ns}"><dimension ref="A1:${last}"/><sheetViews><sheetView workbookViewId="0">${pane}</sheetView></sheetViews><cols>${widths.map((width,i)=>`<col min="${i+1}" max="${i+1}" width="${width}" customWidth="1"/>`).join('')}</cols><sheetData>${rows.map((row,i)=>`<row r="${i+1}"${i<headerCount?' ht="'+(headerCount>1?(i===0?60:42):54)+'" customHeight="1"':''}>${row.map((value,column)=>cell(value,column,i)).join('')}</row>`).join('')}</sheetData><autoFilter ref="A${headerCount}:${last}"/>${data.merges?.length?'<mergeCells count="'+data.merges.length+'">'+data.merges.map(([c1,r1,c2,r2])=>'<mergeCell ref="'+columnName(c1)+(r1+1)+':'+columnName(c2)+(r2+1)+'"/>').join('')+'</mergeCells>':''}</worksheet>`;
     });
     return zip(files);
   };
@@ -176,7 +177,9 @@
     const controls=document.createElement('div');controls.className='table-export-controls';
     controls.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0';
     const status=document.createElement('span');status.setAttribute('role','status');
-    for(const [format,label] of [['csv','Save CSV'],['xlsx','Save Excel']]){
+    // The barcode summary already has the unified Excel workbook export.
+    const formats=table.matches('.barcode-statistics-table')?[['csv','Save CSV']]:[['csv','Save CSV'],['xlsx','Save Excel']];
+    for(const [format,label] of formats){
       const button=document.createElement('button');button.type='button';button.textContent=label;
       button.style.cssText='padding:7px 10px;border:1px solid #ccd8e8;border-radius:6px;background:white;color:#2456a6;cursor:pointer';
       // Function: button.onclick.

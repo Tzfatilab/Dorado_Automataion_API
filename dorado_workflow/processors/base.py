@@ -287,11 +287,6 @@ class ProcessorBase(ABC):
             self.context.logger.info(f"{self.get_display_name()} completed.")
         else:
             self.context.logger.error(f"{self.get_display_name()} failed: {result.error}")
-        return
-        if result.success:
-            self.context.logger.info(f"✓ {self.get_name()} completed successfully")
-        else:
-            self.context.logger.error(f"✗ {self.get_name()} failed: {result.error}")
 
     def __repr__(self) -> str:
         """String representation of processor.

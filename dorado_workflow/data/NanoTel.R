@@ -80,6 +80,8 @@ option_list = list(
   make_option("--check_right_edge", action = "store_true", default = FALSE,
               help = "This flag tells us the expected telomere position: helps with the filter and telo_position accuracy",
               metavar = "Check right or left edge for filter and position"),
+  make_option("--include_km", action = "store_true", default = FALSE,
+              help = "Opt in to Kaplan-Meier fitting and exports for any organism."),
   make_option("--summary_only", action = "store_true", default = FALSE,
               help = "Summary-only mode: keep numeric CSV/JSON/KM analysis; skip FASTA, tracks, per-read and aggregate plots.",
               metavar = "Skip detailed per-read output files"),
@@ -165,7 +167,7 @@ suppressPackageStartupMessages(require(logr))
 suppressPackageStartupMessages(require(future))
 
 suppressPackageStartupMessages(require(testit))
-if (!isTRUE(tolower(trimws(opt$organism)) %in% c("human", "homo sapiens"))) {
+if (isTRUE(opt$include_km)) {
   suppressPackageStartupMessages(require(survival))
 }
 #utils::globalVariables(c("start_index"))
@@ -292,10 +294,6 @@ format_km_report <- function(result) {
 # reads); censoring_rate (Censoring rate); med_telo (Med telo); pct_short (Pct short);
 # short_threshold (Short threshold); km_result (Already assessed KM result and reporting status)
 # Outputs: Machine-readable analysis fields with unavailable values represented explicitly.
-km_enabled_for_organism <- function(organism) {
-  !isTRUE(tolower(trimws(organism)) %in% c("human", "homo sapiens"))
-}
-
 make_analysis_report <- function(barcode, n_reads, n_complete, n_censored,
                                  censoring_rate, med_telo, pct_short,
                                  short_threshold, km_result) {
@@ -727,6 +725,38 @@ report_repeat_coverage <- function(read_id, boundary, hits) {
       hits$end >= start(boundary) & hits$start <= end(boundary)]))))
 }
 
+# Summary-mode motif aggregates: no per-hit coordinates or sequences are saved.
+report_repeat_summary <- function(boundary, hits) {
+  if (length(boundary) != 1L || width(boundary) <= 0L) return(NULL)
+  lo <- as.integer(start(boundary)); hi <- as.integer(end(boundary))
+  hits <- hits[hits$end >= lo & hits$start <= hi, , drop=FALSE]
+  observed <- as.character(hits$matched_sequence)
+  motif <- as.character(hits$motif)
+  labels <- ifelse(is.na(observed) | !nzchar(observed), paste0(motif, " (searched motif; sequence unavailable)"),
+    ifelse(nchar(observed) != nchar(motif), paste0(observed, " (partial match to ", motif, ")"),
+      ifelse(observed != motif, "Mismatch", paste0(motif, ifelse(hits$role == "canonical", " (canonical)", "")))))
+  bases <- list()
+  if (nrow(hits)) {
+    ranges <- IRanges::IRanges(start=pmax(lo, hits$start), end=pmin(hi, hits$end))
+    pieces <- IRanges::disjoin(ranges, with.revmap=TRUE)
+    reverse_map <- S4Vectors::mcols(pieces)$revmap
+    for (i in seq_along(pieces)) {
+      active <- unique(labels[as.integer(reverse_map[[i]])])
+      label <- if (length(active) == 1L) active else "Overlapping motifs"
+      bases[[label]] <- (if (is.null(bases[[label]])) 0L else bases[[label]]) + as.integer(width(pieces)[i])
+    }
+  }
+  count_labels <- function(values) {
+    counts <- table(values)
+    stats::setNames(as.list(counts), as.character(names(counts)))
+  }
+  covered <- sum(unlist(bases))
+  bases[["Unassigned bases"]] <- as.integer(width(boundary)) - covered
+  list(schema_version=1L, method="tvr_inclusive", start=lo, end=hi,
+       base_counts=bases, match_counts=count_labels(labels),
+       tvr_motifs=count_labels(motif[hits$role == "tvr"]))
+}
+
 # Each parallel search group owns two buffered connections in the local temp
 # directory. Workers never append concurrently to a shared barcode file.
 # Inputs: folder (Directory used to locate or store artifacts)
@@ -810,10 +840,9 @@ merge_report_batches <- function(folder, output_dir, barcode) {
 # a missing search. Summary-only runs intentionally omit these detailed files.
 # Inputs: read_id (Read identifier used for joins or navigation); serial (Original NanoTel read
 # number); analyses (Exact, mismatch and TVR-inclusive call results); output_dir (Directory for
-# generated outputs); tvr_boundary (TVR-inclusive called interval, when available); motifs_only
-# (Whether to omit per-window density output)
+# generated outputs); tvr_boundary (TVR-inclusive called interval, when available)
 # Outputs: Writes selected per-read density, motif and coverage artifacts.
-export_report_density <- function(read_id, serial, analyses, output_dir, tvr_boundary=NULL, motifs_only=FALSE) {
+export_report_density <- function(read_id, serial, analyses, output_dir, tvr_boundary=NULL) {
   folder <- file.path(output_dir, "report_details")
   dir.create(folder, recursive=TRUE, showWarnings=FALSE)
   densities <- list(); motifs <- list()
@@ -821,7 +850,7 @@ export_report_density <- function(read_id, serial, analyses, output_dir, tvr_bou
     analysis <- analyses[[method]]
     if (is.null(analysis)) next
     windows <- analysis[[1]]
-    if (!motifs_only) densities[[method]] <- data.frame(read_id=read_id, method=method,
+    densities[[method]] <- data.frame(read_id=read_id, method=method,
       start=windows$start_index, end=windows$end_index, density=windows$density,
       convention="one_based_inclusive", space="nanotel_analyzed_read")
     hits <- analysis[[2]]$motif_matches
@@ -833,7 +862,7 @@ export_report_density <- function(read_id, serial, analyses, output_dir, tvr_bou
       convention="one_based_inclusive", space="nanotel_analyzed_read"), rows)
   }
   stem <- make_barcode_read_stem(serial)
-  if (!motifs_only && !is.null(tvr_boundary) && !is.null(analyses$tvr_inclusive)) {
+  if (!is.null(tvr_boundary) && !is.null(analyses$tvr_inclusive)) {
     coverage <- report_repeat_coverage(read_id, tvr_boundary,
       analyses$tvr_inclusive[[2]]$motif_matches)
     if (!is.null(coverage)) jsonlite::write_json(coverage,
@@ -843,11 +872,11 @@ export_report_density <- function(read_id, serial, analyses, output_dir, tvr_bou
   sink <- getOption("nanotel.report_batch")
   if (!is.null(sink)) {
     write_report_batch(sink, "index", data.frame(read_key=as.character(serial), read_id=read_id, schema_version=2L))
-    if (!motifs_only) write_report_batch(sink, "density", compact_report_rows(do.call(rbind, densities), serial))
+    write_report_batch(sink, "density", compact_report_rows(do.call(rbind, densities), serial))
     write_report_batch(sink, "motifs", compact_report_rows(do.call(rbind, motifs), serial))
   } else {
     # Compatibility for standalone callers outside the batched pipeline.
-    if (!motifs_only) write.csv(do.call(rbind, densities), file.path(folder, paste0(stem, "_density.csv")), row.names=FALSE)
+    write.csv(do.call(rbind, densities), file.path(folder, paste0(stem, "_density.csv")), row.names=FALSE)
     write.csv(do.call(rbind, motifs), file.path(folder, paste0(stem, "_motifs.csv")), row.names=FALSE, na="")
   }
 }
@@ -2193,6 +2222,37 @@ get_accurate_start <- function(telo_start, irange_telo) {
 #' with all the reads -> reaname all the files accoding to the final df.
 #' Also make dir for each different type of plot
 #' right_edge - if the telomere is expected to be to the right: NNNN...NNN(TTAGGG)n
+# Shared typed schema for read, worker and run-level summary tables.
+# Empty workers must carry the same optional columns as populated workers.
+empty_telomere_summary <- function(tvr_patterns = NULL, summary_only = FALSE) {
+  df <- data.frame(Serial = integer(), sequence_ID = character(),
+                   sequence_length = integer(), telo_density = double()
+                   , Telomere_start = integer(), Telomere_end = integer(),
+                   Telomere_length = integer(), telo_density_mismatch = double()
+                   , Telomere_start_mismatch = integer(), Telomere_end_mismatch = integer(),
+                   Telomere_length_mismatch = integer() )
+
+  if(!is.null(tvr_patterns)) {
+    df <- data.frame(Serial = integer(), sequence_ID = character(),
+                     sequence_length = integer(), telo_density = double()
+                     , Telomere_start = integer(), Telomere_end = integer(),
+                     Telomere_length = integer(), telo_density_mismatch = double()
+                     , Telomere_start_mismatch = integer(), Telomere_end_mismatch = integer(),
+                     Telomere_length_mismatch = integer(),
+                     telo_density_mismatch_tvr = double()
+                     , Telomere_start_mismatch_tvr = integer(), Telomere_end_mismatch_tvr = integer(),
+                     Telomere_length_mismatch_tvr = integer())
+  }
+
+  # Retain compact coverage facts even when detailed tracks are skipped.
+  if (summary_only) {
+    df$repeat_coverage <- character()
+    df$repeat_summary <- character()
+  }
+
+  df
+}
+
 # Inputs: current_seq (Read sequence currently being analyzed); current_serial (Original read
 # number); pattern_list (Canonical and selected TVR search motifs); min_density (Minimum repeat
 # density as a fraction); output_dir (Directory for generated outputs); output_jpegs (Output jpegs);
@@ -2255,27 +2315,7 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
 
 
 
-  df <- data.frame(Serial = integer(), sequence_ID = character(),
-                   sequence_length = integer(), telo_density = double()
-                   , Telomere_start = integer(), Telomere_end = integer(),
-                   Telomere_length = integer(), telo_density_mismatch = double()
-                   , Telomere_start_mismatch = integer(), Telomere_end_mismatch = integer(),
-                   Telomere_length_mismatch = integer() )
-
-  if(!is.null(tvr_patterns)) {
-    df <- data.frame(Serial = integer(), sequence_ID = character(),
-                     sequence_length = integer(), telo_density = double()
-                     , Telomere_start = integer(), Telomere_end = integer(),
-                     Telomere_length = integer(), telo_density_mismatch = double()
-                     , Telomere_start_mismatch = integer(), Telomere_end_mismatch = integer(),
-                     Telomere_length_mismatch = integer(),
-                     telo_density_mismatch_tvr = double()
-                     , Telomere_start_mismatch_tvr = integer(), Telomere_end_mismatch_tvr = integer(),
-                     Telomere_length_mismatch_tvr = integer())
-  }
-
-  # Retain compact coverage facts even when detailed tracks are skipped.
-  if (summary_only) df$repeat_coverage <- character()
+  df <- empty_telomere_summary(tvr_patterns, summary_only)
 
   # last update
   telo_density <- get_sub_density(telo_position, analyze_list[[2]][[2]])
@@ -2308,10 +2348,6 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
     } # not consid
   }
 
-  if (summary_only && !is.null(analyze_list3)) {
-    export_report_density(current_fastq_name,current_serial,list(tvr_inclusive=analyze_list3),
-      dirname(output_dir),telo_position3,motifs_only=TRUE)
-  }
   if(!summary_only) {
     export_report_density(current_fastq_name, current_serial,
       list(exact=analyze_list, mismatch=analyze_list2, tvr_inclusive=analyze_list3), dirname(output_dir), if (is.null(tvr_patterns)) NULL else telo_position3)
@@ -2437,6 +2473,9 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
       analyze_list3[[2]]$motif_matches)
     if (!is.null(coverage)) df$repeat_coverage <- as.character(jsonlite::toJSON(
       coverage, auto_unbox=TRUE, digits=NA))
+    summary <- report_repeat_summary(telo_position3, analyze_list3[[2]]$motif_matches)
+    if (!is.null(summary)) df$repeat_summary <- as.character(jsonlite::toJSON(
+      summary, auto_unbox=TRUE, digits=NA))
   }
   return(df)
 
@@ -2583,24 +2622,7 @@ search_patterns <- function(sample_telomeres, pattern_list, max_length = 1e5,
 
 
 
-  df <- data.frame(Serial = integer(), sequence_ID = character(),
-                   sequence_length = integer(), telo_density = double()
-                   , Telomere_start = integer(), Telomere_end = integer(),
-                   Telomere_length = integer(), telo_density_mismatch = double()
-                   , Telomere_start_mismatch = integer(), Telomere_end_mismatch = integer(),
-                   Telomere_length_mismatch = integer() )
-  if(!is.null(tvr_patterns)) {
-    df <- data.frame(Serial = integer(), sequence_ID = character(),
-                     sequence_length = integer(), telo_density = double()
-                     , Telomere_start = integer(), Telomere_end = integer(),
-                     Telomere_length = integer(), telo_density_mismatch = double()
-                     , Telomere_start_mismatch = integer(), Telomere_end_mismatch = integer(),
-                     Telomere_length_mismatch = integer(),
-                     telo_density_mismatch_tvr = double()
-                     , Telomere_start_mismatch_tvr = integer(), Telomere_end_mismatch_tvr = integer(),
-                     Telomere_length_mismatch_tvr = integer())
-  }
-
+  df <- empty_telomere_summary(tvr_patterns, summary_only)
 
   # add telo density : get_sub_density <- function(sub_irange, ranges){
   # For the fasta output of the reads which pass the filter
@@ -2808,7 +2830,7 @@ run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta
                                       summary_only = FALSE) {
 
   report_batch_dir <- NULL
-  if (!summary_only || !is.null(tvr_patterns)) {
+  if (!summary_only) {
     report_batch_dir <- tempfile("nanotel-report-batches-")
     dir.create(report_batch_dir)
     on.exit(unlink(report_batch_dir, recursive=TRUE), add=TRUE)
@@ -2820,26 +2842,7 @@ run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta
   i <- 0
   dna_length <- integer(0)
 
-  if(is.null(tvr_patterns)) {
-    df_summary <- data.frame(Serial = integer(), sequence_ID = character(),
-                             sequence_length = integer(), telo_density = double()
-                             , Telomere_start = integer(), Telomere_end = integer(),
-                             Telomere_length = integer(), telo_density_mismatch = double()
-                             , Telomere_start_mismatch = integer(), Telomere_end_mismatch = integer(),
-                             Telomere_length_mismatch = integer() )
-  } else {
-    df_summary <- data.frame(Serial = integer(), sequence_ID = character(),
-                             sequence_length = integer(), telo_density = double()
-                             , Telomere_start = integer(), Telomere_end = integer(),
-                             Telomere_length = integer(), telo_density_mismatch = double()
-                             , Telomere_start_mismatch = integer(), Telomere_end_mismatch = integer(),
-                             Telomere_length_mismatch = integer(),
-
-                             telo_density_mismatch_tvr = double()
-                             , Telomere_start_mismatch_tvr = integer(), Telomere_end_mismatch_tvr = integer(),
-                             Telomere_length_mismatch_tvr = integer() )
-  }
-
+  df_summary <- empty_telomere_summary(tvr_patterns, summary_only)
 
   options(future.globals.maxSize = 1048576000*1.5) # 1.5 gigabyte max
   set_nanotel_parallel_plan(workers = 8)
@@ -2949,7 +2952,7 @@ if (is.null(opt$save_path)) {
   stop("Missing required parameter:  --save_path", call.=FALSE)
 }
 
-if (is.null(opt$i)) {
+if (is.null(opt$input_path)) {
   stop("Missing required parameter:  --input_path", call.=FALSE)
 }
 
@@ -3006,7 +3009,7 @@ t1 <- Sys.time()
 log_print(base::paste("Work started at:", toString(t1)), hide_notes = TRUE, console = FALSE) # Send message to log
 
 log_print("############### The input argumetns for this run: ################", hide_notes = TRUE, console = FALSE)
-if(opt$r) {
+if(opt$rc) {
   log_print("Reverse complement was applied on the input reads.", hide_notes = TRUE, console = FALSE)
 }
 log_print(base::paste("The patterns to search:", opt$patterns), hide_notes = TRUE, console = FALSE)
@@ -3027,7 +3030,7 @@ log_print("The input files:", hide_notes = TRUE, console = FALSE)
 # add the names of the files which we analyze.
 
 
-for (filepath in list_sequence_files(opt$i, opt$format)) {
+for (filepath in list_sequence_files(opt$input_path, opt$format)) {
   log_print(filepath, hide_notes = TRUE, console = FALSE)
 }
 
@@ -3040,8 +3043,8 @@ log_print(base::paste("Resolved barcode file prefix:", barcode_name),
           hide_notes = TRUE, console = FALSE)
 
 
-ans_list <- run_future_worker_chuncks(input_path = opt$i, output_path = opt$save_path,
-    format = opt$format, nrec = opt$nrec, patterns = cur_patterns, do_rc = opt$r,
+ans_list <- run_future_worker_chuncks(input_path = opt$input_path, output_path = opt$save_path,
+    format = opt$format, nrec = opt$nrec, patterns = cur_patterns, do_rc = opt$rc,
     use_filter = opt$use_filter, right_edge = opt$check_right_edge,
     tvr_patterns = cur_tvr_patterns, summary_only = opt$summary_only)
 
@@ -3142,10 +3145,10 @@ if (isTRUE(opt$analysis)) {
     telomere_end    = df_step1_filtered[[analysis_columns[["end"]]]]
   )
   km_result <- NULL
-  if (km_enabled_for_organism(opt$organism)) {
+  if (isTRUE(opt$include_km)) {
     km_result <- fit_km_result(km_input)
   } else {
-    log_print("Human analysis: skipping KM fitting and KM exports.",
+    log_print("KM disabled: skipping KM fitting and KM exports.",
               hide_notes = TRUE, console = FALSE)
   }
 
@@ -3264,7 +3267,8 @@ if (isTRUE(opt$analysis)) {
   # Query alignment coordinates refer to the original input sequence. Record
   # the transformation applied by iter_fastq_files so reports can project them
   # onto the analyzed read without guessing from the reference strand.
-  analysis_report$analyzed_read_reverse_complemented <- isTRUE(opt$r)
+  analysis_report$total_read_length_median_bp <- if (length(ans_list$all_reads_length_vec)) median(ans_list$all_reads_length_vec) else NULL
+  analysis_report$analyzed_read_reverse_complemented <- isTRUE(opt$rc)
   jsonlite::write_json(
     analysis_report,
     file.path(opt$save_path, paste0(barcode_name, "_analysis.json")),

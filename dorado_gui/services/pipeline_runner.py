@@ -933,6 +933,7 @@ def _run_post_analysis(*, project_path, output_dir, organism, summary_only, read
     context.command_executor.stop_callback = stop_cb
     params = dict(context.config_manager.get_nanotel_params())
     params.update(source.params)
+    params["include_km"] = source.includes_km
     params["source_detection_settings"] = source.params.get("source_detection_settings", dict(source.params))
     # Only post-detection thresholds may change. Detection options come from
     # the source snapshot, never the current GUI TVR/mismatch controls.

@@ -12,6 +12,8 @@ def validate_nanotel_settings(settings):
     Returns:
         None.
     """
+    if "include_km" in settings and type(settings["include_km"]) is not bool:
+        raise ValueError("include_km must be true or false.")
     if "tvr_patterns" in settings:
         patterns = settings["tvr_patterns"]
         if not isinstance(patterns, list) or any(

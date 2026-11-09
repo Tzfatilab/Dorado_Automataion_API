@@ -1,22 +1,17 @@
-"""Organism-dependent presentation rules for the dashboard."""
+"""Explicit opt-in rules for KM execution and report visibility."""
 
 
-def is_human(organism):
-    """Recognize recorded human names in both execution and presentation paths."""
-    return isinstance(organism, str) and organism.strip().casefold() in {'human', 'homo sapiens'}
+def km_requested(settings):
+    """KM is opt-in for every organism, including Human."""
+    return settings.get('include_km') is True
 
 
 def show_km(run):
-    """Show KM and completeness only for an explicitly recorded non-human run.
-
-    Args:
-        run: Imported run model containing barcodes, reads and source evidence.
-
-    Returns:
-        True when a recorded nonhuman organism permits the KM panel.
-    """
-    organism = run.organism
-    if organism.status != 'available' or not isinstance(organism.value, str):
+    """Show KM only when the saved analysis settings explicitly enable it."""
+    if run.settings.status != 'available':
         return False
-    name = organism.value.strip().casefold()
-    return bool(name) and not is_human(name)
+    settings = run.settings.value
+    if not isinstance(settings, dict):
+        return False
+    params = settings.get('nanotel_analysis', settings.get('nanotel', settings))
+    return isinstance(params, dict) and km_requested(params)

@@ -3,7 +3,6 @@ from html import escape
 from pathlib import Path
 from html.parser import HTMLParser
 import json
-import hashlib
 import re
 from dorado_workflow.reports.shared.organism import show_km
 
@@ -55,6 +54,7 @@ def _style_length_plot(layout):
         and str(shape.get('fillcolor', '')).upper() == '#FFF8FA')]
     layout['height'] = 620
     layout['margin'] = dict(l=80, r=30, t=24, b=140, autoexpand=False)
+    layout.setdefault('legend', {}).update(orientation='h', x=0, xanchor='left', y=-.2, yanchor='top')
 
 
 class _FigureParser(HTMLParser):
@@ -198,7 +198,7 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
             # Recalculation deliberately omits old aggregate plots. Full and
             # Summary reports share the same fallback over the current exports.
             if kind == 'histogram':
-                sections[barcode.id] = heading + '<p class="note">Original NanoTel histogram unavailable: complete exported lengths and the recorded matching mode are required.</p></section>'
+                sections[barcode.id] = heading + '<p class="note">Original NanoTel histogram unavailable: complete exported telomere lengths and the recorded matching mode are required.</p></section>'
             else:
                 sections[barcode.id]=_exported_read_length_plot(barcode,run.settings,heading)
             continue
@@ -244,6 +244,8 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
                 axis_title = axis_title.get('text', '') if isinstance(axis_title, dict) else str(axis_title)
                 unit = 'kb' if re.search(r'\bkb\b', axis_title, re.I) else 'bp' if re.search(r'\bbp\b', axis_title, re.I) else None
                 if unit:
+                    subject = 'Telomere length' if kind == 'histogram' else 'Length'
+                    layout.setdefault(length_axis, {})['title'] = {'text': f'{subject} ({unit})'}
                     add_cutoff_line(layout, short_cutoff_bp(run.settings, barcode),
                                     axis='x' if kind == 'histogram' else 'y', unit=unit)
                 for key, axis in layout.items():
@@ -258,16 +260,11 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
             sections[barcode.id] = heading + f'<p class="note">{reason}</p></section>'
             continue
         rebuilt = barcode.id in regenerated
-        source = (escape(path.relative_to(root).as_posix()) if paths else
-                  'Original NanoTel histogram builder; current exported post-filtered lengths' if rebuilt else
-                  'Retained original NanoTel figure in Summary workbook')
         figure_note = ('Post-filtered reads, matching the cards and read table. Original NanoTel bins, smoothing and count/percentage controls.'
                        if rebuilt else note)
-        digest = hashlib.sha256(raw).hexdigest()
         sections[barcode.id] = (heading + '<div class="saved-histogram"></div>'
             f'<script type="application/json" class="histogram-figure">{payload}</script>'
-            f'<p class="note">{escape(figure_note)}</p>'
-            f'<details class="note"><summary>Plot source</summary>{source}<br>SHA-256: {digest}</details></section>')
+            f'<p class="note">{escape(figure_note)}</p></section>')
     return sections
 
 
@@ -300,8 +297,12 @@ def _exported_read_length_plot(barcode, settings, heading):
             mode='lines+markers',name=name,line=dict(color=color),marker=dict(size=4),meta='read-links',
             customdata=[[barcode.id,r['id']] for r in rows],text=[r['label'] for r in rows],
             hovertemplate='%{text}<br>'+name+': %{y:.3f} kb<extra></extra>'))
-    fig.update_layout(xaxis_title='Read (sorted by read length)',yaxis_title='Length (kb)',showlegend=True,legend=dict(orientation='h',y=-.2))
+    fig.update_layout(xaxis_title='Read (sorted by read length)',yaxis_title='Length (kb)',
+                      yaxis_rangemode='tozero',showlegend=True)
     note='Before-filter summary reads, sorted by read length. Original NanoTel pre-edge plot data was not retained; no running median is inferred.'
-    fig.update_layout(template='plotly_white',height=460,margin=dict(l=75,r=25,t=25,b=100),font=dict(family='Segoe UI, Arial',color='#12203c'))
-    layout=fig.layout.to_plotly_json();add_cutoff_line(layout,short_cutoff_bp(settings,barcode),axis='y');fig.update_layout(layout)
+    fig.update_layout(template='plotly_white',font=dict(family='Segoe UI, Arial',color='#12203c'))
+    layout=fig.layout.to_plotly_json()
+    _style_length_plot(layout)
+    add_cutoff_line(layout,short_cutoff_bp(settings,barcode),axis='y')
+    fig.update_layout(layout)
     return heading+'<div class="saved-histogram"></div><script type="application/json" class="histogram-figure">'+fig.to_json().replace('<','\\u003c')+'</script><p class="note">'+escape(note)+'</p></section>'

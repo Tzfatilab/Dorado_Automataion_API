@@ -50,14 +50,17 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
         display = read.metrics.get('display_label') if read else None
         if display and display.status == 'available':
             label = display.value
-        chromosomes, arms = set(), set()
+        chromosomes, arms, assignments = set(), set(), set()
         if read and read.alignments.status == 'available':
-            # Retain multiple source assignments; never invent a chromosome arm.
+            # Keep each chromosome paired with its own explicitly labeled end.
             for alignment in read.alignments.value:
                 for key, target in [('chromosome', chromosomes), ('arm', arms)]:
                     fact = alignment.get(key)
                     if fact and fact.status == 'available':
                         target.add(str(fact.value))
+                chromosome, arm = alignment.get('chromosome'), alignment.get('arm')
+                if chromosome and arm and chromosome.status == 'available' and arm.status == 'available':
+                    assignments.add((str(chromosome.value), str(arm.value)))
         def measurement(key):
             """Available read metric value, or None when unavailable.
 
@@ -81,6 +84,12 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
                 and hit['end'] > interval.value['start'] and hit['start'] < interval.value['end'])
             motif_counts = [dict(motif=motif, count=count, color=motif_color(motif))
                             for motif, count in sorted(counts.items())]
+        compact = read.metrics.get('repeat_summary') if read else None
+        tvr_patterns = (sorted(compact.value['tvr_motifs']) if compact and compact.status == 'available'
+                        else sorted({hit['motif'] for hit in track.value['matches']
+                             if hit['method'] == 'tvr_inclusive' and hit['role'] == 'tvr'
+                             and hit['end'] > interval.value['start'] and hit['start'] < interval.value['end']})
+                        if motif_counts is not None else None)
         def call_length(method):
             """Exported length for the selected calling method, or None when unavailable.
 
@@ -106,15 +115,19 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
         def call_start(method):
             interval = read.calls.get(method, {}).get('interval') if read else None
             return interval.value['start'] + 1 if interval and interval.status == 'available' else None
-        rows.append(dict(source_note=('Saved NanoTel read details. This read is outside the displayed filtered population and is excluded from filtered summary statistics.' if include_unfiltered and record['read_id'] not in retained else None), motifs=motif_counts, exact_length=call_length('exact'), mismatch_length=call_length('mismatch'), exact_density=call_density('exact'), mismatch_density=call_density('mismatch'), tvr_length=call_length('tvr_inclusive'), canonical=measurement('canonical_pct'), tvr=measurement('tvr_pct'),
+        rows.append(dict(source_note=('Saved NanoTel read details. This read is outside the displayed filtered population and is excluded from filtered summary statistics.' if include_unfiltered and record['read_id'] not in retained else None), motifs=motif_counts, tvr_patterns=tvr_patterns, exact_length=call_length('exact'), mismatch_length=call_length('mismatch'), exact_density=call_density('exact'), mismatch_density=call_density('mismatch'), tvr_length=call_length('tvr_inclusive'), canonical=measurement('canonical_pct'), tvr=measurement('tvr_pct'),
                          tvr_bp=measurement('tvr_bp'), overlap=measurement('repeat_overlap_bp'),
                          unassigned=measurement('repeat_unassigned_bp'), id=read.id if read else None,
                          header=read.original_id if read else record['original_id'],
                          label=label, canonical_start=call_start('exact'), mismatch_start=call_start('mismatch'),
-                         filtration_reason=measurement('filter_reason'),
+                         filtration_reason='-' if record['read_id'] in retained else measurement('filter_reason'),
                          telomere=record['length_bp'],
                          length=length.value if length and length.status == 'available' else None,
-                         chromosomes=sorted(chromosomes), arms=sorted(arms)))
+                         chromosomes=sorted(chromosomes),
+                         arms=([arm for _, arm in sorted(assignments)] if len(chromosomes) == 1
+                               else [chromosome + ': ' + arm for chromosome, arm in sorted(assignments)]),
+                         mapping_assignments=[dict(chromosome=chromosome, arm=arm)
+                                              for chromosome, arm in sorted(assignments)]))
         if include_tracks:
             rows[-1]['track_data'] = read_track_data(read, plot_folder)
     return rows
@@ -250,7 +263,7 @@ def reads_section(barcode, results_root=None, show_completeness=True, summary_on
 <h2><span class="number">8</span>Reads <small class="read-total"></small></h2>
 <div class="read-controls"><label>Search <input class="read-search" type="search" placeholder="Search reads..."></label><label>Show <select class="read-limit"><option>10</option><option>25</option><option>50</option><option>100</option></select></label>
 </div></div><p class="note">Post-filtered telomeric reads. Canonical/TVR percentages use unique matched bases within the TVR-inclusive telomere interval. Categories may overlap; they need not sum to 100%. Missing exports remain unavailable.</p>
-<div class="reads-scroll"><table class="reads-table"><thead><tr><th>Read number</th><th>Total read length (kb)</th><th>Status</th><th>Canonical telomere length (kb)</th><th>Including mismatch (kb)</th><th>Including TVRs (kb)</th><th>Canonical repeat (%)</th><th>TVR%</th><th>Filtration reason</th><th>Telomere start (bp)</th><th>Chromosome</th></tr></thead><tbody></tbody></table></div>
+<div class="reads-scroll"><table class="reads-table"><thead><tr><th>Read number</th><th>Total read length (kb)</th><th>Telomere start (bp)</th><th>TVR%</th><th>Canonical telomere length (kb)</th><th>Telomere length including mismatch (kb)</th><th>Telomere length including TVRs (kb)</th><th>Canonical repeat (%)</th><th>Status</th><th>Filtration reason</th><th>Chromosome</th><th>Arm</th><th>TVR patterns</th></tr></thead><tbody></tbody></table></div>
 <p class="read-status" role="status"></p><nav class="read-pagination" aria-label="Read pages"></nav>
 <script type="application/json" class="read-data">''' + payload + '</script><script type="application/json" class="read-labels">' + label_payload + '</script><script type="application/json" class="read-details">' + extra_payload + '</script>' + ''.join(track_scripts) + '</section>'
 

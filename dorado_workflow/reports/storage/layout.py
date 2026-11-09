@@ -1,4 +1,4 @@
-﻿"""Organized output entry points; scientific source artifacts stay in place."""
+"""Organized output entry points; scientific source artifacts stay in place."""
 from html import escape
 from pathlib import Path
 from urllib.parse import quote
@@ -8,6 +8,8 @@ import os
 import tempfile
 import re
 import warnings
+
+SAVED_REPORTS_MARKER = '<!--nanotel-saved-reports-->'
 
 
 def atomic_text(path, text):
@@ -121,8 +123,17 @@ def write_run_reports(root, run, page):
                     sources=[asdict(source) for source in run.sources],
                     barcodes=[dict(id=b.id, label=b.label) for b in run.barcodes])
     snapshot = json.dumps(manifest, ensure_ascii=True).replace('<', '\\u003c')
-    page = page.replace('</main>', report_index(root) + '</main>')
-    page = page.replace('</body>', '<script type="application/json" id="source-data">' + snapshot + '</script></body>')
+    saved_reports = report_index(root)
+    if SAVED_REPORTS_MARKER in page:
+        page = page.replace(SAVED_REPORTS_MARKER, saved_reports, 1)
+        saved_reports = ''
+    # Export scripts contain HTML templates with their own </body> strings.
+    # Insert only at the document's final closing body, never inside templates.
+    before, closing, after = page.rpartition('</body>')
+    if not closing:
+        raise ValueError('Dashboard document has no closing body tag')
+    page = (before + saved_reports + '<script type="application/json" id="source-data">'
+            + snapshot + '</script>' + closing + after)
     atomic_text(destination, page)
     # The self-contained dashboard has been saved successfully. Delete only
     # known redundant barcode viewers/images with retained source specifications.

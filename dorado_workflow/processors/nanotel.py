@@ -17,7 +17,7 @@ from ..utils.cancellation import WorkflowCancelled
 from ..utils.analysis_constants import NANOTEL_RECORDS_PER_CHUNK, FASTQ_LINES_PER_RECORD
 from ..utils.shell_commands import format_command
 from dorado_workflow.reports.exports.kaplan_meier import write_km_run_statistics
-from dorado_workflow.reports.shared.organism import is_human
+from dorado_workflow.reports.shared.organism import km_requested
 
 
 class NanoTelProcessor(ProcessorBase):
@@ -173,7 +173,7 @@ class NanoTelProcessor(ProcessorBase):
             # These CSVs contain KM only; r_analysis owns the general run summary.
             # Keep rates silent. Replace old aggregates with empty results if no
             # current KM exports exist, rather than presenting a previous run.
-            if not is_human(self.context.config_manager.get_current_organism()) and (current_km or any((self.output_dir / name).exists() for name in (
+            if km_requested(self.context.config_manager.get_nanotel_params()) and (current_km or any((self.output_dir / name).exists() for name in (
                 'km_barcode_statistics.csv', 'km_run_statistics.csv'
             ))):
                 write_km_run_statistics(current_km, self.output_dir)
@@ -532,12 +532,15 @@ class NanoTelProcessor(ProcessorBase):
             "--short_telomere_threshold_bp", str(short_threshold),
         ]
 
-        # Numeric analysis (including source-assessed KM) belongs in both modes.
+        # Numeric analysis belongs in both modes; KM requires an explicit opt-in.
         # NanoTel's summary flag suppresses plots and per-read artifacts only.
         command_arguments.append("--analysis")
         organism = config.get_current_organism()
         if organism:
             command_arguments.extend(["--organism", str(organism)])
+
+        if km_requested(nanotel_params):
+            command_arguments.append("--include_km")
 
         if summary_only:
             command_arguments.append(self._summary_only_flag(nanotel_script))

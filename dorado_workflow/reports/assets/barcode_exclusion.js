@@ -54,9 +54,6 @@
     const key='telomere-barcode-exclusion-v1:'+location.pathname+':'+pages.map(p=>p.id).join(',');
     let excluded=new Set();try{excluded=new Set(JSON.parse(localStorage.getItem(key)||'[]').filter(id=>facts.has(id)));}catch{}
     const inputs=new Map(),snapshots=new Map(),messages=new Map();
-    const originals=[...overview.querySelectorAll('.stats>.stat:not(.stat-short-compact), .stat-short-compact .short-telomere-stat')].map(el=>({el,strong:el.querySelector('strong')?.textContent,strongClass:el.querySelector('strong')?.className,note:el.querySelector('p')?.textContent||'',title:el.title}));
-    const heading=overview.querySelector('.stats')?.closest('section')?.querySelector('h2');
-    const headingText=heading?[...heading.childNodes].find(n=>n.nodeType===3):null,originalHeading=headingText?.textContent;
     // Function: label.
     // Inputs: id (stable barcode/read identity)
     // Outputs: Current barcode display label.
@@ -95,66 +92,6 @@
           row.dataset.overviewExcluded=String(out);
           row.hidden=out;
         }
-      }
-    };
-    // Function: totals.
-    // Inputs: rows (source records)
-    // Outputs: Comparable pooled counts, lengths and short-telomere statistics.
-    const totals=rows=>{
-      // Function: sum.
-      // Inputs: k (k)
-      // Outputs: Sum of complete numeric inputs, or null when any required value is missing.
-      const sum=k=>rows.length&&rows.every(r=>numeric(r[k]))?rows.reduce((n,r)=>n+r[k],0):null;
-      // Function: compatible.
-      // Inputs: k (k)
-      // Outputs: True when the selected records use at most one nonmissing value for this field.
-      const compatible=k=>new Set(rows.map(r=>r[k]).filter(v=>v!=null)).size<=1;
-      const total=sum('total'),filtered=compatible('population')?sum('filtered'):null;
-      const lengths=rows.length&&compatible('length_population')&&rows.every(r=>Array.isArray(r.lengths)&&r.lengths.every(numeric))?rows.flatMap(r=>r.lengths).sort((a,b)=>a-b):null;
-      const before=rows.length&&rows.every(r=>Array.isArray(r.before_lengths)&&r.before_lengths.every(numeric))?rows.flatMap(r=>r.before_lengths).sort((a,b)=>a-b):null;
-      const median=before?.length?(before[Math.floor((before.length-1)/2)]+before[Math.floor(before.length/2)])/2:null;
-      const cutoffs=new Set(rows.filter(r=>r.lengths?.length).map(r=>r.cutoff));
-      const cutoff=cutoffs.size===1?[...cutoffs][0]:null;
-      const short=lengths?.length&&numeric(cutoff)&&cutoff>0?lengths.filter(v=>v<cutoff).length:null;
-      return {total,filtered,median,lengths,cutoff,short,
-        percent:numeric(total)&&total>0&&numeric(filtered)&&filtered<=total?100*filtered/total:null,
-        chromosomes:new Set(rows.flatMap(r=>r.chromosomes||[])).size};
-    };
-    // Function: updateStats.
-    // Inputs: None; uses the current report/browser state.
-    // Outputs: Updates overview statistics for the current barcode selection.
-    const updateStats=()=>{
-      if(headingText)headingText.textContent=excluded.size?'Key Statistics (Included Barcodes)':originalHeading;
-      if(!excluded.size){for(const {el,strong,strongClass,note,title} of originals){el.querySelector('strong').textContent=strong;el.querySelector('strong').className=strongClass;let p=el.querySelector('p');if(p)p.textContent=note;el.title=title;}return;}
-      const rows=included(),t=totals(rows);
-      // Function: format.
-      // Inputs: v (value to inspect or format); suffix (display-unit suffix); digits (decimal
-      // precision)
-      // Outputs: Formatted value with the selected precision and suffix, or Unavailable.
-      const format=(v,suffix='',digits=0)=>v==null?'Unavailable':v.toLocaleString('en-US',{minimumFractionDigits:digits,maximumFractionDigits:digits})+suffix;
-      for(const {el} of originals){
-        const title=el.querySelector('h3,h4').textContent.trim();let value=null,note='Included barcodes only.';
-        if(title==='Total barcodes'){value=String(rows.length);note=rows.length+' of '+pages.length+' barcodes included';}
-        else if(!rows.length){value='No barcodes selected';note='Include a barcode to show pooled statistics.';}
-        else if(title==='Total number of reads'){value=format(t.total);note='Input reads · included barcodes';}
-        else if(title==='Number of telomeric reads'||title==='Post-filtered telomeric reads'){value=format(t.filtered);note='After filtering · included barcodes';}
-        else if(title==='% telomeric reads'){value=format(t.percent,'%',2);note='Included post-filtered reads / included input reads';}
-        else if(title==='Median length before filtration'){value=format(t.median==null?null:t.median/1000,' kb',2);note='Pooled individual before-filtration measurements · included barcodes';}
-        else if((title==='Number of Chromosomes end found'||title==='Chromosomes')){value=t.chromosomes?format(t.chromosomes):'Unavailable';note='Distinct unambiguous mapped post-filtered chromosomes · included barcodes';}
-        else if(el.classList.contains('short-telomere-stat')){
-          const method=el.dataset.shortMethod;
-          const measured=rows.map(row=>row.measurements?.[method]?.after);
-          if(measured.every(row=>row?.requested===false)){value='Off';note='This matching mode was not requested.';}
-          else {
-            const lengths=measured.every(row=>Array.isArray(row?.lengths))?measured.flatMap(row=>row.lengths):null;
-            const cutoffs=new Set(rows.filter((row,i)=>measured[i]?.lengths?.length).map(row=>row.cutoff));
-            const cutoff=cutoffs.size===1?[...cutoffs][0]:null;
-            const short=lengths?.length&&numeric(cutoff)?lengths.filter(n=>n<cutoff).length:null;
-            value=short==null?(lengths?.length===0?'No reads':'Unavailable'):format(100*short/lengths.length,'%',1);
-            note=short==null?'Measured lengths and a common cutoff are required.':'< '+cutoff/1000+' kb ? '+short+'/'+lengths.length+' measured post-filtered reads ? included barcodes';
-          }
-        }
-        if(value!==null){el.querySelector('strong').textContent=value;el.querySelector('strong').classList.toggle('missing',value==='Unavailable'||value==='No barcodes selected');let p=el.querySelector('p');if(!p){p=document.createElement('p');el.querySelector('strong').after(p);}p.textContent=note;el.title=note;}
       }
     };
     // Function: snapshotsFor.
@@ -251,7 +188,7 @@
     const summary=document.createElement('summary');summary.textContent='Include or exclude barcodes';controls.appendChild(summary);
     const status=document.createElement('p');status.setAttribute('role','status');controls.appendChild(status);
     const list=document.createElement('div');list.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin:12px 0';controls.appendChild(list);
-    const help=document.createElement('p');help.className='note';help.textContent='Checked barcodes contribute to overview graphs and pooled statistics. Individual barcode and read pages remain available. Selection is saved in this browser.';controls.appendChild(help);
+    const help=document.createElement('p');help.className='note';help.textContent='Checked barcodes contribute to overview graphs and the barcode table. Individual barcode and read pages remain available. Selection is saved in this browser.';controls.appendChild(help);
     // Function: field.
     // Inputs: page (barcode page element); parent (parent element)
     // Outputs: Created barcode-control DOM element with its event listeners attached.
@@ -287,15 +224,14 @@
           const out=excluded.has(page.id);page.dataset.overviewExcluded=String(out);
           document.querySelectorAll('a.barcode-link[href="#/barcode/'+page.id+'"]').forEach(a=>a.dataset.excluded=String(out));
           for(const {input,text} of inputs.get(page.id)){input.checked=!out;if(input.closest('.barcode-exclusion-controls'))text.textContent=label(page.id);input.setAttribute('aria-label','Include '+label(page.id)+' in overview');}
-          const message=messages.get(page.id);message.textContent=out?'Excluded from overview graphs and pooled statistics.':'Included in overview graphs and pooled statistics.';
+          const message=messages.get(page.id);message.textContent=out?'Excluded from overview graphs and the barcode table.':'Included in overview graphs and the barcode table.';
           message.parentElement.dataset.excluded=String(out);
         }
         status.textContent=(pages.length-excluded.size)+' of '+pages.length+' barcodes included.'+(excluded.size?' Excluded: '+[...excluded].map(label).join(', ')+'.':' All barcodes are included.');
         summary.textContent='Include or exclude barcodes ('+(pages.length-excluded.size)+' / '+pages.length+' included)';
         updateStatisticsTables();
         // Do not redraw the original overview until the selection actually changes.
-        if(!excluded.size&&!snapshots.size){updateStats();return;}
-        updateStats();
+        if(!excluded.size&&!snapshots.size)return;
         for(const graph of overview.querySelectorAll('.js-plotly-plot')){
           const snapshot=snapshotsFor(graph);if(!snapshot)continue;
           const figure=excluded.size?filterGraph(snapshot):clone(snapshot),section=graph.closest('section');
@@ -335,10 +271,7 @@
       // Function: excluded.
       // Inputs: None; uses the current report/browser state.
       // Outputs: Array of excluded stable barcode identities.
-      // Function: statistics.
-      // Inputs: None; uses the current report/browser state.
-      // Outputs: Current pooled overview statistics for the included barcodes.
-      excluded:()=>[...excluded],statistics:()=>totals(included()),refresh:apply};
+      excluded:()=>[...excluded],refresh:apply};
     // Names may change independently; update labels without recapturing a filtered baseline.
     document.addEventListener('change',event=>{if(event.target.matches('.barcode-name-editor input,.barcode-names input[type="text"],.barcode-names input[type="file"]'))setTimeout(apply,0);});
     window.reportBarcodeExclusion.ready=apply();

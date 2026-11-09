@@ -50,7 +50,7 @@ window.readMappingSummary = (read, data) => {
     const end = interval?.end;
     const coordinates = start != null && end != null
       ? ' | reference: ' + escape(start) + '–' + escape(end) + ' bp' : '';
-    return escape(a.reference) + coordinates + (a.strand ? ' | strand: ' + escape(a.strand) : '');
+    return escape(a.display_reference || a.reference) + coordinates + (a.strand ? ' | strand: ' + escape(a.strand) : '');
   });
   const spans = alignments.filter(a => {
     const q = a.query_interval;
@@ -242,7 +242,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
   const mappingPixels = Math.max(100, parent.clientWidth - (parent.clientWidth < 850 ? 155 : 400));
   [...mappingGroups.values()].forEach((alignments,index) => {
     const alignment = alignments[0];
-    const reference = String(alignment.reference).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    const reference = String(alignment.display_reference || alignment.reference).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
     const y = mappingTop-index*mappingStep;
     traces.push({type:'scatter',mode:'lines',xaxis:'x2',yaxis:'y2',
       x:[0,extent,extent,0,0],y:[y-.28,y-.28,y+.28,y+.28,y-.28],

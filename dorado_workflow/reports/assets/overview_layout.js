@@ -19,7 +19,7 @@
       .overview-panel-header.has-view-controls h2{margin:0}
       .overview-panel-header.has-view-controls .overview-panel-actions{justify-self:end;justify-content:flex-end;min-height:0}
       .overview-panel-header.has-view-controls>.graph-export-controls{grid-column:1 / -1}
-      .overview-panel-header h2{font-size:21px;line-height:1.3;min-height:56px;margin:0 0 8px;display:flex;align-items:center;gap:12px}
+      .overview-panel-header h2{font-size:var(--report-section-heading-size,23px);line-height:1.3;min-height:56px;margin:0 0 8px;display:flex;align-items:center;gap:12px}
       .overview-panel-header .number{flex-shrink:0;font-size:25px;width:40px;height:40px;line-height:40px}
       .overview-panel-actions{min-height:48px;display:flex;align-items:center;flex-wrap:wrap}
       .overview-panel-actions:empty{display:none}
