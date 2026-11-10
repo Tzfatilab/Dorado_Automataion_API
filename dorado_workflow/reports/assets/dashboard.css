@@ -474,16 +474,19 @@ body[data-summary-only] .reads-table tr:focus{outline:2px solid #d59a15}
 .read-browser .read-values-table th{white-space:normal;vertical-align:bottom;overflow-wrap:normal;word-break:normal;hyphens:none}
 .read-browser .read-values-table .read-column-filter{padding:0;white-space:normal;overflow-wrap:normal;word-break:normal;hyphens:none;line-height:1.35;text-align:left}
 .read-browser .read-values-table td{font-variant-numeric:tabular-nums}
+.read-browser .read-values-table tr.read-data-unavailable{background:#fff8e8}
+.read-browser .read-values-table tr.read-data-unavailable td:first-child{border-left:3px solid #d5a34a}
+.read-missing-marker{color:#94620c;font-weight:700;cursor:help}
 .read-browser .read-values-table [data-column-key="filter_reason"]{min-width:0;max-width:none}
 .read-browser .read-values-table td:is([data-column-key="read_status"],[data-column-key="chromosomes"],[data-column-key="arms"],[data-column-key="tvr_patterns"]){white-space:normal;overflow-wrap:normal;word-break:normal;hyphens:none}
 .barcode-statistics-table th.short-summary-heading{width:330px}
 .barcode-statistics-table th.short-summary-heading .stat-column-heading{justify-content:center}
-.barcode-statistics-table td.short-summary-cell{padding:20px 10px 14px;border-right:1px solid #dce4ef}
+.barcode-statistics-table td.short-summary-cell{min-width:280px;padding:20px 10px 14px;border-right:1px solid #dce4ef}
 .short-summary-card{padding:0;background:transparent;border:0;border-radius:0}
 .short-summary-methods{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
 .short-summary-method{display:flex;flex-direction:column;align-items:center;gap:7px;min-width:0}
 .short-summary-method+.short-summary-method{border-left:1px solid #bacbe2}
-.short-summary-method>span{font-size:12px;font-weight:400;color:#70809d;white-space:nowrap}
+.short-summary-method>span{font-size:12px;font-weight:400;color:#70809d;white-space:normal;overflow-wrap:normal;word-break:normal;text-align:center}
 .short-summary-method>strong{font-size:19px;font-weight:600;color:#102650;white-space:nowrap}
 .short-summary-note{font-size:12px;font-weight:400;color:#70809d;margin-top:14px;text-align:center}
 

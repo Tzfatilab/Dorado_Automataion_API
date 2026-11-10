@@ -168,17 +168,23 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
         # Compare against the barcodes that NanoTel actually processed.
         if (!is.null(results$nanotel)) {
           expected_barcodes <- results$nanotel$barcodes %||% character()
-          failed_barcodes <- setdiff(expected_barcodes, successful_barcodes)
+          status_file <- file.path(mapping_output_dir, "mapping_status.json")
+          skipped_barcodes <- if (file.exists(status_file)) {
+            tolower(as.character(unlist(jsonlite::fromJSON(status_file)$skipped_barcodes)))
+          } else character()
+          failed_barcodes <- setdiff(expected_barcodes, c(successful_barcodes, skipped_barcodes))
         } else {
           failed_barcodes <- character()
+          skipped_barcodes <- character()
         }
 
         results$mapping <- list(
           successful_results = successful_barcodes,  # Now a vector of barcode names
           mapped_barcodes = mapped_barcodes,
           methylation_barcodes = methylation_barcodes,
-          failed_barcodes = failed_barcodes,         # Vector of failed barcode names
-          total_processed = length(successful_barcodes) + length(failed_barcodes)
+          failed_barcodes = failed_barcodes,         # Real processing failures only
+          skipped_barcodes = skipped_barcodes,
+          total_processed = length(successful_barcodes) + length(failed_barcodes) + length(skipped_barcodes)
         )
       } else {
         stop("Mapping analysis failed with exit code: ", result_code)
@@ -414,6 +420,7 @@ generate_pipeline_report <- function(results, config, duration) {
                         "", "2. MAPPING ANALYSIS:", "   Status: SUCCESS",
                         paste("   Total processed:", mapping$total_processed),
                         paste("   Successful barcodes:", length(mapping$successful_results)),
+                        paste("   Skipped barcodes (no reads):", length(mapping$skipped_barcodes)),
                         paste("   Failed barcodes:", length(mapping$failed_barcodes)),
                         paste("   Output directory:", config$mapping_analysis$output_dir))
 

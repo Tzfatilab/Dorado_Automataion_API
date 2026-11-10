@@ -96,8 +96,48 @@ class ExecutionLogSection:
             return
 
         for raw_line in message.split("\n"):
-            self._update_progress_from_log(raw_line.strip())
-            self._append_worker_log_line(raw_line)
+            line = self._normalize_log_prefix(raw_line)
+            if line.strip() == 'Run started':
+                self._recalculate_log = 'post_analysis' in getattr(self, 'selected_workflows', set())
+                self._recalculate_table_output = False
+            if line.strip().startswith('Recalculate:'):
+                self._recalculate_log = True
+            recalculate = getattr(self, '_recalculate_log', False)
+            important = re.search(r'\b(?:warning|error|failed|failure|halted|traceback|cancelled)\b', line, re.I)
+            if recalculate and getattr(self, '_recalculate_table_output', False):
+                table_line = re.match(r'^(?:\s*\d+\s|\s*barcode\b|\s*[A-Za-z][\w.]*_|\s*#|\s*$)', raw_line)
+                if important or self._normalize_log_prefix(raw_line) != raw_line.strip() or not table_line:
+                    self._recalculate_table_output = False
+                else:
+                    continue
+            if recalculate and line.strip() == 'NanoTel Summary Statistics:':
+                self._recalculate_table_output = True
+                continue
+            self._update_progress_from_log(line.strip())
+            self._append_worker_log_line(line)
+
+    @staticmethod
+    def _normalize_log_prefix(line):
+        """Remove nested tool timestamps; the GUI adds one consistent timestamp."""
+        line = line.strip()
+        severity = ''
+        prefix = re.compile(
+            r'^(?:(?:\[\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\]'
+            r'|\[\d{2}:\d{2}:\d{2}\]|\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\s*(?:-\s*)?'
+            r'|\[?(INFO|DEBUG|WARNING|WARN|ERROR|CRITICAL)\]?\s*(?:-\s*|:\s*|\s+))', re.I)
+        while match := prefix.match(line):
+            if match.group(1):
+                level = match.group(1).upper()
+                if level in {'ERROR', 'CRITICAL'}:
+                    severity = 'ERROR'
+                elif level in {'WARNING', 'WARN'} and severity != 'ERROR':
+                    severity = 'WARNING'
+                elif level == 'DEBUG' and not severity:
+                    severity = 'DEBUG'
+            line = line[match.end():].lstrip()
+        if severity and not line.upper().startswith(severity):
+            line = severity + ': ' + line
+        return line
 
     def _update_progress_from_log(self, line):
         """Keep the progress panel moving from the worker's streamed messages.
@@ -187,6 +227,15 @@ class ExecutionLogSection:
             return
 
         analysis_line = line.strip()
+        if getattr(self, '_recalculate_log', False):
+            if self._skip_recalculation_detail(analysis_line):
+                return
+            match = re.match(r'Processing NanoTel file:\s*(barcode\d+)_summary\.csv', analysis_line, re.I)
+            if match:
+                line = 'Refiltering ' + match.group(1).lower()
+            match = re.match(r'Processing \d+ BAM files for barcode:\s*(barcode\d+)', analysis_line, re.I)
+            if match:
+                line = 'Refiltering saved mapping for ' + match.group(1).lower()
         if re.match(r"^NanoTel:\s*chunk\s+\d+", analysis_line, re.IGNORECASE):
             return
         if self._handle_nanotel_analysis_result(analysis_line):
@@ -205,6 +254,28 @@ class ExecutionLogSection:
             return
 
         self._render_log_line(line)
+
+    @staticmethod
+    def _skip_recalculation_detail(line):
+        """Hide routine R chatter in the GUI while retaining diagnostic messages."""
+        if re.search(r'\b(?:warning|error|failed|failure|halted|traceback|cancelled)\b', line, re.I):
+            return False
+        if not line or set(line) <= {'=', '-', '#', ' '}:
+            return True
+        return bool(re.match(
+            r'^(?:DEBUG:|Starting command$|Command:|Location:|Exit code:\s*0$|'
+            r'Successfully (?:read|wrote):|Loaded (?:alignment|NanoTel) data:|'
+            r'Created (?:cleaned read IDs|directory|configurations)|'
+            r'Extracting read IDs|Extracted \d+ unique read IDs|'
+            r'After (?:NanoTel matching|removing unmapped|MAPQ/position filtering):|'
+            r'BAM file:|Processing BAM file |Processing barcodes:|Configuration loaded successfully|'
+            r'(?:Input directory|Output directory|BAM directory|Filtered NanoTel dir|Alignment summary):|'
+            r'(?:Density threshold|Max telomere start|Maximum edge distance|Minimum read length):|'
+            r'Looking for NanoTel summary files in:|All required packages loaded successfully|'
+            r'Generating (?:NanoTel analysis report|mapping analysis report|comprehensive pipeline report)|'
+            r'(?:Summary statistics|Analysis report|Mapping report|Complete pipeline report) saved to:|'
+            r'(?:NanoTel|Mapping) batch analysis completed|'
+            r'Skipping methylation analysis|Output directories initialized)', line, re.I))
 
     def _prepare_log_line(self, line):
         """Clean status glyphs and rewrite verbose NanoTel phrases.
@@ -567,7 +638,7 @@ class ExecutionLogSection:
         is_key_update = self._is_key_update(line, is_stage_title)
         is_section_title = self._is_section_title(line, is_stage_title)
         is_major_milestone = self._is_major_milestone(line)
-        status = self._line_status_prefix(line)
+        status = '' if re.match(r'^\s*(?:ERROR|WARNING|CRITICAL|OK)\b', line, re.I) else self._line_status_prefix(line)
 
         leading = re.match(r"^\s*", line).group(0)
         body = line[len(leading):]
@@ -683,6 +754,7 @@ class ExecutionLogSection:
             return ""
 
         lower_line = line.lower()
+        lower_line = re.sub(r'\bfailed:\s*0\b', '', lower_line)
         is_failure = (
             " failed" in lower_line
             or line.startswith("Required tool not found:")

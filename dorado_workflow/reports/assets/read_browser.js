@@ -25,7 +25,8 @@
   function formatCount(value) { return value == null ? 'Unavailable' : value.toLocaleString(); }
   document.querySelectorAll('.read-browser').forEach(section => {
     const page = section.closest('.barcode-page');
-    const showCompleteness = page.dataset.kmEnabled !== 'false';
+    const showCompleteness = page.dataset.kmEnabled === 'true';
+    if(!showCompleteness)page.querySelectorAll('.barcode-results').forEach(panel=>panel.remove());
     const noTvr = page.dataset.tvrEnabled === 'false';
     const withMismatch = page.dataset.mismatchEnabled === 'true';
     const tableHead=section.querySelector('.reads-table thead tr');
@@ -90,9 +91,11 @@
       const keys=[read.header,read.header.split(/\s+/)[0]];
       read.censored = showCompleteness && (read.completeness === 'censored' || keys.some(key=>censoredHeaders.has(key)));
       const complete=read.completeness === 'complete' || keys.some(key=>completeHeaders.has(key));
-      read.completeness_label = read.censored ? 'Censored (incomplete)' : complete ? 'Complete' : 'Completeness unknown';
+      read.completeness_label = showCompleteness
+        ? read.censored ? 'Censored (incomplete)' : complete ? 'Complete' : 'Completeness unknown'
+        : null;
       read.excluded = !!read.source_note || !!read.plot_only;
-      read.read_status = showCompleteness
+      read.read_status = read.plot_only ? 'Data unavailable' : showCompleteness
         ? (read.excluded ? 'Excluded by filtering; ' : '') + read.completeness_label
         : (read.excluded ? 'Excluded by filtering' : 'Included');
       read.filter_status=read.excluded?'Not in filtered results':'Passed filters';
@@ -117,13 +120,14 @@
     let populationSelect=null;
     {
       const label=node('label','Population ',controls);populationSelect=node('select','',label);
-      [['filtered','After filtering'],['before','Before filtering']].forEach(([v,t])=>{const o=node('option',t,populationSelect);o.value=v;});
-      const before=[...(detailRows||[])].sort((a,b)=>a.label.localeCompare(b.label,undefined,{numeric:true}));
-      rows=filteredRows||[];
+      [['all','All reads'],['filtered','Included only'],['excluded','Excluded only']].forEach(([v,t])=>{const o=node('option',t,populationSelect);o.value=v;});
+      const all=[...detailRows].sort((a,b)=>a.label.localeCompare(b.label,undefined,{numeric:true}));
+      const excluded=all.filter(read=>read.excluded);
+      rows=all;
       // Function: populationSelect.onchange.
       // Inputs: None; uses the current report/browser state.
       // Outputs: Handles the UI action and updates the associated report controls.
-      populationSelect.onchange=()=>{rows=populationSelect.value==='before'?before:filteredRows||[];columnFilters.clear();current=1;render();};
+      populationSelect.onchange=()=>{rows=populationSelect.value==='all'?all:populationSelect.value==='excluded'?excluded:filteredRows||[];columnFilters.clear();current=1;render();};
       // Function: reset.onclick.
       // Inputs: None; uses the current report/browser state.
       // Outputs: Handles the UI action and updates the associated report controls.
@@ -163,13 +167,16 @@
     tableHead.replaceChildren(...columns.map(c=>{const th=node('th',c.title);th.dataset.columnKey=c.key;return th;}));
     const readTableNote =
       (noTvr?'Canonical repeat % is the exported canonical repeat density within the canonical telomere call. ':'Canonical repeat % is the source-exported unique canonical base coverage within the TVR-inclusive telomere interval. ')+
-      'Telomere start is 1-based and uses the '+(withMismatch?'mismatch-inclusive':'canonical')+' call. Select Before filtering to inspect excluded reads and their saved filtration reasons.';
+      'Telomere start is 1-based and uses the '+(withMismatch?'mismatch-inclusive':'canonical')+' call. All reads shows included and excluded telomeric reads together, with their status and saved filtration reasons.';
     const columnKeys=columns.map(c=>c.key);
     const exportHeaders=[...section.querySelectorAll('.reads-table thead th')].map(th=>th.textContent.replace(/\s*[▾↕]$/,'').trim());
     // Function: columnValues.
     // Inputs: r (r)
     // Outputs: Ordered displayed cell values for one read.
-    const columnValues=r=>columns.map(c=>c.format(r[c.key]));
+    const columnValues=r=>columns.map(c=>{
+      const value=c.format(r[c.key]);
+      return r.plot_only&&value==='Unavailable'?'\u2014':value;
+    });
     const numericKeys=new Set(['label','telomere','exact_length','mismatch_length','tvr_length','length','canonical','tvr','exact_density','mismatch_density','telomere_start']);
     // Size columns from the current filtered population, independently of
     // pagination. Long headings and text values wrap within compact columns.
@@ -266,9 +273,20 @@
           const label=node('label','Show values',menu);label.className='read-numeric-filter';
           const operator=node('select','',label);operator.setAttribute('aria-label','Comparison for '+title);
           [['above','Above'],['below','Below']].forEach(([value,text])=>{const option=node('option',text,operator);option.value=value;});
-          operator.value=saved?.operator||'above';
+          const cutoffBp=Number(page.dataset.shortCutoffBp);
+          const shortPreset=['exact_length','mismatch_length','tvr_length','telomere'].includes(columnKeys[index])&&Number.isFinite(cutoffBp)&&cutoffBp>0;
+          if(shortPreset){
+            const option=node('option','Below '+(cutoffBp/1000).toLocaleString(undefined,{maximumFractionDigits:10})+' kb (short telomeres)',operator);
+            option.value='short';
+          }
+          operator.value=saved?.preset==='short'&&shortPreset?'short':saved?.operator||'above';
           const input=node('input','',label);input.type='number';input.step='any';input.placeholder='Enter threshold';input.setAttribute('aria-label','Threshold for '+title);
           if(saved&&!(saved instanceof Set))input.value=String(saved.threshold);
+          const updatePreset=()=>{
+            input.disabled=operator.value==='short';
+            if(input.disabled){input.value=String(cutoffBp/1000);input.setCustomValidity('');}
+          };
+          operator.onchange=updatePreset;updatePreset();
           const note=node('p','Use the units shown in the column title. Values equal to the threshold and unavailable values are excluded.',menu);note.className='note';
           // Function: clear.onclick.
           // Inputs: None; uses the current report/browser state.
@@ -279,7 +297,8 @@
           // Outputs: Applies the current column-filter selection and refreshes the table.
           applyFilter=()=>{
             if(!input.value.trim()||!input.checkValidity()||!Number.isFinite(Number(input.value))){input.setCustomValidity('Enter a valid numeric threshold.');input.reportValidity();input.focus();return false;}
-            columnFilters.set(index,{operator:operator.value,threshold:Number(input.value)});return true;
+            columnFilters.set(index,{operator:operator.value==='short'?'below':operator.value,
+              threshold:Number(input.value),preset:operator.value==='short'?'short':undefined});return true;
           };
           // Function: input.oninput.
           // Inputs: None; uses the current report/browser state.
@@ -344,9 +363,10 @@
     function render() {
       {
         section.querySelector('.read-total').textContent='('+rows.length.toLocaleString()+' reads)';
-        section.querySelector(':scope > p.note').textContent=populationSelect?.value==='before'?
-          'Before filtering: detected telomeric reads. '+readTableNote:
-          'After filtering. '+readTableNote;
+        const scope=populationSelect?.value==='all'?'All detected telomeric reads, including retained and excluded reads. ':
+          populationSelect?.value==='excluded'?'Reads not retained after filtering. ':'Reads retained after filtering. ';
+        section.querySelector(':scope > p.note').textContent=scope+readTableNote+
+          (rows.some(read=>read.plot_only)?' Rows marked Data unavailable are counted here, but their full table records were not exported. Any measurements shown come from saved plots; missing values are not included in summary statistics.':'');
       }
       const filtered = rows.filter(r => (r.label+' '+r.header+' '+columnValues(r).join(' ')).toLowerCase().includes(search.value.toLowerCase()) && [...columnFilters].every(([index,filter])=>matchesColumnFilter(r,index,filter)));
       sizeColumns(filtered);
@@ -381,9 +401,17 @@
       const body = section.querySelector('tbody'); body.replaceChildren();
       filtered.slice((current-1)*size,current*size).forEach(r => {
         const tr = node('tr','',body), td = node('td','',tr);
+        if(r.plot_only){
+          tr.className='read-data-unavailable';
+          tr.title='Full read data unavailable. This read is listed in a saved plot; only exported measurements can be shown.';
+        }
         const href = '#/barcode/' + page.id + '/read/' + r.id;
         if (r.id && !summaryOnly) { const a = node('a',r.label,td); a.href = href; a.title = r.header; }
         else node('span',r.label,td);
+        if(r.plot_only){
+          const marker=node('span',' \u24d8',td);marker.className='read-missing-marker';
+          marker.title=tr.title;marker.setAttribute('aria-label','Read data unavailable');
+        }
         columnValues(r).slice(1).forEach((text,index) => {
           const td=node('td',text,tr);td.dataset.columnKey=columns[index+1].key;
           if(columns[index+1].key==='arms'){
@@ -423,7 +451,8 @@
     // Outputs: Finds the read, changes pagination and highlights its table row.
     if(summaryOnly)browsers.get(page.id).findRead=id=>{
       const target=detailRows.find(r=>r.id===id);if(!target)return;
-      populationSelect.value=filteredRows?.some(r=>r.id===id)?'filtered':'before';populationSelect.onchange();
+      if(populationSelect.value!=='all')populationSelect.value=filteredRows?.some(r=>r.id===id)?'filtered':'excluded';
+      populationSelect.onchange();
       search.value='';columnFilters.clear();sort.value='original';
       const position=rows.findIndex(r=>r.id===id);current=Math.floor(position/Number(limit.value))+1;render();
       const tr=section.querySelector('tbody').rows[position%Number(limit.value)];
@@ -541,8 +570,10 @@
     // Keep separate assignments separate rather than invent chromosome-arm pairs.
     const chromosome=read.chromosomes.join(', ')||'Unavailable';
     summaryCard('Mapping',chromosome,(read.arms||[]).length?'Arm: '+read.arms.join(', '):'Chromosome assigned by alignment','read-summary-green');
-    if (read.read_status !== 'Included') {
-      const statusLabel=node('p',read.read_status,identity);statusLabel.className='read-state-label';
+    const statusText=read.plot_only?'Data unavailable':source.page.dataset.kmEnabled==='true'?read.read_status:
+      read.excluded?'Excluded by filtering':null;
+    if (statusText && statusText !== 'Included') {
+      const statusLabel=node('p',statusText,identity);statusLabel.className='read-state-label';
       statusLabel.title=read.filter_reason;
     }
 

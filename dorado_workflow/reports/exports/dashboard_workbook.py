@@ -93,6 +93,7 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
         next_rows[ws] += 1
         for column in range(1, len(row) + 1):
             cell = ws.cell(row_number, column)
+            cell.alignment = Alignment(horizontal='center', vertical='center')
             if isinstance(cell.value, str):
                 if len(cell.value) > 32767:
                     raise ValueError('Excel cell limit exceeded; use the chunked source facts sheet')
@@ -310,7 +311,7 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
             ws.column_dimensions['B'].width = 105
             for row in ws.iter_rows(min_row=2):
                 ws.row_dimensions[row[0].row].height = 60
-                row[1].alignment = Alignment(wrap_text=True, vertical='top')
+                row[1].alignment = Alignment(wrap_text=True, vertical='center', horizontal='center')
     wb.move_sheet(summary, offset=-wb.index(summary))
     wb.active = 0
     if results_root is not None:

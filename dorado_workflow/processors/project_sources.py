@@ -100,22 +100,12 @@ class ProjectSources:
 
     @property
     def includes_km(self):
-        """Retain the source run's KM choice, including legacy artifact evidence."""
-        if "include_km" in self.params:
-            return self.params["include_km"] is True
-        # Older runs predate the opt-in setting. Their saved KM exports record
-        # whether KM was included; the currently active profile is irrelevant.
-        if any(source_files(self.results / "nanotel", "*km*statistics.csv")):
-            return True
-        if self.workbook:
-            book = load_workbook(self.workbook, read_only=True, data_only=True)
-            try:
-                return any(name.removeprefix("_source_") in
-                           {"KM by barcode", "KM run statistics", "Kaplan-Meier"}
-                           for name in book.sheetnames)
-            finally:
-                book.close()
-        return False
+        """Reuse KM only when explicitly requested in the original settings.
+
+        Legacy tables can contain automatically generated or empty KM exports;
+        their existence does not establish that the user requested KM.
+        """
+        return self.params.get("include_km") is True
 
     def restore(self, context, check_cancelled):
         """Stage immutable inputs as links and extract workbook-only populations.

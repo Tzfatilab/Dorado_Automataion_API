@@ -38,6 +38,7 @@ process_barcode_multiple_bams <- function(barcode_configs_list) {
   all_filtered_bam_paths <- character()
   all_pileup_bed_paths <- character()
   total_reads <- 0
+  processing_errors <- character()
 
   # Process each BAM file for this barcode
   for (i in seq_along(barcode_configs_list)) {
@@ -60,7 +61,7 @@ process_barcode_multiple_bams <- function(barcode_configs_list) {
       )
 
       if (length(mapping_result$filtered_ids) == 0) {
-        log_message(paste("No reads found in BAM file", i, "for", barcode_name), "WARNING")
+        log_message(paste("No reads remain after mapping filters for BAM file", i, "of", barcode_name), "WARNING")
         next
       }
 
@@ -104,13 +105,18 @@ process_barcode_multiple_bams <- function(barcode_configs_list) {
       log_message(paste("Successfully processed BAM file", i, "for", barcode_name))
 
     }, error = function(e) {
+      processing_errors <<- c(processing_errors, e$message)
       log_message(paste("Error processing BAM file", i, "for", barcode_name, ":", e$message), "ERROR")
     })
   }
 
   if (length(all_mapped_data) == 0) {
-    log_message(paste("No BAM files could be processed for", barcode_name), "ERROR")
-    return(NULL)
+    if (length(processing_errors) > 0) {
+      log_message(paste("No BAM files could be processed for", barcode_name), "ERROR")
+      return(NULL)
+    }
+    log_message(paste("Skipping", barcode_name, "- no reads remain after filtering."), "WARNING")
+    return(list(barcode=barcode_name, status="empty", read_count=0L))
   }
 
   # Step 4: Combine all mapped data for this barcode
@@ -251,6 +257,7 @@ main_mapping_analysis <- function(config_file) {
   # Process each barcode (with multiple BAM files)
   results <- list()
   failed_barcodes <- character()
+  skipped_barcodes <- character()
 
   for (i in seq_along(grouped_barcode_configs)) {
     barcode_name <- names(grouped_barcode_configs)[i]
@@ -260,7 +267,9 @@ main_mapping_analysis <- function(config_file) {
 
     tryCatch({
       result <- process_barcode_multiple_bams(barcode_configs_list)
-      if (!is.null(result)) {
+      if (!is.null(result) && identical(result$status, "empty")) {
+        skipped_barcodes <- c(skipped_barcodes, barcode_name)
+      } else if (!is.null(result)) {
         results[[barcode_name]] <- result
       } else {
         failed_barcodes <- c(failed_barcodes, barcode_name)
@@ -271,8 +280,15 @@ main_mapping_analysis <- function(config_file) {
     })
   }
 
+  ensure_directory_exists(config$output_dir)
+  jsonlite::write_json(list(successful_barcodes=names(results) %||% character(),
+                           skipped_barcodes=skipped_barcodes, failed_barcodes=failed_barcodes),
+                      file.path(config$output_dir, "mapping_status.json"), auto_unbox=FALSE)
   log_message(paste("Processing complete. Success:", length(results),
-                    "Failed:", length(failed_barcodes)))
+                    "Skipped (no reads):", length(skipped_barcodes), "Failed:", length(failed_barcodes)))
+  if (length(skipped_barcodes) > 0) {
+    log_message(paste("Skipped barcodes (no reads):", paste(skipped_barcodes, collapse=", ")), "WARNING")
+  }
 
   if (length(failed_barcodes) > 0) {
     log_message(paste("Failed barcodes:", paste(failed_barcodes, collapse = ", ")), "WARNING")
@@ -293,12 +309,14 @@ main_mapping_analysis <- function(config_file) {
         "All NanoTel-filtered reads were unmapped, did not match alignment read IDs,",
         "or failed the configured mapping filters."
       ),
-      failed_barcodes = failed_barcodes
+      failed_barcodes = failed_barcodes,
+      skipped_barcodes = skipped_barcodes
     )
 
     return(list(
       successful_results = results,
       failed_barcodes = failed_barcodes,
+      skipped_barcodes = skipped_barcodes,
       total_processed = length(grouped_barcode_configs)
     ))
   }
@@ -306,7 +324,7 @@ main_mapping_analysis <- function(config_file) {
   # Generate summary report
   if (length(results) > 0) {
     report_file <- file.path(config$output_dir, "mapping_analysis_report.txt")
-    generate_mapping_report_multiple_bams(results, failed_barcodes, report_file, config)
+    generate_mapping_report_multiple_bams(results, failed_barcodes, report_file, config, skipped_barcodes)
   }
 
   log_message("Mapping batch analysis completed!")
@@ -314,6 +332,7 @@ main_mapping_analysis <- function(config_file) {
   return(list(
     successful_results = results,
     failed_barcodes = failed_barcodes,
+    skipped_barcodes = skipped_barcodes,
     total_processed = length(grouped_barcode_configs)
   ))
 }
@@ -321,7 +340,7 @@ main_mapping_analysis <- function(config_file) {
 # Inputs: config (Configuration values to read or update); reason_lines (Explanations for an empty
 # mapping output); failed_barcodes (Barcode labels whose processing failed)
 # Outputs: Writes a mapping report explaining why no records were produced.
-write_empty_mapping_report <- function(config, reason_lines, failed_barcodes = character()) {
+write_empty_mapping_report <- function(config, reason_lines, failed_barcodes = character(), skipped_barcodes = character()) {
   ensure_directory_exists(config$output_dir)
   report_file <- file.path(config$output_dir, "mapping_analysis_report.txt")
   failed_text <- if (length(failed_barcodes) > 0) {
@@ -340,6 +359,7 @@ write_empty_mapping_report <- function(config, reason_lines, failed_barcodes = c
     reason_lines,
     "",
     paste("Failed barcodes:", failed_text),
+    paste("Skipped barcodes (no reads):", paste(skipped_barcodes, collapse=", ")),
     paste("Alignment summary:", config$alignment_summary_path),
     paste("Filtered NanoTel dir:", config$filtered_nanotel_dir),
     paste("BAM directory:", config$bam_dir),
@@ -355,7 +375,7 @@ write_empty_mapping_report <- function(config, reason_lines, failed_barcodes = c
 # labels whose processing failed); output_file (Output file); config (Configuration values to read
 # or update)
 # Outputs: Writes the run mapping summary for all barcode/BAM fragments.
-generate_mapping_report_multiple_bams <- function(results, failed_barcodes, output_file, config) {
+generate_mapping_report_multiple_bams <- function(results, failed_barcodes, output_file, config, skipped_barcodes = character()) {
 
   log_message("Generating mapping analysis report for multiple BAM files")
 
@@ -381,8 +401,10 @@ generate_mapping_report_multiple_bams <- function(results, failed_barcodes, outp
     paste("  Modification threshold:", config$mod_threshold_m %||% 0.75),
     "",
     "PROCESSING RESULTS:",
-    paste("  Total barcodes attempted:", length(results) + length(failed_barcodes)),
+    paste("  Total barcodes attempted:", length(results) + length(failed_barcodes) + length(skipped_barcodes)),
     paste("  Successful barcodes:", length(results)),
+    paste("  Skipped barcodes (no reads):", length(skipped_barcodes)),
+    paste("  Skipped barcode list:", paste(skipped_barcodes, collapse=", ")),
     paste("  Failed barcodes:", length(failed_barcodes)),
     paste("  Total BAM files processed:", total_bam_files),
     paste("  Total telomeric reads processed:", total_reads),
@@ -621,6 +643,9 @@ if (!interactive()) {
     result <- main_mapping_analysis(config_file)
     cat("\nMapping analysis completed successfully!\n")
     cat("Successfully processed", length(result$successful_results), "barcodes\n")
+    if (length(result$skipped_barcodes) > 0) {
+      cat("Skipped barcodes (no reads):", paste(result$skipped_barcodes, collapse=", "), "\n")
+    }
     if (length(result$failed_barcodes) > 0) {
       cat("Failed barcodes:", paste(result$failed_barcodes, collapse = ", "), "\n")
     }

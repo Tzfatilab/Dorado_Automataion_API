@@ -149,10 +149,10 @@ def _summary_html(result, *, pooled=False, method=None):
         if pooled:
             note += ' across all barcodes'
     elif result['denominator'] == 0:
-        display = 'No measured telomere lengths' if method is not None else 'No reads'
+        display = '\u2014'
         note = definition + ' Denominator: 0 measured telomere lengths; percentage is undefined.'
     else:
-        display = 'Unavailable'
+        display = '\u2014'
         note = definition + ' A recorded cutoff and complete post-filtered telomere lengths are required.'
         if pooled:
             note = definition + ' Complete telomere lengths and a common cutoff across all barcodes are required.'
@@ -160,7 +160,8 @@ def _summary_html(result, *, pooled=False, method=None):
     description = {'exact': 'Without mismatch or TVR. ', 'mismatch': 'With mismatch, without TVR. ',
                    'tvr_inclusive': 'Including TVRs, using the recorded matching settings. '}.get(method, '')
     return ('<div class="short-telomere-stat" data-compact-card="true" data-short-method="'+(method or '')
-            +'" title="'+escape(description + note, quote=True)+'"><h4>'+escape(mode)+'</h4><strong>'
+            +'" title="'+escape(description + note, quote=True)+'"><h4>'+escape(mode)+'</h4><strong'
+            + (' aria-label="Unavailable"' if display == '\u2014' else '') + '>'
             + display + '</strong><p class="short-method-note">' + escape(note) + '</p></div>')
 
 
@@ -170,13 +171,15 @@ def short_table_summary_html(barcode, settings):
                [('exact', 'Canonical'), ('mismatch', '+ Mismatch'), ('tvr_inclusive', '+ TVRs')]]
     parts = []
     for label, result in results:
+        attributes = ''
         if result.get('requested') is False:
             display = 'Off'
         elif result['percent'] is not None:
             display = f"{result['percent']:.2f}%"
         else:
-            display = 'Unavailable'
-        parts.append('<div class="short-summary-method"><span>' + label + '</span><strong>'
+            display = '\u2014'
+            attributes = ' aria-label="Unavailable" title="Percentage unavailable: a valid cutoff and measured telomere lengths are required."'
+        parts.append('<div class="short-summary-method"><span>' + label + '</span><strong' + attributes + '>'
                      + display + '</strong></div>')
     cutoff = short_cutoff_bp(settings, barcode)
     note = f'After filtering \u00b7 Telomere length < {cutoff / 1000:g} kb' if cutoff is not None else 'After filtering \u00b7 Cutoff unavailable'
