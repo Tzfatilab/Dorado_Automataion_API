@@ -78,63 +78,22 @@ def short_summary_html(barcode, settings):
     return _combined_summary_html([(method, short_statistics(barcode, settings, method)) for method, _ in METHODS])
 
 
-def pooled_short_statistics(run, method=None):
-    """Pool counts only when every barcode has complete, comparable data.
-
-    Args:
-        run: Imported run model containing barcodes, reads and source evidence.
-
-    Returns:
-        Combined short counts and percentage, available only for comparable populations.
-    """
-    rows = [short_statistics(barcode, run.settings, method) for barcode in run.barcodes]
-    result = dict(cutoff_bp=None, numerator=None, denominator=None, percent=None)
-    if method is not None and rows and all(row.get('requested') is False for row in rows):
-        result['requested'] = False
-        return result
-    if not rows or any(row['denominator'] is None for row in rows):
-        return result
-    result['denominator'] = sum(row['denominator'] for row in rows)
-    cutoffs = {row['cutoff_bp'] for row in rows if row['denominator'] > 0}
-    if not result['denominator']:
-        result['cutoff_bp'] = short_cutoff_bp(run.settings)
-    elif len(cutoffs) == 1 and None not in cutoffs:
-        result['cutoff_bp'] = cutoffs.pop()
-        result['numerator'] = sum(row['numerator'] or 0 for row in rows)
-        result['percent'] = 100 * result['numerator'] / result['denominator']
-    return result
-
-
-def pooled_short_summary_html(run):
-    """Pooled short summary html.
-
-    Args:
-        run: Imported run model containing barcodes, reads and source evidence.
-
-    Returns:
-        HTML markup for pooled short summary html.
-    """
-    from .measurement_statistics import METHODS
-    return _combined_summary_html([(method, pooled_short_statistics(run, method)) for method, _ in METHODS], pooled=True)
-
-
-def _combined_summary_html(results, pooled=False):
+def _combined_summary_html(results):
     cutoffs = {row['cutoff_bp'] for _, row in results if row.get('requested') is not False}
     cutoff = next(iter(cutoffs)) if len(cutoffs) == 1 else None
     caption = 'After filtering'
     caption += f' \u00b7 Telomere length < {cutoff / 1000:g} kb' if cutoff is not None else ' \u00b7 Cutoff unavailable'
-    values = ''.join(_summary_html(row, pooled=pooled, method=method) for method, row in results)
+    values = ''.join(_summary_html(row, method=method) for method, row in results)
     return ('<article class="stat stat-short-compact"><svg aria-hidden="true" viewBox="0 0 48 48"><path d="M6 20A18 18 0 0 1 36 8l6 6M42 4v10H32M42 28A18 18 0 0 1 12 40l-6-6M6 44V34h10M18 28v-6M24 28V16M30 28v-8"/></svg><h3>Short telomeres (%)</h3>'
             '<div class="short-method-values">' + values + '</div><p class="short-card-note">'
             + escape(caption) + '</p></article>')
 
 
-def _summary_html(result, *, pooled=False, method=None):
+def _summary_html(result, *, method=None):
     """Summary html.
 
     Args:
         result: Result produced by the preceding operation.
-        pooled: Whether the summary combines barcode counts. Default: False.
 
     Returns:
         HTML markup for summary html.
@@ -146,16 +105,12 @@ def _summary_html(result, *, pooled=False, method=None):
     elif result['percent'] is not None:
         display = f"{result['percent']:.1f}%"
         note = f"< {cutoff / 1000:g} kb · {result['numerator']:,}/{result['denominator']:,} measured post-filtered telomeric reads"
-        if pooled:
-            note += ' across all barcodes'
     elif result['denominator'] == 0:
         display = '\u2014'
         note = definition + ' Denominator: 0 measured telomere lengths; percentage is undefined.'
     else:
         display = '\u2014'
         note = definition + ' A recorded cutoff and complete post-filtered telomere lengths are required.'
-        if pooled:
-            note = definition + ' Complete telomere lengths and a common cutoff across all barcodes are required.'
     mode = {'exact': 'Canonical', 'mismatch': '+ Mismatch', 'tvr_inclusive': '+ TVRs'}.get(method, 'Short telomeres')
     description = {'exact': 'Without mismatch or TVR. ', 'mismatch': 'With mismatch, without TVR. ',
                    'tvr_inclusive': 'Including TVRs, using the recorded matching settings. '}.get(method, '')

@@ -302,28 +302,6 @@ class BasecallerProcessor(ProcessorBase):
         lower = line.lower()
         return "[error]" in lower or "[warning]" in lower
 
-    def _find_output_bam(self) -> Optional[Path]:
-        # Look for any BAM file (not per-barcode, so exclude barcode subdirs)
-        """Most recent matching BAM path, or None when no BAM was produced.
-
-        Inputs:
-            None; uses instance state.
-
-        Returns:
-            Most recent matching BAM path, or None when no BAM was produced.
-        """
-        bam_files = [
-            f for f in self.output_dir.rglob("*.bam")
-            if 'barcode' not in f.parent.name and 'unclassified' not in f.parent.name
-        ]
-
-        if not bam_files:
-            self.context.logger.warning("No BAM files found in output directory")
-            return None
-
-        latest_bam = max(bam_files, key=lambda x: x.stat().st_mtime)
-        self.context.logger.info(f"Found output BAM: {latest_bam}")
-        return latest_bam
 
     def _collect_statistics(self, bam_path: Path) -> Dict[str, any]:
         """

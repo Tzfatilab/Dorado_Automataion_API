@@ -50,17 +50,18 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
         display = read.metrics.get('display_label') if read else None
         if display and display.status == 'available':
             label = display.value
-        chromosomes, arms, assignments = set(), set(), set()
+        chromosomes, assignments = set(), set()
         if read and read.alignments.status == 'available':
             # Keep each chromosome paired with its own explicitly labeled end.
             for alignment in read.alignments.value:
-                for key, target in [('chromosome', chromosomes), ('arm', arms)]:
-                    fact = alignment.get(key)
-                    if fact and fact.status == 'available':
-                        target.add(str(fact.value))
                 chromosome, arm = alignment.get('chromosome'), alignment.get('arm')
-                if chromosome and arm and chromosome.status == 'available' and arm.status == 'available':
-                    assignments.add((str(chromosome.value), str(arm.value)))
+                if chromosome and chromosome.status == 'available':
+                    label = str(chromosome.value)
+                    if arm and arm.status == 'available':
+                        end = str(arm.value)
+                        assignments.add((label, end))
+                        label += end if end in {'p', 'q'} else '_' + end
+                    chromosomes.add(label)
         def measurement(key):
             """Available read metric value, or None when unavailable.
 
@@ -124,8 +125,6 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
                          telomere=record['length_bp'],
                          length=length.value if length and length.status == 'available' else None,
                          chromosomes=sorted(chromosomes),
-                         arms=([arm for _, arm in sorted(assignments)] if len(chromosomes) == 1
-                               else [chromosome + ': ' + arm for chromosome, arm in sorted(assignments)]),
                          mapping_assignments=[dict(chromosome=chromosome, arm=arm)
                                               for chromosome, arm in sorted(assignments)]))
         if include_tracks:
@@ -263,7 +262,7 @@ def reads_section(barcode, results_root=None, show_completeness=True, summary_on
 <h2><span class="number">8</span>Reads <small class="read-total"></small></h2>
 <div class="read-controls"><label>Search <input class="read-search" type="search" placeholder="Search reads..."></label><label>Show <select class="read-limit"><option>10</option><option>25</option><option>50</option><option>100</option></select></label>
 </div></div><p class="note">Post-filtered telomeric reads. Canonical/TVR percentages use unique matched bases within the TVR-inclusive telomere interval. Categories may overlap; they need not sum to 100%. Missing exports remain unavailable.</p>
-<div class="reads-scroll"><table class="reads-table"><thead><tr><th>Read number</th><th>Total read length (kb)</th><th>Telomere start (bp)</th><th>TVR%</th><th>Canonical telomere length (kb)</th><th>Telomere length including mismatch (kb)</th><th>Telomere length including TVRs (kb)</th><th>Canonical repeat (%)</th><th>Status</th><th>Filtration reason</th><th>Chromosome</th><th>Arm</th><th>TVR patterns</th></tr></thead><tbody></tbody></table></div>
+<div class="reads-scroll"><table class="reads-table"><thead><tr><th>Read number</th><th>Total read length (kb)</th><th>Telomere start (bp)</th><th>TVR%</th><th>Canonical telomere length (kb)</th><th>Telomere length including mismatch (kb)</th><th>Telomere length including TVRs (kb)</th><th>Canonical repeat (%)</th><th>Status</th><th>Filtration reason</th><th>Chromosome</th><th>TVR patterns</th></tr></thead><tbody></tbody></table></div>
 <p class="read-status" role="status"></p><nav class="read-pagination" aria-label="Read pages"></nav>
 <script type="application/json" class="read-data">''' + payload + '</script><script type="application/json" class="read-labels">' + label_payload + '</script><script type="application/json" class="read-details">' + extra_payload + '</script>' + ''.join(track_scripts) + '</section>'
 

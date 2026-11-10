@@ -620,24 +620,3 @@ class NanoTelProcessor(ProcessorBase):
         return {
             'output_dir': self.output_dir
         }
-
-    def get_barcode_output_dirs(self) -> Dict[str, Path]:
-        """Get output directories for each processed barcode.
-
-        Returns:
-            Dictionary mapping barcode names to their output directory paths
-
-        Inputs:
-            None; uses instance state.
-        """
-        barcode_dirs = {}
-
-        if not self.output_dir.exists():
-            return barcode_dirs
-
-        # Find all barcode subdirectories
-        for subdir in self.output_dir.iterdir():
-            if subdir.is_dir():
-                barcode_dirs[subdir.name] = subdir
-
-        return barcode_dirs

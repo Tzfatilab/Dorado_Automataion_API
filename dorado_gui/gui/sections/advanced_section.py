@@ -14,7 +14,7 @@ from PySide6.QtCore import QRegularExpression
 
 from gui.ui_styles import make_card
 from gui.widgets.selection_widgets import SelectOption
-from gui.widgets.advanced_controls import HoverHelpLabel, MappingCheckBox, ToggleSwitch, LockedTVRControls
+from gui.widgets.advanced_controls import HoverHelpLabel, MappingCheckBox, ToggleSwitch
 from core.workflow_constants import BASE_DIR
 from dorado_workflow.managers.config_manager import ConfigManager
 
@@ -73,7 +73,8 @@ class AdvancedSection:
 
         post = "post_analysis" in selected
         self.nanotel_mapping.setVisible(not post)
-        self.tvr_mode_widget.setLocked(post)
+        self.tvr_mode_widget.setVisible(not post)
+        self.allow_mismatch.setVisible(not post)
         self.allow_mismatch.setEnabled(not post)
         if post and not getattr(self, "_post_analysis_active", False):
             self._summary_before_post = self.summary_only.isChecked()
@@ -497,7 +498,10 @@ class AdvancedSection:
         body.setContentsMargins(16, 10, 16, 10)
         body.setSpacing(8)
 
-        self.tvr_mode_widget = LockedTVRControls(self._build_tvr_mode_controls())
+        self.tvr_mode_widget = QWidget()
+        tvr_layout = self._build_tvr_mode_controls()
+        tvr_layout.setContentsMargins(0, 0, 0, 0)
+        self.tvr_mode_widget.setLayout(tvr_layout)
         body.addWidget(self.tvr_mode_widget)
         body.addLayout(self._build_nanotel_fields())
         footer = QHBoxLayout()

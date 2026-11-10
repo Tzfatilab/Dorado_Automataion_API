@@ -89,8 +89,7 @@
           ['TVR content (%)',r=>pct(r.tvr),'percent'],
           ['Canonical content (%)',r=>pct(r.canonical),'percent'],
           ['TVR patterns',r=>Array.isArray(r.tvr_patterns)?r.tvr_patterns.join(', '):unavailable]]:[]),
-        ['Chromosome',r=>r.chromosomes?.length?r.chromosomes.join(', '):unavailable],
-        ['Arm',r=>r.arms?.length?r.arms.join(', '):unavailable]];
+        ['Chromosome',r=>r.chromosomes?.length?r.chromosomes.join(', '):unavailable]];
       return {name:identity(page).id,headers:columns.map(c=>c[0]),formats:columns.map(c=>c[2]),freezeColumns:1,rows:records.map(r=>columns.map(c=>c[1](r)))};
     };
     // Function: sheets.

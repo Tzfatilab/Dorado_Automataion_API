@@ -82,7 +82,7 @@
           detailRows.push({id:'saved-'+encodeURIComponent(match[1]),header:match[1],label:savedLabels[match[1]] || shortLabels.get(match[1]) || 'Read '+match[1],
             length:value(/Read length: ([\d,]+) bp/),exact_length:value(/Telomere length \(exact\): ([\d,]+) bp/),
             plot_only:true,telomere:null,tvr_length:null,canonical:null,tvr:null,tvr_bp:null,overlap:null,unassigned:null,
-            chromosomes:[],arms:[],motifs:null,
+            chromosomes:[],motifs:null,
             source_note:'Saved pre-final-filter plot record. '+(/Edge filter: Removed/.test(text)?'Removed by the edge filter. ':'')+'Only measurements exported in this plot are available here.'});
         });
       });
@@ -162,7 +162,6 @@
       column('read_status','Status'),
       column('filter_reason','Filtration reason'),
       column('chromosomes','Chromosome',value=>value.join(', ')||'Unavailable',value=>value.join(', ')||'Unavailable'),
-      column('arms','Arm',value=>(value||[]).join(', ')||'Unavailable',value=>(value||[]).join(', ')||'Unavailable'),
       ...(!noTvr?[column('tvr_patterns','TVR patterns',value=>Array.isArray(value)?value.join(', '):'Unavailable')]:[])];
     tableHead.replaceChildren(...columns.map(c=>{const th=node('th',c.title);th.dataset.columnKey=c.key;return th;}));
     const readTableNote =
@@ -210,13 +209,13 @@
         for(const read of records){
           const text=String(c.format(read[c.key]));
           contentWidth=Math.max(contentWidth,measure.measureText(text).width);
-          const units=c.key==='arms'?text.split(/,\s*/):text.split(/\s+/);
+          const units=c.key==='chromosomes'?text.split(/,\s*/):text.split(/\s+/);
           for(const word of units)wordWidth=Math.max(wordWidth,measure.measureText(word).width);
         }
         const numeric=numericKeys.has(c.key);
         const maximum=c.key==='read_status'?128:
           c.key==='filter_reason'||c.key==='chromosomes'?120:
-          c.key==='arms'?112:numeric?140:220;
+          numeric?140:220;
         const minimum=Math.ceil(Math.max(64,wordWidth+26));
         return {minimum,preferred:Math.max(minimum,Math.min(maximum,contentWidth+24)),
           weight:numeric&&c.key!=='label'?1:0.2};
@@ -414,7 +413,7 @@
         }
         columnValues(r).slice(1).forEach((text,index) => {
           const td=node('td',text,tr);td.dataset.columnKey=columns[index+1].key;
-          if(columns[index+1].key==='arms'){
+          if(columns[index+1].key==='chromosomes'){
             td.textContent='';
             String(text).split(/,\s*/).forEach((arm,i,arms)=>{
               if(i)td.appendChild(document.createTextNode(' '));
@@ -491,6 +490,7 @@
     const nav=node('nav','',detail); nav.className='breadcrumbs';
     node('a','All Barcodes',nav).href='#/'; node('span','›',nav);
     node('a',source.page.dataset.label,nav).href='#/barcode/'+match[1]; node('span','› '+read.label,nav);
+    // Follow the displayed table order, including retained and excluded reads.
     const ordered=source.orderedRows||[];
     const position=ordered.findIndex(row=>row.id===read.id);
     const controls=node('div','',nav);controls.className='read-navigation';
@@ -515,7 +515,7 @@
     const statsTitle=node('h2','',summary);statsTitle.className='read-statistics-title';
     node('span','1',statsTitle).className='number';
     statsTitle.appendChild(document.createTextNode('Key Statistics ('+read.label+')'));
-    const iconIndices=[2,1,3,1,4,5];let cardIndex=0;
+    const iconIndices=[0,2,1,3,1,4,5];let cardIndex=0;
     // Function: summaryCard.
     // Inputs: label (displayed label); value (value to inspect or format); note (note); color
     // (display color)
@@ -540,6 +540,7 @@
     // Inputs: value (value to inspect or format)
     // Outputs: Formatted base-pair value.
     const bp=value=>value == null ? 'Unavailable' : formatCount(value)+' bp';
+    summaryCard('Total read length',read.length == null ? 'Unavailable' : kb(read.length)+' kb','Full analyzed read','read-summary-blue');
     const exactNote=read.telomere == null ? 'Canonical call; filtered telomere length unavailable' :
       read.telomere === read.exact_length ? 'Before final filtering' : 'Filtered: '+bp(read.telomere);
     summaryCard('Canonical telomere length',read.exact_length == null ? 'Unavailable' : kb(read.exact_length)+' kb',exactNote,'read-summary-pink');
@@ -561,7 +562,6 @@
       } else {
         summaryCard('TVR analysis','Off','No TVR patterns selected','read-summary-purple');
       }
-      summaryCard('Read length',bp(read.length),'Total analyzed read length','read-summary-blue');
     } else {
     summaryCard('Telomere length with TVRs',read.tvr_length == null ? 'Unavailable' : kb(read.tvr_length)+' kb','Includes detected variant repeats','read-summary-pink');
     summaryCard('TVR content',pct(read.tvr),bp(tvrBases)+' · Share of telomere bases','read-summary-blue');
@@ -569,7 +569,7 @@
     }
     // Keep separate assignments separate rather than invent chromosome-arm pairs.
     const chromosome=read.chromosomes.join(', ')||'Unavailable';
-    summaryCard('Mapping',chromosome,(read.arms||[]).length?'Arm: '+read.arms.join(', '):'Chromosome assigned by alignment','read-summary-green');
+    summaryCard('Mapping',chromosome,'Chromosome end assigned by alignment','read-summary-green');
     const statusText=read.plot_only?'Data unavailable':source.page.dataset.kmEnabled==='true'?read.read_status:
       read.excluded?'Excluded by filtering':null;
     if (statusText && statusText !== 'Included') {

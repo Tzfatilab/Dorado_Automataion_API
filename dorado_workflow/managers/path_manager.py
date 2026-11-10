@@ -443,16 +443,6 @@ class PathManager:
         """
         return self.trial_dir / self.dir_structure.get('results', 'results')
 
-    def _directory_path(self, key: str) -> Path:
-        """Return a configured trial subdirectory path without creating it.
-
-        Args:
-            key: str; lookup key or field name.
-
-        Returns:
-            Configured subdirectory path under the current run.
-        """
-        return self.trial_dir / self.dir_structure[key]
 
     def get_trial_dir_path(self) -> Path:
         """Get the trial root directory path without creating it.

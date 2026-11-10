@@ -137,30 +137,6 @@ class AppWindow(
         else:
             self.showNormal()
 
-    def _fit_initial_window(self):
-        """Keep the compact startup size only when setup needs no scrolling.
-
-        Inspect actual widget geometry rather than a monitor-resolution cutoff,
-        so system DPI, fonts and application scaling are taken into account.
-        This runs only at startup; later manual resizing remains user controlled.
-
-        Inputs:
-            None; uses instance state.
-
-        Returns:
-            None.
-        """
-        self.layout().activate()
-        scroll = self.pages.widget(0)
-        content = scroll.widget()
-        content.layout().activate()
-        required = content.minimumSizeHint().expandedTo(content.minimumSize())
-        viewport = scroll.viewport().size()
-        if (required.width() > viewport.width()
-                or required.height() > viewport.height()
-                or scroll.horizontalScrollBar().maximum() > 0
-                or scroll.verticalScrollBar().maximum() > 0):
-            self.showMaximized()
 
     @staticmethod
     def _screen_scale_factor(width, height):

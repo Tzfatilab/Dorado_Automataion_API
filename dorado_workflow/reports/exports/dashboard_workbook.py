@@ -240,8 +240,7 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
             columns += [('TVR content (%)', lambda r:pct(r['tvr']), '0.00%'),
                         ('Canonical content (%)', lambda r:pct(r['canonical']), '0.00%'),
                         ('TVR patterns', lambda r:', '.join(r['tvr_patterns']) if r.get('tvr_patterns') is not None else MISSING, None)]
-        columns += [('Chromosome', lambda r:', '.join(r['chromosomes']) or MISSING, None),
-                    ('Arm', lambda r:', '.join(r['arms']) or MISSING, None)]
+        columns += [('Chromosome', lambda r:', '.join(r['chromosomes']) or MISSING, None)]
         retained_ids = {record['read_id'] for record in barcode.metrics['filtered_length_records'].value} if filtered is not None else set()
         before_filter = list(filtered or []) + read_rows(barcode, include_unfiltered=True, exclude_ids=retained_ids)
         for record in before_filter:

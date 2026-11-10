@@ -206,26 +206,6 @@ log_message <- function(message, level = "INFO") {
   cat("[", timestamp, "] [", level, "] ", message, "\n", sep = "")
 }
 
-# Create summary statistics data frame
-# Inputs: data (Read-level or measurement table for this operation); group_col (Column defining
-# summary groups); value_col (Numeric column to summarize); stats_name (Prefix used for generated
-# statistic fields)
-# Outputs: Grouped descriptive-statistics table for the selected value column.
-create_summary_stats <- function(data, group_col, value_col, stats_name = "value") {
-  data %>%
-    group_by(!!sym(group_col)) %>%
-    summarise(
-      count = n(),
-      mean = round(mean(!!sym(value_col), na.rm = TRUE), 2),
-      median = round(median(!!sym(value_col), na.rm = TRUE), 2),
-      sd = round(sd(!!sym(value_col), na.rm = TRUE), 2),
-      min = min(!!sym(value_col), na.rm = TRUE),
-      max = max(!!sym(value_col), na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    setNames(c(group_col, paste0(stats_name, "_", c("count", "mean", "median", "sd", "min", "max"))))
-}
-
 # String repetition helper (R doesn't support "string" * number like Python)
 # Inputs: string (Text to repeat); times (Number of repetitions)
 # Outputs: Repeated text string.
