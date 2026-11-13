@@ -25,6 +25,9 @@ def results_section(barcode, results_root):
             paths = [p for p in root.rglob(name)
                      if p.parent.name == 'summaries' and p.parent.parent.name == barcode.label]
     text = paths[0].read_text(encoding='utf-8-sig') if len(paths) == 1 else ''
+    if not paths and results_root is not None:
+        from ..storage.source_tables import retained_text
+        text = retained_text(results_root, barcode.label + '_results.txt')
     # Parse only known exported measurements; missing values stay unavailable.
     fields = dict(line.split(':', 1) for line in text.splitlines() if ':' in line)
     fields = {key.strip(): value.strip() for key, value in fields.items()}

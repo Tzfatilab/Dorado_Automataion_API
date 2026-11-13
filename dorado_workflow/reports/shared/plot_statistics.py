@@ -1,5 +1,26 @@
 """Descriptive statistics of the same observations plotted in each group."""
 from statistics import mean, median
+import heapq
+import math
+
+
+def running_medians(values):
+    """Prefix medians in display order, excluding missing values without filling gaps."""
+    lower, upper, result = [], [], []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            result.append(None)
+            continue
+        if not lower or value <= -lower[0]:
+            heapq.heappush(lower, -value)
+        else:
+            heapq.heappush(upper, value)
+        if len(lower) > len(upper) + 1:
+            heapq.heappush(upper, -heapq.heappop(lower))
+        elif len(upper) > len(lower):
+            heapq.heappush(lower, -heapq.heappop(upper))
+        result.append(-lower[0] if len(lower) > len(upper) else (-lower[0] + upper[0]) / 2)
+    return result
 
 
 def add_group_statistics(figure, groups, *, include_median=True, short_cutoffs=None):

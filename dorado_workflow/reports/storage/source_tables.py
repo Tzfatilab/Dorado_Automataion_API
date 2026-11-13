@@ -11,6 +11,9 @@ from dorado_workflow.utils.source_discovery import source_files
 
 
 def table_name(filename):
+    km = re.fullmatch(r'(barcode\d+)_km_statistics.csv', filename, re.I)
+    if km:
+        return 'km_' + km[1].lower()
     audit = re.fullmatch(r'(barcode\d+)_filtration_reasons.csv', filename, re.I)
     if audit:
         return 'audit_' + audit[1].lower()
@@ -30,10 +33,44 @@ def table_name(filename):
 
 
 def retained_name(name):
-    return name in {'NanoTel Statistics', 'Run metadata', 'Barcode source counts',
+    return name in {'NanoTel text outputs', 'NanoTel Statistics', 'Run metadata', 'Barcode source counts',
                     'Read motifs', 'Read repeat summaries', 'Read mappings', 'Barcode figures', 'KM by barcode',
                     'KM run statistics', 'NanoTel analysis facts', 'Report sources'} or bool(
-        re.fullmatch(r'(?:(?:filtered|final|audit)_)?barcode\d+', name))
+        re.fullmatch(r'(?:(?:filtered|final|audit|km)_)?barcode\d+', name))
+
+
+def text_outputs(root):
+    """Only generator-owned per-barcode text outputs, never arbitrary user files."""
+    root = Path(root).resolve()
+    for path in source_files(root, '*.txt'):
+        match = re.fullmatch(r'(barcode\d+)_(?:reads_ids|results)\.txt', path.name, re.I)
+        if match and path.resolve().is_relative_to(root):
+            yield path
+
+
+def retained_text(results_root, filename):
+    """Read a retired text report from its verified workbook copy."""
+    root = Path(results_root)
+    for path in (root / 'nanotel/nanotel_results.xlsx', root / 'nanotel_results.xlsx',
+                 root / 'nanotel_summary.xlsx'):
+        if not path.is_file():
+            continue
+        book = load_workbook(path, read_only=True, data_only=True)
+        try:
+            title = '_source_NanoTel text outputs'
+            if title not in book.sheetnames:
+                continue
+            matches = {}
+            for name, part, content in list(book[title].values)[1:]:
+                if isinstance(name, str) and Path(name).name == filename:
+                    matches.setdefault(name, []).append((part, content or ''))
+            if len(matches) == 1:
+                parts = sorted(next(iter(matches.values())))
+                if [part for part, _ in parts] == list(range(1, len(parts) + 1)):
+                    return ''.join(content for _, content in parts)
+        finally:
+            book.close()
+    return ''
 
 
 def append_text(sheet, row):
@@ -51,13 +88,41 @@ def append_text(sheet, row):
 
 def retain_source_tables(workbook, results_root, run):
     root = Path(results_root)
+    from ..shared.organism import show_km, km_table
+    include_km = show_km(run)
     candidates = [root / 'nanotel/nanotel_results.xlsx', root / 'nanotel_summary.xlsx',
                   root / 'reports/post_analysis_sources/nanotel_summary.xlsx']
     # Prefer native current tables. Preserve workbook-only sources on subsequent builds.
     tables = {}
+    text_title = '_source_NanoTel text outputs'
+    text_records = {}
+    for path in candidates:
+        if not path.is_file():
+            continue
+        previous = load_workbook(path, read_only=True, data_only=True)
+        try:
+            if text_title in previous.sheetnames:
+                for name, part, content in list(previous[text_title].values)[1:]:
+                    text_records.setdefault((name, part), content or '')
+        finally:
+            previous.close()
+    for path in text_outputs(root):
+        name = path.relative_to(root.resolve()).as_posix()
+        text_records = {key: value for key, value in text_records.items() if key[0] != name}
+        content = path.read_text(encoding='utf-8-sig')
+        for part, offset in enumerate(range(0, max(1, len(content)), 30000), 1):
+            text_records[(name, part)] = content[offset:offset + 30000]
+    if text_records:
+        if text_title in workbook.sheetnames:
+            del workbook[text_title]
+        sheet = workbook.create_sheet(text_title)
+        append_text(sheet, ['Path', 'Part', 'Text'])
+        for (name, part), content in sorted(text_records.items()):
+            append_text(sheet, [name, part, content])
+        sheet.sheet_state = 'hidden'
     for path in source_files(root, '*.csv'):
         name = table_name(path.name)
-        if name:
+        if name and (include_km or not km_table(name)):
             if name in tables:
                 raise ValueError('Duplicate source table: ' + name)
             tables[name] = path
@@ -87,6 +152,8 @@ def retain_source_tables(workbook, results_root, run):
         try:
             for source in previous:
                 name = source.title.removeprefix('_source_')
+                if not include_km and km_table(name):
+                    continue
                 if not source.title.startswith('_source_') or not retained_name(name) or source.title in workbook.sheetnames:
                     continue
                 sheet = workbook.create_sheet(source.title)
@@ -140,6 +207,20 @@ def cleanup_source_tables(results_root, workbook_path):
     """Remove only current CSVs whose complete contents match the saved workbook."""
     book = load_workbook(workbook_path, read_only=True, data_only=True)
     try:
+        title = '_source_NanoTel text outputs'
+        if title in book.sheetnames:
+            records = {}
+            for name, part, content in list(book[title].values)[1:]:
+                records.setdefault(name, []).append((part, content or ''))
+            root = Path(results_root).resolve()
+            for path in text_outputs(root):
+                parts = sorted(records.get(path.relative_to(root).as_posix(), []))
+                if (parts and [p for p, _ in parts] == list(range(1, len(parts) + 1))
+                        and path.read_text(encoding='utf-8-sig') == ''.join(text for _, text in parts)):
+                    try:
+                        path.unlink()
+                    except OSError as exc:
+                        warnings.warn(f'Unified Excel saved; could not remove text output {path}: {exc}')
         for path in source_files(results_root, '*.csv'):
             name = table_name(path.name)
             title = '_source_' + name if name else ''

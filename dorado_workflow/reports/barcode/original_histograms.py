@@ -29,7 +29,10 @@ def original_histograms(barcodes, settings):
         rows = read_rows(barcode)
         if rows is None or any(row['telomere'] is None for row in rows):
             continue
-        requests.append(dict(id=barcode.id, barcode=barcode.label, mismatch_allowance=int(mode),
+        from ..shared.organism import km_requested
+        params = settings.value if settings.status == 'available' else {}
+        params = params.get('nanotel_analysis', params)
+        requests.append(dict(id=barcode.id, barcode=barcode.label, mismatch_allowance=int(mode), include_km=km_requested(params),
             lengths_bp=[row['telomere'] for row in rows], read_ids=[row['header'] for row in rows]))
     if not requests:
         return {}

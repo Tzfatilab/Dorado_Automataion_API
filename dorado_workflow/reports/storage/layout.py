@@ -1,4 +1,4 @@
-"""Organized output entry points; scientific source artifacts stay in place."""
+"""Organize user-facing reports and their retained supporting data."""
 from html import escape
 from pathlib import Path
 from urllib.parse import quote
@@ -33,6 +33,29 @@ def atomic_text(path, text):
         Path(temporary).unlink(missing_ok=True)
 
 
+def organize_supporting_data(root):
+    """Move native barcode data beneath one folder without merging or overwriting."""
+    root = Path(root).resolve()
+    destination = root / 'supporting_data'
+    if destination.is_symlink() or (destination.exists() and not destination.is_dir()):
+        raise ValueError('Invalid supporting-data directory')
+    moves = []
+    for folder in root.glob('barcode*'):
+        if not folder.is_dir() or not re.fullmatch(r'barcode\d+', folder.name, re.I):
+            continue
+        target = destination / folder.name
+        if (folder.is_symlink() or not folder.resolve().is_relative_to(root)
+                or not target.resolve().is_relative_to(root)):
+            raise ValueError('Barcode data path leaves the NanoTel directory')
+        if target.exists():
+            raise FileExistsError(f'Supporting data already exists: {target}')
+        moves.append((folder, target))
+    if moves:
+        destination.mkdir(exist_ok=True)
+        for folder, target in moves:
+            folder.rename(target)
+
+
 def organize_barcode_reports(root):
     """Move human-facing reports into subfolders; keep pipeline inputs in place.
 
@@ -48,7 +71,8 @@ def organize_barcode_reports(root):
     """
     root = Path(root).resolve()
     moves = []
-    for folder in sorted(root.glob('barcode*')):
+    from dorado_workflow.utils.source_discovery import barcode_directories
+    for folder in barcode_directories(root):
         if not folder.is_dir() or not re.fullmatch(r'barcode\d+', folder.name, re.I):
             continue
         for source in [*folder.iterdir(), *folder.glob('plots/*.plotly.json'), *folder.glob('summaries/*_results.txt')]:
@@ -84,7 +108,8 @@ def report_index(root):
         HTML linking the saved human-facing barcode reports.
     """
     sections = []
-    for folder in sorted(root.glob('barcode*')):
+    from dorado_workflow.utils.source_discovery import barcode_directories
+    for folder in barcode_directories(root):
         if not folder.is_dir() or not folder.resolve().is_relative_to(root.resolve()):
             continue
         links = []
@@ -95,7 +120,7 @@ def report_index(root):
                 continue
             if path.suffix.lower() not in ('.html', '.png', '.txt', '.xlsx'):
                 continue
-            if path.name.endswith('_reads_ids.txt') or '_telomere_' in path.name:
+            if path.name.endswith(('_reads_ids.txt', '_results.txt')) or '_telomere_' in path.name:
                 continue
             url = quote(path.relative_to(root).as_posix(), safe='/')
             links.append(f'<li><a href="{url}">{escape(path.relative_to(folder).as_posix())}</a></li>')
@@ -116,7 +141,8 @@ def write_run_reports(root, run, page):
         Path to the saved self-contained dashboard.
     """
     root = Path(root).resolve()
-    destination = root/'dashboard.html'
+    from ..shared.report_identity import dashboard_filename
+    destination = root / dashboard_filename(run.label)
     # Raw per-window/per-hit tracks already live in scientific exports. Duplicating
     # them here can make the HTML gigabytes large, even though charts use aggregates.
     manifest = dict(schema_version=run.schema_version, run_id=run.id,
@@ -137,7 +163,8 @@ def write_run_reports(root, run, page):
     atomic_text(destination, page)
     # The self-contained dashboard has been saved successfully. Delete only
     # known redundant barcode viewers/images with retained source specifications.
-    for folder in root.glob('barcode*'):
+    from dorado_workflow.utils.source_discovery import barcode_directories
+    for folder in barcode_directories(root):
         for plot in folder.glob('plots/*'):
             match = re.fullmatch(re.escape(folder.name) + r'_telomere_(plot|histogram)(?:_pct)?\.(html|png)', plot.name)
             if match and (folder.name+'_telomere_'+match[1]+'.plotly.json') in page and plot.resolve().is_relative_to(root) and (folder/'report_details'/(folder.name+'_telomere_'+match[1]+'.plotly.json')).is_file():
@@ -151,7 +178,8 @@ def write_run_reports(root, run, page):
 
     # Retire only recognized generator-owned entry points, after the new file
     # exists. Never recursively delete a directory that may contain user files.
-    legacy = [(root/'index.html', '<title>NanoTel Reports</title>'),
+    legacy = [(root/'dashboard.html', 'id="source-data"'),
+              (root/'index.html', '<title>NanoTel Reports</title>'),
               (root/'all_barcodes.html', '<title>NanoTel dashboard</title>'),
               (root/'dashboard'/'index.html', 'Telomere Analysis Summary')]
     old_folder = root/'dashboard'

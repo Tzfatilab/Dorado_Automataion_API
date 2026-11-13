@@ -7,6 +7,30 @@ import re
 from dorado_workflow.reports.shared.organism import show_km
 
 
+RUNNING_MEDIAN_NOTE = ('Running median: cumulative median of the measured telomere lengths in the displayed read order; '
+                       'missing telomere lengths are excluded. This display calculation does not change filtering.')
+
+
+def _running_median_trace(x, lengths):
+    from ..shared.plot_statistics import running_medians
+    return dict(type='scatter', x=x, y=running_medians(lengths), mode='lines',
+                name='Running median telomere length', line=dict(color='#4169e1', width=2.5),
+                hovertemplate='Running median telomere length: %{y:.3f}<extra></extra>')
+
+
+def _ensure_running_median(figure):
+    if any('median' in str(trace.get('name', '')).lower() for trace in figure['data']):
+        return False
+    traces = [trace for trace in figure['data']
+              if 'telomere' in str(trace.get('name', '')).lower()
+              and 'length' in str(trace.get('name', '')).lower()
+              and isinstance(trace.get('y'), list) and isinstance(trace.get('x'), list)]
+    if len(traces) != 1 or len(traces[0]['x']) != len(traces[0]['y']):
+        return False
+    figure['data'].append(_running_median_trace(traces[0]['x'], traces[0]['y']))
+    return True
+
+
 def _hide_completeness(figure):
     """Hide completeness overlays in the embedded copy, retaining menu indexes.
 
@@ -17,12 +41,17 @@ def _hide_completeness(figure):
         None.
     """
     for trace in figure['data']:
-        if 'censored' in str(trace.get('name', '')).casefold():
+        if re.search(r'censor|kaplan|\bKM\b|completeness|^complete reads', str(trace.get('name', '')), re.I):
             # The rug repeats observations already counted in the histogram.
             # Retain its slot so saved count/percentage updates keep their targets.
             trace.clear()
             trace.update(type='scatter', x=[], y=[], visible=False, showlegend=False)
     layout = figure['layout']
+    title = layout.get('title')
+    if isinstance(title, str):
+        layout['title'] = re.sub(r'\s*\|\s*(?:complete|censored|unknown):\s*\d+', '', title, flags=re.I)
+    elif isinstance(title, dict) and isinstance(title.get('text'), str):
+        title['text'] = re.sub(r'\s*\|\s*(?:complete|censored|unknown):\s*\d+', '', title['text'], flags=re.I)
     if isinstance(layout.get('meta'), dict):
         layout['meta'].pop('read_completeness', None)
     for annotation in layout.get('annotations', []):
@@ -31,7 +60,7 @@ def _hide_completeness(figure):
                 r'\s*\|\s*(?:complete|censored|unknown):\s*\d+', '',
                 annotation['text'], flags=re.IGNORECASE)
     layout['annotations'] = [a for a in layout.get('annotations', [])
-                             if 'censor' not in str(a.get('text', '')).casefold()]
+                             if not re.search(r'censor|kaplan|\bKM\b|completeness', str(a.get('text', '')), re.I)]
     # No rug remains: attach the x axis to the main plot, without a blank lane.
     layout.setdefault('xaxis', {})['anchor'] = 'y'
     layout.setdefault('yaxis', {})['domain'] = [0, 1]
@@ -184,6 +213,7 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
         regenerated = original_histograms(missing, run.settings)
     sections = {}
     for barcode in run.barcodes:
+        median_added = False
         paths = specifications.get(f'{barcode.label}_telomere_{kind}.plotly.json'.lower(), []) or found.get(f'{barcode.label}_telomere_{kind}.html'.lower(), [])
         # Use the numbered dashboard heading as the single visible plot title.
         heading = (f'<section><div class="histogram-heading"><h2><span class="number">{number}</span>'
@@ -253,6 +283,8 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
                         axis['title'] = {'text': axis['title']}
                 # Escaping script delimiters prevents source labels closing the
                 # JSON element. Values and histogram bins are retained verbatim.
+                if kind == 'plot':
+                    median_added = _ensure_running_median(figure)
                 payload = json.dumps(figure, ensure_ascii=True, allow_nan=False).replace('<', '\\u003c')
             except (ValueError, UnicodeError, TypeError):
                 reason = f'Saved {kind} has missing or invalid Plotly figure data.'
@@ -262,6 +294,8 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
         rebuilt = barcode.id in regenerated
         figure_note = ('Post-filtered reads, matching the cards and read table. Original NanoTel bins, smoothing and count/percentage controls.'
                        if rebuilt else note)
+        if median_added:
+            figure_note += ' ' + RUNNING_MEDIAN_NOTE
         sections[barcode.id] = (heading + '<div class="saved-histogram"></div>'
             f'<script type="application/json" class="histogram-figure">{payload}</script>'
             f'<p class="note">{escape(figure_note)}</p></section>')
@@ -271,8 +305,8 @@ def _saved_plot_sections(run, results_root, kind, number, title, note):
 def _exported_read_length_plot(barcode, settings, heading):
     """Show exported per-read lengths when the saved line plot is absent.
 
-    Explicitly uses imported populations; never reconstructs filter decisions or
-    running medians from a different population.
+    The running median describes only these displayed before-filter measurements;
+    it is not substituted for NanoTel's pre-edge running median or filter decisions.
 
     Args:
         barcode: Imported Barcode record containing reads, metrics and evidence.
@@ -299,7 +333,9 @@ def _exported_read_length_plot(barcode, settings, heading):
             hovertemplate='%{text}<br>'+name+': %{y:.3f} kb<extra></extra>'))
     fig.update_layout(xaxis_title='Read (sorted by read length)',yaxis_title='Length (kb)',
                       yaxis_rangemode='tozero',showlegend=True)
-    note='Before-filter summary reads, sorted by read length. Original NanoTel pre-edge plot data was not retained; no running median is inferred.'
+    fig.add_trace(_running_median_trace(list(range(1, len(rows)+1)),
+                  [r[method]/1000 if r[method] is not None else None for r in rows]))
+    note='Before-filter summary reads, sorted by read length. ' + RUNNING_MEDIAN_NOTE
     fig.update_layout(template='plotly_white',font=dict(family='Segoe UI, Arial',color='#12203c'))
     layout=fig.layout.to_plotly_json()
     _style_length_plot(layout)

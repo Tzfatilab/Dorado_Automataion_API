@@ -28,12 +28,64 @@ if (!exists("log_message", mode = "function")) {
   source(file.path(script_dir, "utils.R"))
 }
 
+# Load and normalize once per mapping run; callers share the read-only table.
+load_alignment_summary <- function(alignment_summary_path) {
+  validate_file_exists(alignment_summary_path, "Alignment summary")
+  # SAM-derived fields are tab-separated; '#' is valid content, not a comment.
+  minimap <- read.table(alignment_summary_path, header = TRUE, sep = "\t",
+                        stringsAsFactors = FALSE, comment.char = "")
+
+  # Remove unwanted columns if they exist
+  unwanted_cols <- c("filename", "alignment_bed_hits")
+  minimap <- minimap[, !(names(minimap) %in% unwanted_cols)]
+
+  # Dorado/minimap summaries have changed column names across versions.
+  # Normalize the MAPQ column once so downstream filters stay stable.
+  mapq_candidates <- c("alignment_mapq", "mapq", "mapping_quality", "alignment_mapping_quality")
+  mapq_col <- mapq_candidates[mapq_candidates %in% names(minimap)][1]
+  if (is.na(mapq_col)) {
+    stop(
+      "Alignment summary is missing a MAPQ column. Expected one of: ",
+      paste(mapq_candidates, collapse = ", "),
+      ". Found columns: ",
+      paste(names(minimap), collapse = ", ")
+    )
+  }
+  minimap$alignment_mapq <- suppressWarnings(as.numeric(minimap[[mapq_col]]))
+  if (all(is.na(minimap$alignment_mapq))) {
+    stop("MAPQ column '", mapq_col, "' could not be converted to numeric values")
+  }
+  required_cols <- c(
+    "read_id",
+    "alignment_direction",
+    "alignment_genome",
+    "alignment_genome_start",
+    "alignment_genome_end"
+  )
+  missing_cols <- required_cols[!(required_cols %in% names(minimap))]
+  if (length(missing_cols) > 0) {
+    stop(
+      "Alignment summary is missing required columns: ",
+      paste(missing_cols, collapse = ", "),
+      ". Found columns: ",
+      paste(names(minimap), collapse = ", ")
+    )
+  }
+  minimap$alignment_genome_start <- suppressWarnings(as.numeric(minimap$alignment_genome_start))
+  minimap$alignment_genome_end <- suppressWarnings(as.numeric(minimap$alignment_genome_end))
+
+  minimap$read_id_clean <- sub("[[:space:]].*$", "", as.character(minimap$read_id))
+  log_message(paste("Loaded alignment data:", nrow(minimap), "alignments"))
+  minimap
+}
+
 # Process alignment and NanoTel data for a single barcode
 # Inputs: alignment_summary_path (Tab-separated exported alignment summary); filtered_nanotel_path
 # (Post-filtered NanoTel read table); bam_file_path (Existing aligned BAM path); output_dir
 # (Directory for generated outputs); barcode_name (Original barcode label); min_mapq (Minimum
 # accepted alignment mapping quality); head_max_start (Maximum accepted Head alignment start
-# coordinate); tail_min_end (Minimum accepted Tail alignment end coordinate)
+# coordinate); tail_min_end (Minimum accepted Tail alignment end coordinate);
+# alignment_data (Optional shared normalized table from load_alignment_summary)
 # Outputs: Mapped/filtered read records, retained read IDs and diagnostics.
 process_barcode_mapping <- function(alignment_summary_path,
                                     filtered_nanotel_path,
@@ -42,7 +94,8 @@ process_barcode_mapping <- function(alignment_summary_path,
                                     barcode_name,
                                     min_mapq = 10,
                                     head_max_start = 5000,
-                                    tail_min_end = 35000) {
+                                    tail_min_end = 35000,
+                                    alignment_data = NULL) {
 
   log_message(paste("Processing mapping for barcode:", barcode_name))
   log_message("Mapping filter mode: MAPQ + Head/Tail position; strand is diagnostic only")
@@ -54,50 +107,7 @@ process_barcode_mapping <- function(alignment_summary_path,
 
   ensure_directory_exists(output_dir)
 
-  # SAM-derived fields are tab-separated; '#' is valid content, not a comment.
-  minimap <- read.table(alignment_summary_path, header = TRUE, sep = "\t",
-                        stringsAsFactors = FALSE, comment.char = "")
-
-  # Remove unwanted columns if they exist
-  unwanted_cols <- c("filename", "alignment_bed_hits")
-  minimap <- minimap[, !(names(minimap) %in% unwanted_cols)]
-
-  log_message(paste("Loaded alignment data:", nrow(minimap), "alignments"))
-
- # Dorado/minimap summaries have changed column names across versions.
- # Normalize the MAPQ column once so downstream filters stay stable.
- mapq_candidates <- c("alignment_mapq", "mapq", "mapping_quality", "alignment_mapping_quality")
- mapq_col <- mapq_candidates[mapq_candidates %in% names(minimap)][1]
- if (is.na(mapq_col)) {
-   stop(
-     "Alignment summary is missing a MAPQ column. Expected one of: ",
-     paste(mapq_candidates, collapse = ", "),
-     ". Found columns: ",
-     paste(names(minimap), collapse = ", ")
-   )
- }
- minimap$alignment_mapq <- suppressWarnings(as.numeric(minimap[[mapq_col]]))
- if (all(is.na(minimap$alignment_mapq))) {
-   stop("MAPQ column '", mapq_col, "' could not be converted to numeric values")
- }
- required_cols <- c(
-   "read_id",
-   "alignment_direction",
-   "alignment_genome",
-   "alignment_genome_start",
-   "alignment_genome_end"
- )
- missing_cols <- required_cols[!(required_cols %in% names(minimap))]
- if (length(missing_cols) > 0) {
-   stop(
-     "Alignment summary is missing required columns: ",
-     paste(missing_cols, collapse = ", "),
-     ". Found columns: ",
-     paste(names(minimap), collapse = ", ")
-   )
- }
- minimap$alignment_genome_start <- suppressWarnings(as.numeric(minimap$alignment_genome_start))
- minimap$alignment_genome_end <- suppressWarnings(as.numeric(minimap$alignment_genome_end))
+  minimap <- if (is.null(alignment_data)) load_alignment_summary(alignment_summary_path) else alignment_data
 
   # Read filtered NanoTel data
   nanotel_data <- safe_read_csv(filtered_nanotel_path, col_types = cols())
@@ -119,7 +129,6 @@ process_barcode_mapping <- function(alignment_summary_path,
   # Clean read IDs in both datasets first
   # Normalize whitespace-delimited FASTQ metadata, including tab-separated tags.
   # Apply this to both sources so existing filtered exports remain compatible.
-  minimap$read_id_clean <- sub("[[:space:]].*$", "", as.character(minimap$read_id))
   nanotel_data$read_id_clean <- sub("[[:space:]].*$", "", as.character(nanotel_data$read_id))
 
   log_message(paste("Created cleaned read IDs"))

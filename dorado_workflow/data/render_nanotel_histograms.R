@@ -19,7 +19,8 @@ for (request in requests) {
     event = rep(NA_integer_, length(lengths))
   )
   histogram <- make_telomere_histogram_data(reads)
-  figure <- make_telomere_histogram_plot(histogram, request$barcode, request$mismatch_allowance)
+  figure <- make_telomere_histogram_plot(histogram, request$barcode, request$mismatch_allowance,
+                                        include_km = isTRUE(request$include_km))
   figures[[request$id]] <- jsonlite::fromJSON(
     as.character(plotly::plotly_json(figure, jsonedit = FALSE)), simplifyVector = FALSE)
 }

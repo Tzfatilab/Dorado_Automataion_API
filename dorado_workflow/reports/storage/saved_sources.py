@@ -11,17 +11,20 @@ MANIFEST = "report_sources.json"
 
 
 def source_folders(nanotel):
+    from dorado_workflow.utils.source_discovery import barcode_directories
+    local = {folder.name: folder for folder in barcode_directories(nanotel)
+             if any((folder / name).exists() for name in ('reads', 'report_details', 'report_details.zip'))}
     path = Path(nanotel) / MANIFEST
     if path.is_file():
         info = path.stat()
-        return dict(_source_folders(path, info.st_mtime_ns, info.st_size, False))
+        return dict(_source_folders(path, info.st_mtime_ns, info.st_size, False)) | local
     # Completed recalculations keep internal source references in their unified
     # Excel instead of a separate JSON file in the user's results directory.
     for book in (Path(nanotel) / 'nanotel_results.xlsx', Path(nanotel).parent / 'nanotel_summary.xlsx'):
         if book.is_file():
             info = book.stat()
-            return dict(_source_folders(book, info.st_mtime_ns, info.st_size, True))
-    return {}
+            return dict(_source_folders(book, info.st_mtime_ns, info.st_size, True)) | local
+    return local
 
 
 @lru_cache(maxsize=32)

@@ -56,12 +56,12 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
             for alignment in read.alignments.value:
                 chromosome, arm = alignment.get('chromosome'), alignment.get('arm')
                 if chromosome and chromosome.status == 'available':
-                    label = str(chromosome.value)
+                    chromosome_label = str(chromosome.value)
                     if arm and arm.status == 'available':
                         end = str(arm.value)
-                        assignments.add((label, end))
-                        label += end if end in {'p', 'q'} else '_' + end
-                    chromosomes.add(label)
+                        assignments.add((chromosome_label, end))
+                        chromosome_label += end if end in {'p', 'q'} else '_' + end
+                    chromosomes.add(chromosome_label)
         def measurement(key):
             """Available read metric value, or None when unavailable.
 
@@ -216,7 +216,9 @@ def reads_section(barcode, results_root=None, show_completeness=True, summary_on
     folder = None
     if results_root is not None:
         root = Path(results_root)
-        candidates = [root / 'nanotel' / barcode.label, root / barcode.label, root]
+        candidates = [root / 'nanotel' / 'supporting_data' / barcode.label,
+                      root / 'supporting_data' / barcode.label,
+                      root / 'nanotel' / barcode.label, root / barcode.label, root]
         folder = next((p for p in candidates if p.name == barcode.label and p.is_dir()), None)
         if folder is None:
             from ..storage.saved_sources import source_folders
@@ -242,7 +244,8 @@ def reads_section(barcode, results_root=None, show_completeness=True, summary_on
     filter_reasons = saved_filter_reasons(folder)
     track_scripts = []
     for row in (rows or []) + extra_rows:
-        row['completeness'] = completeness.get(row['header'])
+        if show_completeness:
+            row['completeness'] = completeness.get(row['header'])
         row['nanotel_filter_reason'] = filter_reasons.get(row['header'])
         data = row.pop('track_data', None)
         if data is not None:

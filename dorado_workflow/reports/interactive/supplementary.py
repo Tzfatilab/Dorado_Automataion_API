@@ -74,6 +74,14 @@ def import_statistics(importer, barcode, number):
                 {'value': raw}, 'value', field_evidence.get('total_read_length_median_bp', ev),
                 unit='bp', population='input_reads')
 
+    from ..shared.organism import km_requested
+    settings = importer.metadata.get('settings', {})
+    params = settings.get('nanotel_analysis', settings.get('nanotel', settings))
+    if not km_requested(params):
+        from ..shared.organism import is_km_field
+        barcode.metrics = {key: fact for key, fact in barcode.metrics.items() if not is_km_field(key)}
+        return
+
     paths = importer.files(f"{barcode.label}_km_statistics.csv")
     if len(paths) == 1:
         _, rows, _ = importer.csv_table(paths[0])
@@ -84,7 +92,8 @@ def import_statistics(importer, barcode, number):
         barcode.warnings.append("Ambiguous KM statistics files; statistics not imported")
         return
     else:
-        table = getattr(importer, 'saved_statistics', {}).get('KM by barcode')
+        saved = getattr(importer, 'saved_statistics', {})
+        table = saved.get('km_' + barcode.label) or saved.get('KM by barcode')
         rows = [(r, e) for r, e in table[1] if r.get('barcode') == barcode.label] if table else []
         if len(rows) != 1:
             if rows:
@@ -124,7 +133,7 @@ def chromosome_fact(reference, evidence):
     Returns:
         Chromosome Fact from an explicit supported reference label, or an unavailable Fact.
     """
-    match = re.fullmatch(r"(chr(?:[0-9]+|X|Y|M|MT))(?:_(?:Head|Tail))?", str(reference or ""))
+    match = re.fullmatch(r"(chr(?:[0-9]+|X|Y|M|MT))(?:(?:_(?:Head|Tail|p|q))|[pq])?", str(reference or ""), re.I)
     if not match:
         return unavailable("Reference name does not establish a chromosome")
     return Fact(A.AVAILABLE, match.group(1), evidence=[evidence],

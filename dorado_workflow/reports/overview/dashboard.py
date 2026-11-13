@@ -15,6 +15,7 @@ import argparse
 from pathlib import Path
 from ..storage.layout import atomic_text, SAVED_REPORTS_MARKER
 import json
+from html import escape
 from dataclasses import asdict
 from dorado_workflow.reports.interactive.importers import import_results
 from dorado_workflow.reports.overview.comparisons import comparison_figures, comparison_data
@@ -164,11 +165,16 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
     navigation, barcode_pages = barcode_views(run, ICONS, barcode_plots, results_root=results_root,summary_only=summary_only,comparisons=comparisons)
     css = (Path(__file__).parents[1] / "assets" / "dashboard.css").read_text(encoding="utf-8")
     barcode_summary = barcode_summary_section(run, comparisons)
-    body_attributes = ' data-summary-only="true"' if summary_only else ''
+    body_attributes = ' data-run-label="' + escape(run.label, quote=True) + '"'
+    body_attributes += ' data-summary-only="true"' if summary_only else ''
+    organism = str(run.organism.value) if run.organism.status == 'available' else 'Not recorded'
+    report_title = TITLE + ' | ' + run.label
+    run_identity = ('Run: ' + escape(run.label) + ' &nbsp; | &nbsp; Organism: ' + escape(organism)
+                    + (' &nbsp; | &nbsp; Summary' if summary_only else ''))
     if summary_only:
         css += 'body[data-summary-only] .reads-table tr:focus{outline:2px solid #d59a15}'
     # The per-barcode statistics table leads the overview comparison panels.
-    html = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{TITLE}</title><style>{css}</style><script>{get_plotlyjs()}</script></head><body{body_attributes}><header><h1>{TITLE}</h1><span>Project overview &nbsp; | &nbsp; NanoTel summary</span></header><main><div id="run-overview">{navigation}{barcode_summary}<div class="charts">{"".join(panels)}</div>{selection_data}</div>{barcode_pages}<section id="unknown-barcode" hidden><h2>Barcode or read not found</h2><a href="#/">Back to All Barcodes</a></section>{SAVED_REPORTS_MARKER}</main>{ROUTER}</body></html>'
+    html = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(report_title)}</title><style>{css}</style><script>{get_plotlyjs()}</script></head><body{body_attributes}><header><h1>{TITLE}</h1><span class="run-identity">{run_identity}</span></header><main><div id="run-overview">{navigation}{barcode_summary}<div class="charts">{"".join(panels)}</div>{selection_data}</div>{barcode_pages}<section id="unknown-barcode" hidden><h2>Barcode or read not found</h2><a href="#/">Back to All Barcodes</a></section>{SAVED_REPORTS_MARKER}</main>{ROUTER}</body></html>'
     export_script = (Path(__file__).parents[1] / 'assets' / 'graph_export.js').read_text(encoding='utf-8')
     table_export_script = (Path(__file__).parents[1] / 'assets' / 'table_export.js').read_text(encoding='utf-8')
     spacing_script = (Path(__file__).parents[1] / 'assets' / 'chromosome_spacing.js').read_text(encoding='utf-8')
@@ -228,7 +234,8 @@ def generate_run_report(results, nanotel_directory, progress=None):
     """Save a self-contained dashboard.html directly under NanoTel.
 
     Source provenance and links to barcode reports are embedded in the HTML.
-    Scientific exports stay at their original paths for downstream consumers.
+    Native barcode exports are grouped under supporting_data; recalculations
+    keep references to their original read details without copying them.
 
     Args:
         results: Results directory or collected processing results.
@@ -244,6 +251,10 @@ def generate_run_report(results, nanotel_directory, progress=None):
     started = perf_counter()
     progress("Dashboard: discovering saved report sources")
     organize_barcode_reports(nanotel_directory)
+    is_recalculated_run = (Path(results) / 'reports' / 'post_analysis_source.json').is_file()
+    if not is_recalculated_run:
+        from ..storage.layout import organize_supporting_data
+        organize_supporting_data(nanotel_directory)
     # Import and embed saved plots while the archive contents are available.
     with available_details(results):
         run = import_results(results, progress=progress)
@@ -259,16 +270,17 @@ def generate_run_report(results, nanotel_directory, progress=None):
         write_dashboard_workbook(run, Path(nanotel_directory) / "nanotel_results.xlsx", results, comparisons=comparisons)
         progress(f"Dashboard: Excel saved in {perf_counter()-started:.1f}s; verifying retained sources")
         from dorado_workflow.reports.storage.analysis_metadata import cleanup_analysis_json
-        cleanup_analysis_json(results)
+        from ..shared.organism import show_km
+        cleanup_analysis_json(results, include_km=show_km(run))
     from ..storage.source_tables import cleanup_source_tables
     cleanup_source_tables(results, Path(nanotel_directory) / 'nanotel_results.xlsx')
     progress("Dashboard: source verification complete")
     # Recalculation references original details. Only native detection exports
     # belong in a new archive; never repack source details for a recalculation.
-    is_recalculated_run = (Path(results) / 'reports' / 'post_analysis_source.json').is_file()
     if not is_recalculated_run:
         # Archive only after a complete dashboard has been saved successfully.
-        for barcode_directory in Path(nanotel_directory).glob('barcode*'):
+        from dorado_workflow.utils.source_discovery import barcode_directories
+        for barcode_directory in barcode_directories(nanotel_directory):
             if barcode_directory.is_dir():
                 pack_details(barcode_directory)
     return destination
@@ -320,8 +332,12 @@ def write_summary_dashboard(run, destination, comparisons=None):
     Returns:
         Path object for the requested artifact.
     """
-    destination = Path(destination)
+    from ..shared.report_identity import dashboard_filename
+    destination = Path(destination).with_name(dashboard_filename(run.label, summary=True))
     atomic_text(destination, render_summary(run, results_root=destination.parent, comparisons=comparisons))
+    legacy = destination.parent / 'dashboard_summary.html'
+    if legacy != destination and legacy.is_file() and 'data-summary-only="true"' in legacy.read_text(encoding='utf-8'):
+        legacy.unlink()
     return destination
 
 

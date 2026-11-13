@@ -20,7 +20,7 @@
     document.querySelectorAll('.saved-barcode-reports').forEach(el => el.hidden = readVisible);
     missing.hidden = hash === '#/' || !!page || readVisible;
     if (!readVisible) title.textContent = 'Telomere Analysis Summary - ' + (page ? page.dataset.label : 'All Barcodes');
-    document.title = title.textContent;
+    document.title = title.textContent + (document.body.dataset.runLabel ? ' | ' + document.body.dataset.runLabel : '');
     // Render the source-saved histogram only once its barcode is visible, so
     // Plotly measures the correct width. No bins or scientific values change.
     if (page) page.querySelectorAll('.saved-histogram').forEach(plot => {

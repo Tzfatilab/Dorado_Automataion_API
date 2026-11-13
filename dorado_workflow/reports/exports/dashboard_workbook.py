@@ -162,7 +162,12 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
         Returns:
             None.
         """
+        from ..shared.organism import is_km_field, without_km
+        if not show_km(run) and is_km_field(key):
+            return
         raw = value(fact)
+        if not show_km(run):
+            raw = without_km(raw)
         if isinstance(raw, (dict, list, tuple)):
             raw = json.dumps(raw, default=lambda x: asdict(x) if is_dataclass(x) else str(x), ensure_ascii=True)
         chunks = [raw[i:i+30000] for i in range(0, len(raw), 30000)] if isinstance(raw, str) and len(raw)>30000 else [raw]
@@ -244,7 +249,7 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
         retained_ids = {record['read_id'] for record in barcode.metrics['filtered_length_records'].value} if filtered is not None else set()
         before_filter = list(filtered or []) + read_rows(barcode, include_unfiltered=True, exclude_ids=retained_ids)
         for record in before_filter:
-            record['filtration_status'] = ('Passed' if record['id'] in retained_ids else 'Not retained') if filtered is not None else 'Unavailable'
+            record['filtration_status'] = ('Passed' if record['id'] in retained_ids else 'Filtered out') if filtered is not None else 'Unavailable'
         for name, records in [(barcode.label, before_filter)]:
             barcode_sheet = sheet(name,[c[0] for c in columns])
             for record in records or []:
@@ -315,10 +320,12 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     wb.active = 0
     if results_root is not None:
         from ..storage.analysis_metadata import retain_analysis_sheet
-        retain_analysis_sheet(wb, results_root)
+        retain_analysis_sheet(wb, results_root, include_km=show_km(run))
         from ..storage.source_tables import retain_source_tables
         retain_source_tables(wb, results_root, run)
     facts.sheet_state = 'hidden'
+    from ..shared.organism import filter_km_workbook
+    filter_km_workbook(wb, show_km(run))
     return wb
 
 

@@ -180,7 +180,8 @@ def run_pipeline(
     # A display/export failure must not discard successful scientific results.
     report_warning = ""
     if result and do_nanotel and summary_only:
-        summary_path = context.path_manager.get_r_analysis_dir_path() / "dashboard_summary.html"
+        from dorado_workflow.reports.shared.report_identity import summary_dashboard_path
+        summary_path = summary_dashboard_path(context.path_manager.get_r_analysis_dir_path())
         log(f"Summary only: Excel and compact dashboard saved; detailed NanoTel outputs skipped.")
         if summary_path.is_file():
             log(f"Summary dashboard: {summary_path}")
@@ -965,7 +966,8 @@ def _run_post_analysis(*, project_path, output_dir, organism, summary_only, read
                                        run_mapping=mapping)
     if result is None:
         return (1, "Post-analysis failed; original project was not modified. Inspect the run log.")
-    dashboard = (context.path_manager.get_r_analysis_dir_path() / "dashboard_summary.html"
+    from dorado_workflow.reports.shared.report_identity import summary_dashboard_path
+    dashboard = (summary_dashboard_path(context.path_manager.get_r_analysis_dir_path())
                  if summary_only else _write_full_report(context, log, check_cancelled))
     if not dashboard.is_file():
         return (1, "Post-analysis finished without a dashboard; inspect the run log.")

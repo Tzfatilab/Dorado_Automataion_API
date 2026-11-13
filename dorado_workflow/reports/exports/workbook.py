@@ -62,6 +62,10 @@ class NanoTelWorkbookWriter:
             Path to the completed workbook.
         """
         summary_csv = self.source_dir / "nanotel_summary_statistics.csv"
+        from ..shared.organism import filter_km_workbook, show_km, km_requested, is_km_field
+        config = self.results_dir / 'reports' / 'r_pipeline_config.json'
+        params = json.loads(config.read_text(encoding='utf-8')).get('nanotel_analysis', {}) if config.is_file() else {}
+        include_km = show_km(run) if run is not None else km_requested(params)
 
         workbook = Workbook()
         summary_sheet = workbook.active
@@ -107,7 +111,7 @@ class NanoTelWorkbookWriter:
         for filename, title in [("km_barcode_statistics.csv", "KM by barcode"),
                                 ("km_run_statistics.csv", "KM run statistics")]:
             path = self.source_dir / filename
-            if path.is_file():
+            if include_km and path.is_file():
                 sheet = workbook.create_sheet(title)
                 self._populate_csv_sheet(sheet, path)
         analysis_rows = []
@@ -118,7 +122,7 @@ class NanoTelWorkbookWriter:
                 if not isinstance(data, dict) or data.get("barcode") != barcode:
                     raise ValueError(f"Analysis barcode identity mismatch: {path}")
                 analysis_rows.extend([barcode, key, value]
-                                     for key, value in flatten_analysis(data))
+                                     for key, value in flatten_analysis(data) if include_km or not is_km_field(key))
         if analysis_rows:
             sheet = workbook.create_sheet("NanoTel analysis facts")
             sheet.append(["Barcode", "Source field", "Value"])
@@ -201,6 +205,7 @@ class NanoTelWorkbookWriter:
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
         workbook_path = self.results_dir / "nanotel_summary.xlsx"
+        filter_km_workbook(workbook, include_km)
         temporary_path = workbook_path.with_suffix(".tmp.xlsx")
         try:
             workbook.save(temporary_path)

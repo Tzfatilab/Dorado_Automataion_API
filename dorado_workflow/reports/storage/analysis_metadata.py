@@ -83,7 +83,7 @@ def analysis_rows(results_root, include_native=True):
     return list(rows.values())
 
 
-def retain_analysis_sheet(workbook, results_root):
+def retain_analysis_sheet(workbook, results_root, include_km=False):
     """Add hidden original analysis fields to an existing output workbook.
 
     Args:
@@ -102,6 +102,9 @@ def retain_analysis_sheet(workbook, results_root):
     sheet = workbook.create_sheet(name)
     sheet.append(HEADERS)
     for row, _, _ in rows:
+        from ..shared.organism import is_km_field
+        if not include_km and is_km_field(row['Source field']):
+            continue
         sheet.append([row[key] for key in HEADERS])
         for cell in sheet[sheet.max_row]:
             if isinstance(cell.value, str):
@@ -109,7 +112,7 @@ def retain_analysis_sheet(workbook, results_root):
     sheet.sheet_state = 'hidden'
 
 
-def cleanup_analysis_json(results_root):
+def cleanup_analysis_json(results_root, include_km=False):
     """Remove intermediate JSON only when every field is retained in saved Excel.
 
     Args:
@@ -130,6 +133,9 @@ def cleanup_analysis_json(results_root):
         if not isinstance(record, dict) or record.get('barcode') != barcode:
             continue
         fields = list(flatten_analysis(record))
+        if not include_km:
+            from ..shared.organism import is_km_field
+            fields = [(field, value) for field, value in fields if not is_km_field(field)]
         if all((barcode, field) in saved and saved[(barcode, field)] == value for field, value in fields):
             try:
                 path.unlink()

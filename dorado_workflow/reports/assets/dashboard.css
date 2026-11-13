@@ -41,6 +41,9 @@ header span {
     color:#e2eaf5
 }
 
+header .run-identity {white-space:normal;max-width:50%;font-size:14px;line-height:1.5;text-align:right;word-break:normal}
+@media(max-width:999px){header .run-identity{max-width:100%;text-align:left}}
+
 /* Rounded white containers for the numbered statistics/chart sections. */
 section {
     background:white;

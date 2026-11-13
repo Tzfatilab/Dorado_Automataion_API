@@ -5,13 +5,38 @@ import re
 def mapping_labels(reference, organism):
     """Return the display reference and its paired arm, when explicitly labeled."""
     reference = str(reference or '')
-    match = re.fullmatch(r'(chr(?:[0-9]+|X|Y|M|MT))_(Head|Tail|p|q)', reference, re.IGNORECASE)
+    match = re.fullmatch(r'(chr(?:[0-9]+|X|Y|M|MT))(?:_(Head|Tail|p|q)|([pq]))', reference, re.IGNORECASE)
     if not match:
         return reference, None
-    end = match[2].lower()
+    end = (match[2] or match[3]).lower()
     mammal = str(organism or '').strip().casefold() in {'human', 'homo sapiens', 'mouse', 'mus musculus'}
     arm = {'head': 'p', 'tail': 'q'}.get(end, end) if mammal else {'head': 'Head', 'tail': 'Tail'}.get(end, end)
-    return match[1] + '_' + arm, arm
+    return match[1] + (arm if arm in {'p', 'q'} else '_' + arm), arm
+
+
+def chromosome_end_label(alignment, organism=None):
+    """Keep each explicit chromosome and end paired, without choosing a mapping."""
+    chromosome, arm = alignment.get('chromosome'), alignment.get('arm')
+    reference = alignment.get('reference')
+    if reference and reference.status == 'available':
+        display, explicit_arm = mapping_labels(reference.value, organism)
+        if explicit_arm:
+            return display
+    if chromosome and chromosome.status == 'available':
+        label = str(chromosome.value)
+        if arm and arm.status == 'available':
+            end = str(arm.value)
+            return label + (end if end in {'p', 'q'} else '_' + end)
+        return label
+    return None
+
+
+def chromosome_sort_key(label):
+    match = re.fullmatch(r'chr(\d+|X|Y|M|MT)(.*)', label, re.I)
+    if not match:
+        return (2, 0, label)
+    chromosome, end = match.groups()
+    return (0, int(chromosome), end) if chromosome.isdigit() else (1, {'X': 0, 'Y': 1, 'M': 2, 'MT': 3}[chromosome.upper()], end)
 
 
 def annotate_alignment(alignment, organism, evidence):

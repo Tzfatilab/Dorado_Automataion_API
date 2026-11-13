@@ -22,7 +22,7 @@ source(file.path(script_dir, "functions", "mapping_functions.R"))
 # Process a single barcode with multiple BAM files
 # Inputs: barcode_configs_list (Per-BAM configurations belonging to one barcode)
 # Outputs: Combined per-barcode mapping results and filtered output paths.
-process_barcode_multiple_bams <- function(barcode_configs_list) {
+process_barcode_multiple_bams <- function(barcode_configs_list, alignment_data = NULL) {
   cat("DEBUG: ENTERING process_barcode_multiple_bams function\n")
   # All configs in the list should be for the same barcode
   barcode_name <- toupper(normalize_barcode_name(barcode_configs_list[[1]]$barcode_name))
@@ -39,6 +39,9 @@ process_barcode_multiple_bams <- function(barcode_configs_list) {
   all_pileup_bed_paths <- character()
   total_reads <- 0
   processing_errors <- character()
+  if (is.null(alignment_data)) {
+    alignment_data <- load_alignment_summary(barcode_configs_list[[1]]$alignment_summary_path)
+  }
 
   # Process each BAM file for this barcode
   for (i in seq_along(barcode_configs_list)) {
@@ -57,7 +60,8 @@ process_barcode_multiple_bams <- function(barcode_configs_list) {
         barcode_name = paste0(barcode_name, "_bam", i),  # Unique name for this BAM
         min_mapq = config$min_mapq,
         head_max_start = config$head_max_start,
-        tail_min_end = config$tail_min_end
+        tail_min_end = config$tail_min_end,
+        alignment_data = alignment_data
       )
 
       if (length(mapping_result$filtered_ids) == 0) {
@@ -258,6 +262,7 @@ main_mapping_analysis <- function(config_file) {
   results <- list()
   failed_barcodes <- character()
   skipped_barcodes <- character()
+  alignment_data <- load_alignment_summary(config$alignment_summary_path)
 
   for (i in seq_along(grouped_barcode_configs)) {
     barcode_name <- names(grouped_barcode_configs)[i]
@@ -266,7 +271,7 @@ main_mapping_analysis <- function(config_file) {
     show_progress(i, length(grouped_barcode_configs), "Processing barcodes")
 
     tryCatch({
-      result <- process_barcode_multiple_bams(barcode_configs_list)
+      result <- process_barcode_multiple_bams(barcode_configs_list, alignment_data = alignment_data)
       if (!is.null(result) && identical(result$status, "empty")) {
         skipped_barcodes <- c(skipped_barcodes, barcode_name)
       } else if (!is.null(result)) {

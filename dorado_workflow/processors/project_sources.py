@@ -174,9 +174,12 @@ class ProjectSources:
             if book:
                 for sheet in book:
                     name = sheet.title.removeprefix("_source_")
-                    if name in evidence_sheet_names:
+                    if name in evidence_sheet_names or (reuse_km and re.fullmatch(r'km_barcode\d+', name)):
                         dest = evidence.create_sheet("_source_" + name)
                         for row in sheet.values:
+                            from dorado_workflow.reports.shared.organism import is_km_field
+                            if not reuse_km and name == 'NanoTel analysis facts' and is_km_field(row[1]):
+                                continue
                             dest.append(row)
             # Full runs retain analysis fields in their automatic workbook,
             # rather than loose JSON. Carry those fields into the source sheet
@@ -187,6 +190,9 @@ class ProjectSources:
                 retained = evidence.create_sheet('_source_NanoTel analysis facts')
                 retained.append(HEADERS)
                 for row, _, _ in analysis:
+                    from dorado_workflow.reports.shared.organism import is_km_field
+                    if not reuse_km and is_km_field(row['Source field']):
+                        continue
                     retained.append([row[key] for key in HEADERS])
                     for cell in retained[retained.max_row]:
                         if isinstance(cell.value, str):

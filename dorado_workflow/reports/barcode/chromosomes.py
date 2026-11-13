@@ -2,6 +2,7 @@
 from html import escape
 import hashlib
 from statistics import mean
+from ..shared.mapping_labels import chromosome_sort_key
 
 
 def chromosome_section(cells, *, cutoff_bp=None):
@@ -19,8 +20,7 @@ def chromosome_section(cells, *, cutoff_bp=None):
         return heading + '<p class="note">Unavailable: no unambiguous chromosome mappings for post-filtered reads.</p></section>'
     import plotly.graph_objects as go
     # Natural chromosome ordering keeps chr10 after chr9, with X/Y at the end.
-    cells = sorted(cells, key=lambda c: (0, int(c['chromosome'][3:]))
-                   if c['chromosome'][3:].isdigit() else (1, c['chromosome']))
+    cells = sorted(cells, key=lambda c: chromosome_sort_key(c['chromosome']))
     means = [mean(read['length_kb'] for read in c['observations']) for c in cells]
     dots = [(index, c, read) for index,c in enumerate(cells) for read in c.get('observations', [])]
     # Deterministic horizontal jitter separates molecules without altering lengths.

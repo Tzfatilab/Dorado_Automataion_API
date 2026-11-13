@@ -316,7 +316,8 @@ make_analysis_report <- function(barcode, n_reads, n_complete, n_censored,
     km_whole_relative_ci_width_pct = finite_or_null(km_result$relative_ci_width_pct),
     km_reporting_reason = km_result$reason
   )
-  if (is.null(km_result)) report <- report[!startsWith(names(report), "km_")]
+  if (is.null(km_result)) report <- report[!(startsWith(names(report), "km_") |
+    names(report) %in% c("complete_telomeric_reads", "incomplete_telomeric_reads", "censoring_rate_pct"))]
   report
 }
 
@@ -352,18 +353,21 @@ make_km_statistics <- function(barcode, km_input, km_result) {
 # Inputs: data (Read-level or measurement table for this operation); columns (Exported measurement
 # columns selected for plotting); max_edge_distance (Max edge distance)
 # Outputs: Read-level plotting data selected from the supplied population.
-make_analysis_plot_data <- function(data, columns, max_edge_distance) {
+make_analysis_plot_data <- function(data, columns, max_edge_distance, include_km = FALSE) {
   n <- nrow(data)
-  margin <- data$sequence_length - data[[columns[["end"]]]]
-  data.frame(
+  result <- data.frame(
     read_index = seq_len(n),
     read_id = sub("[[:space:]].*$", "", as.character(data$sequence_ID)),
     read_length_bp = data$sequence_length,
     telomere_length_bp = data[[columns[["length"]]]],
     running_median_bp = data$TelLenMM_RunningMed,
-    retained_by_edge_filter = data$SeqLen_minus_RunMed > max_edge_distance,
-    event = ifelse(is.finite(margin), as.integer(margin >= BUFFER), NA_integer_)
+    retained_by_edge_filter = data$SeqLen_minus_RunMed > max_edge_distance
   )
+  if (isTRUE(include_km)) {
+    margin <- data$sequence_length - data[[columns[["end"]]]]
+    result$event <- ifelse(is.finite(margin), as.integer(margin >= BUFFER), NA_integer_)
+  }
+  result
 }
 
 # Share the original histogram implementation with regenerated dashboards.
@@ -1581,556 +1585,6 @@ find_telo_position_wraper <- function(read, patterns, with_mismatch, tvr_pattern
 }
 
 
-# check the plot
-# I need to adjust the plot to my code
-# dna.seq is a DNAStringSet of length 1
-# This is version updated at 6.01.2022
-# add the posibility for the type of picture file (JPEGS, pdf, eps ....)
-# Inputs: x_length (X length); seq_length (Analyzed sequence length in base pairs); subs (Subs);
-# serial_num (Serial num); seq_start (Seq start); seq_end (Seq end); save_it (Save it); main_title
-# (Main title); w (W); h (H); output_jpegs (Output jpegs); eps (Eps); subs_tvr (Subs tvr); tvr_start
-# (Tvr start); tvr_end (Tvr end)
-# Outputs: Writes the individual-read density plot.
-plot_single_telo <- function(x_length, seq_length, subs, serial_num, seq_start,
-                    seq_end, save_it = TRUE, main_title = "", w = 750, h = 300,
-                    output_jpegs, eps = FALSE, subs_tvr = NULL,
-                    tvr_start = -1, tvr_end = -1) { # add output_jpegs as arg
-  #' @title plot the density over a sequence
-  #' @param x_length: The length of the x axis.
-  #' @param seq_length: The length of the sequence
-  #' @param subs: the data frame of subseuences from the analyze_subtelos
-  #' function
-  #' @param serial_num: The serial number of the current sequence, used as the
-  #' name of the file
-  #' @param seq_start: The start of the Telomere.
-  #' @param seq_end: The end " ".
-  #' @param sava.it: save the file if TRE
-  #' @param main_title: ad a title.
-  #' @param w: width of the jpeg
-  #' @param h: height of the jpeg
-  #' @param output_jpegs: the output directory for saving the file
-  #' @param subs_tvr: optional density data including exact TVR matches.
-  #' @param tvr_start: optional start of the exact telomere + TVR region.
-  #' @param tvr_end: optional end of the exact telomere + TVR region.
-  subs <- na.omit(subs)
-  # save file if specified
-    if (save_it) {
-      read_stem <- make_barcode_read_stem(serial_num)
-      if (isTRUE(eps)) {
-        eps_path <- file.path(output_jpegs, paste0(read_stem, ".eps"))
-        setEPS()
-        #naming the eps file
-        postscript(eps_path)
-      } else {
-        jpeg_path <- file.path(output_jpegs, paste0(read_stem, ".jpeg"))
-        jpeg(filename = jpeg_path, width = w, height = h)
-      }
-  }
-
-  ## for eps
-  #if(isTRUE(save_it)){
-  #  eps_path <-paste(output_jpegs, paste0('read', serial_num, '.eps'),sep='/')
-
-    #setEPS()
-    # naming the eps file
-    #postscript(eps_path)
-  #}
-
-
-  # 26-07: my addition: save the csv file subs
-  #' write_csv(x = subs, file = paste(output_jpegs, paste('read', serial_num,
-  #' '.csv',sep=''), sep='/') )
-
-  # give extra x for the legend at the topRigth
-  plot(subs$density ~ subs$start_index, type = "n", yaxt = "n", xaxt = "n",
-       ylab = "", xlab = "", ylim = c(0, 1), xlim = c(1, x_length +
-                                                       round(x_length / 4.15)))
-  # create axes
-  xpos <- seq(1, x_length, by = 1000) # I have cahnged from 0 to 1
-  axis(1, at = xpos, labels = sprintf("%.1fkb", xpos / 1000))
-  title(xlab = "Position", adj = 0)
-  axis(2, at = seq(-0.1, 1, by = 0.1), las = 2)
-
-
-  #' Last change: try more accurate polygon 13:06 27/9/2023 - change
-  #' c(0, subs$density, 0) to c(0, subs$density, dplyr::last(subs$density), 0)
-  #' x = c(1, subs$start_index, seq_length) to x = c(1, subs$start_index, seq_length, seq_length)
-
-
-  # Draw exact TVR density first so canonical density remains visible on top.
-  if (!is.null(subs_tvr)) {
-    subs_tvr <- na.omit(subs_tvr)
-    suppressWarnings(polygon(
-      y = c(0, subs_tvr$density, dplyr::last(subs_tvr$density), 0),
-      x = c(1, subs_tvr$start_index, seq_length, seq_length),
-      col = "orange3", lwd = 0.5
-    ))
-  }
-
-  # add polygon to plot for each variant repeat.
-  # mychange: only comp_ttaggg
-  suppressWarnings(polygon(y = c(0, subs$density, dplyr::last(subs$density), 0),
-      x = c(1, subs$start_index, seq_length, seq_length), col = "salmon",
-      lwd = 0.5))
-
-  # no telo indices
-  if(seq_start == -1) {
-    rect(xleft = 1, ybottom = -0.1, xright = seq_length, ytop = 0,
-         col = "blue")
-    abline(h = 1, col = "black", lty = 2)
-  abline(h = 0, col = "black", lty = 2)
-  # Exact runs omit mismatch terminology but retain TVR-specific plot layers.
-  exact_legend <- if (is.null(subs_tvr)) {
-    c("telomere", "sub-telomere", "Density")
-  } else {
-    c("telomere", "tvr", "sub-telomere", "Density", "Density+TVR")
-  }
-  exact_colors <- if (is.null(subs_tvr)) {
-    c("red", "blue", "salmon")
-  } else {
-    c("red", "yellow3", "blue", "salmon", "orange3")
-  }
-  legend(x = x_length, y = 1,
-         legend = exact_legend,
-         col = exact_colors,
-         lty = 1, lwd = 2, cex = 1.2)
-  sub_title <- paste("read length:", seq_length, ", No telomere length")
-  title(main = main_title, sub = sub_title, ylab = "Density")
-  dev.off()
-  return()
-  }
-
-
-  rect(xleft = seq_start, ybottom = -0.1, xright = seq_end, ytop = 0,
-       col = "red")
-  rect(xleft = seq_end + 1, ybottom = -0.1, xright = seq_length, ytop = 0,
-       col = "blue")
-  if (seq_start > 1) {
-    rect(xleft = 1, ybottom = -0.1, xright = seq_start, ytop = 0, col = "blue")
-  }
-
-  if (!is.null(subs_tvr) && tvr_start != -1) {
-    if (tvr_start < seq_start) {
-      rect(xleft = tvr_start, ybottom = -0.1, xright = seq_start, ytop = 0,
-           col = "yellow3")
-    }
-    if (tvr_end > seq_end) {
-      rect(xleft = seq_end, ybottom = -0.1, xright = tvr_end, ytop = 0,
-           col = "yellow3")
-    }
-  }
-
-  abline(h = 1, col = "black", lty = 2)
-  abline(h = 0, col = "black", lty = 2)
-  # Keep legend labels consistent with the layers actually drawn in this run.
-  exact_legend <- if (is.null(subs_tvr)) {
-    c("telomere", "sub-telomere", "Density")
-  } else {
-    c("telomere", "tvr", "sub-telomere", "Density", "Density+TVR")
-  }
-  exact_colors <- if (is.null(subs_tvr)) {
-    c("red", "blue", "salmon")
-  } else {
-    c("red", "yellow3", "blue", "salmon", "orange3")
-  }
-  legend(x = x_length, y = 1,
-         legend = exact_legend,
-         col = exact_colors,
-         lty = 1, lwd = 2, cex = 1.2)
-  sub_title <- paste("read length:", seq_length, ", telomere length:",
-                     abs(seq_start - seq_end) + 1)
-  if (!is.null(subs_tvr) && tvr_start != -1) {
-    sub_title <- paste(sub_title, ", telomere length with TVR:",
-                       abs(tvr_start - tvr_end) + 1)
-  }
-  title(main = main_title, sub = sub_title, ylab = "Density")
-  dev.off()
-
-}
-
-
-# check the plot
-# I need to adjust the plot to my code
-# dna.seq is a DNAStringSet of length 1
-# This is version updated at 6.01.2022
-# add the posibility for the type of picture file (JPEGS, pdf, eps ....)
-# Change the function to return the plot instead
-# Inputs: x_length (X length); seq_length (Analyzed sequence length in base pairs); subs (Subs);
-# subs_mismatch (Subs mismatch); serial_num (Serial num); seq_start (Seq start); seq_end (Seq end);
-# gray_start (Gray start); gray_end (Gray end); save_it (Save it); main_title (Main title); w (W); h
-# (H); output_jpegs (Output jpegs); eps (Eps)
-# Outputs: Writes the read-density plot including the ambiguous boundary region.
-plot_single_telo_with_gray_area <- function(x_length, seq_length, subs,subs_mismatch,  serial_num, seq_start,
-  seq_end,gray_start, gray_end, save_it = TRUE, main_title = "", w = 750, h = 300,
-  output_jpegs, eps = FALSE) { # add output_jpegs as arg
-  #' @title plot the density over a sequence
-  #' @param x_length: The length of the x axis.
-  #' @param seq_length: The length of the sequence
-  #' @param subs: the data frame of subseuences from the analyze_subtelos
-  #' function
-  #' @param subs_mismatch: the data frame with the mismatch
-  #' @param serial_num: The serial number of the current sequence, used as the
-  #' name of the file
-  #' @param seq_start: The start of the Telomere .
-  #' @param seq_end: The end " ".
-  #' @param gray_start: The start of the Telomere with mismatches.
-  #' @param gray_ends: The end " ".
-  #' @param sava.it: save the file if TRE
-  #' @param main_title: ad a title.
-  #' @param w: width of the jpeg
-  #' @param h: height of the jpeg
-  #' @param output_jpegs: the output directory for saving the file
-  subs <- na.omit(subs)
-  # save file if specified
-  if (save_it) {
-    read_stem <- make_barcode_read_stem(serial_num)
-    if (isTRUE(eps)) {
-      eps_path <- file.path(output_jpegs, paste0(read_stem, ".eps"))
-      setEPS()
-      #naming the eps file
-      postscript(eps_path)
-    } else {
-      jpeg_path <- file.path(output_jpegs, paste0(read_stem, ".jpeg"))
-      jpeg(filename = jpeg_path, width = w, height = h)
-    }
-  }
-
-  ## for eps
-  #if(isTRUE(save_it)){
-  #  eps_path <-paste(output_jpegs, paste0('read', serial_num, '.eps'),sep='/')
-
-  #setEPS()
-  # naming the eps file
-  #postscript(eps_path)
-  #}
-
-
-  # 26-07: my addition: save the csv file subs
-  #' write_csv(x = subs, file = paste(output_jpegs, paste('read', serial_num,
-  #' '.csv',sep=''), sep='/') )
-
-  # give extra x for the legend at the topRigth
-  plot(subs$density ~ subs$start_index, type = "n", yaxt = "n", xaxt = "n",
-       ylab = "", xlab = "", ylim = c(0, 1), xlim = c(1, x_length +
-                                                        round(x_length / 4.15)))
-  # create axes
-  xpos <- seq(1, x_length, by = 1000) # I have cahnged from 0 to 1
-  axis(1, at = xpos, labels = sprintf("%.1fkb", xpos / 1000))
-  title(xlab = "Position", adj = 0)
-  axis(2, at = seq(-0.1, 1, by = 0.1), las = 2)
-  # add polygon to plot for each variant repeat.
-  # mychange: only comp_ttaggg
-
-  # add the plot of the density with Mismatches
-  suppressWarnings(polygon(y = c(0, subs_mismatch$density, dplyr::last(subs_mismatch$density), 0),
-                           x = c(1, subs_mismatch$start_index, seq_length, seq_length), col = "orange",
-                           lwd = 0.5))
-
-
-  suppressWarnings(polygon(y = c(0, subs$density, dplyr::last(subs$density), 0),
-                           x = c(1, subs$start_index, seq_length, seq_length), col = "salmon",
-                           lwd = 0.5))
-
-
-
-  if(seq_start > -1) {
-    rect(xleft = seq_start, ybottom = -0.1, xright = seq_end, ytop = 0,
-         col = "red")
-    rect(xleft = seq_end + 1, ybottom = -0.1, xright = seq_length, ytop = 0,
-         col = "blue")
-    if (seq_start > 1) {
-      rect(xleft = 1, ybottom = -0.1, xright = seq_start, ytop = 0, col = "blue")
-    }
-
-
-    #  My last change: 1/10/2023
-    # I need to check if gray_start !=  -1
-    if(gray_start == -1) {
-      abline(h = 1, col = "black", lty = 2)
-      abline(h = 0, col = "black", lty = 2)
-      legend(x = x_length, y = 1,
-             legend = c("telomere", "gray area" ,"sub-telomere", "Density",
-                        "Density MM" ),
-             col = c("red","yellow","blue", "salmon", "orange"), lty = 1, lwd = 2,
-             cex = 1.2)
-      sub_title <- paste("Read length:", seq_length, ", Telomere length:",
-                         abs(seq_start - seq_end) + 1, ", Faild to calculate Telomere length with mismatches")
-      title(main = main_title, sub = sub_title, ylab = "Density")
-      dev.off()
-      return()
-    }
-
-
-
-    if(gray_start < seq_start) {
-      rect(xleft = gray_start, ybottom = -0.1, xright = seq_start, ytop = 0,
-           col = "yellow")
-    }
-
-    if(gray_end > seq_end) {
-      rect(xleft = seq_end, ybottom = -0.1, xright = gray_end, ytop = 0,
-           col = "yellow")
-    }
-  } else { # no telomere without mm
-
-    rect(xleft = gray_start, ybottom = -0.1, xright = gray_end, ytop = 0,
-         col = "yellow")
-    rect(xleft = gray_end + 1, ybottom = -0.1, xright = seq_length, ytop = 0,
-         col = "blue")
-    if (gray_start > 1) {
-      rect(xleft = 1, ybottom = -0.1, xright = gray_start, ytop = 0, col = "blue")
-    }
-  }
-
-
-  abline(h = 1, col = "black", lty = 2)
-  abline(h = 0, col = "black", lty = 2)
-  legend(x = x_length, y = 1,
-    legend = c("telomere", "gray area" ,"sub-telomere", "Density",
-    "Density MM" ),
-    col = c("red","yellow","blue", "salmon", "orange"), lty = 1, lwd = 2,
-    cex = 1.2)
-
-  # My last change : 2/10/2023 11:40
-  # incase no telo found
-  string_telo <- ifelse(seq_start == -1, yes = ", No telomere length", no = paste(", Telomere length:",
-                        abs(seq_start - seq_end) + 1))
-
-  sub_title <- paste("Read length:", seq_length, string_telo , ", Telomere length with mismatches:", abs(gray_start - gray_end) + 1)
-  title(main = main_title, sub = sub_title, ylab = "Density")
-  dev.off()
-
-} # plot_single_telo_with_gray_area
-
-
-
-# Inputs: x_length (X length); seq_length (Analyzed sequence length in base pairs); subs (Subs);
-# subs_mismatch (Subs mismatch); subs_tvr (Subs tvr); serial_num (Serial num); seq_start (Seq
-# start); seq_end (Seq end); gray_start (Gray start); gray_end (Gray end); tvr_start (Tvr start);
-# tvr_end (Tvr end); save_it (Save it); main_title (Main title); w (W); h (H); output_jpegs (Output
-# jpegs); eps (Eps)
-# Outputs: Writes the read plot with exact, mismatch and TVR-inclusive tracks.
-plot_single_telo_with_tvr <- function(x_length, seq_length, subs,subs_mismatch, subs_tvr,  serial_num, seq_start,
-         seq_end,gray_start, gray_end,tvr_start, tvr_end, save_it = TRUE, main_title = "", w = 750, h = 300,
-         output_jpegs, eps = FALSE) { # add output_jpegs as arg
-  #' @title plot the density over a sequence
-  #' @param x_length: The length of the x axis.
-  #' @param seq_length: The length of the sequence
-  #' @param subs: the data frame of subseuences from the analyze_subtelos
-  #' function
-  #' @param subs_mismatch: the data frame with the mismatch
-  #' @param  subs_tvr: The data frame with the mismatch + tvrs
-  #' @param serial_num: The serial number of the current sequence, used as the
-  #' name of the file
-  #' @param seq_start: The start of the Telomere .
-  #' @param seq_end: The end " ".
-  #' @param gray_start: The start of the Telomere with mismatches.
-  #' @param gray_end: The end " ".
-  #' @param tvr_start: The start of the Telomere with mismatches + tvrs.
-  #' @param tvr_end: The end " "
-  #' @param sava.it: save the file if TRE
-  #' @param main_title: ad a title.
-  #' @param w: width of the jpeg
-  #' @param h: height of the jpeg
-  #' @param output_jpegs: the output directory for saving the file
-  subs <- na.omit(subs)
-  # save file if specified
-  if (save_it) {
-    read_stem <- make_barcode_read_stem(serial_num)
-    if (isTRUE(eps)) {
-      eps_path <- file.path(output_jpegs, paste0(read_stem, ".eps"))
-      setEPS()
-      #naming the eps file
-      postscript(eps_path)
-    } else {
-      jpeg_path <- file.path(output_jpegs, paste0(read_stem, ".jpeg"))
-      jpeg(filename = jpeg_path, width = w, height = h)
-    }
-  }
-
-  ## for eps
-  #if(isTRUE(save_it)){
-  #  eps_path <-paste(output_jpegs, paste0('read', serial_num, '.eps'),sep='/')
-
-  #setEPS()
-  # naming the eps file
-  #postscript(eps_path)
-  #}
-
-
-  # 26-07: my addition: save the csv file subs
-  #' write_csv(x = subs, file = paste(output_jpegs, paste('read', serial_num,
-  #' '.csv',sep=''), sep='/') )
-
-  # give extra x for the legend at the topRigth
-  plot(subs$density ~ subs$start_index, type = "n", yaxt = "n", xaxt = "n",
-       ylab = "", xlab = "", ylim = c(0, 1), xlim = c(1, x_length +
-                                                        round(x_length / 4.15)))
-  # create axes
-  xpos <- seq(1, x_length, by = 1000) # I have cahnged from 0 to 1
-  axis(1, at = xpos, labels = sprintf("%.1fkb", xpos / 1000))
-  title(xlab = "Position", adj = 0)
-  axis(2, at = seq(-0.1, 1, by = 0.1), las = 2)
-  # add polygon to plot for each variant repeat.
-  # mychange: only comp_ttaggg
-
-  # tvr
-  suppressWarnings(polygon(y = c(0, subs_tvr$density, dplyr::last(subs_tvr$density), 0),
-                           x = c(1, subs_tvr$start_index, seq_length, seq_length), col = "orange3",
-                           lwd = 0.5))
-
-
-  # add the plot of the density with Mismatches
-  suppressWarnings(polygon(y = c(0, subs_mismatch$density, dplyr::last(subs_mismatch$density), 0),
-                           x = c(1, subs_mismatch$start_index, seq_length, seq_length), col = "orange",
-                           lwd = 0.5))
-
-
-  suppressWarnings(polygon(y = c(0, subs$density, dplyr::last(subs$density), 0),
-                           x = c(1, subs$start_index, seq_length, seq_length), col = "salmon",
-                           lwd = 0.5))
-
-
-
-  if(seq_start > -1) {
-    rect(xleft = seq_start, ybottom = -0.1, xright = seq_end, ytop = 0,
-         col = "red")
-    rect(xleft = seq_end + 1, ybottom = -0.1, xright = seq_length, ytop = 0,
-         col = "blue")
-    if (seq_start > 1) {
-      rect(xleft = 1, ybottom = -0.1, xright = seq_start, ytop = 0, col = "blue")
-    }
-
-
-    #  My last change: 1/10/2023
-    # I need to check if gray_start !=  -1
-    if(gray_start == -1) {
-      abline(h = 1, col = "black", lty = 2)
-      abline(h = 0, col = "black", lty = 2)
-
-
-      if(tvr_start == -1) {
-        legend(x = x_length, y = 1,
-               legend = c("telomere", "gray area", "tvr" ,"sub-telomere", "Density",
-                          "Density MM", "DensMM+TVRs" ),
-               col = c("red","yellow","yellow3","blue", "salmon", "orange", "orange3"), lty = 1, lwd = 2,
-               cex = 1.2)
-        sub_title <- paste("Read length:", seq_length, ", Telomere length:",
-                           abs(seq_start - seq_end) + 1, ", Faild to calculate Telomere length with mismatches/tvr")
-        title(main = main_title, sub = sub_title, ylab = "Density")
-        dev.off()
-        return()
-      } # add tvr
-
-      if(tvr_start < seq_start) {
-        rect(xleft = tvr_start, ybottom = -0.1, xright = seq_start, ytop = 0,
-             col = "yellow3")
-      }
-
-      if(tvr_end > seq_end) {
-        rect(xleft = seq_end, ybottom = -0.1, xright = tvr_end, ytop = 0,
-             col = "yellow3")
-      }
-
-      legend(x = x_length, y = 1,
-             legend = c("telomere", "gray area", "tvr" ,"sub-telomere", "Density",
-                        "Density MM", "DensMM+TVRs" ),
-             col = c("red","yellow","yellow3","blue", "salmon", "orange", "orange3"), lty = 1, lwd = 2,
-             cex = 1.2)
-      sub_title <- paste("Read length:", seq_length, ", Telomere length:",
-                         abs(seq_start - seq_end) + 1, ", Faild to calculate Telomere length with mismatches", "Telomere length with tvr:", abs(tvr_start - tvr_end) + 1)
-      title(main = main_title, sub = sub_title, ylab = "Density")
-      dev.off()
-      return()
-    }
-
-
-
-    if(gray_start < seq_start) {
-      rect(xleft = gray_start, ybottom = -0.1, xright = seq_start, ytop = 0,
-           col = "yellow")
-    }
-
-    if(gray_end > seq_end) {
-      rect(xleft = seq_end, ybottom = -0.1, xright = gray_end, ytop = 0,
-           col = "yellow")
-    }
-
-    # check tvr
-    if(tvr_start != -1) {
-      if(gray_start > tvr_start) {
-        rect(xleft = tvr_start, ybottom = -0.1, xright = gray_start, ytop = 0,
-             col = "yellow3")
-      }
-
-      if(gray_end < tvr_end) {
-        rect(xleft = gray_end, ybottom = -0.1, xright = tvr_end, ytop = 0,
-             col = "yellow3")
-      }
-    }
-
-
-  } else { # no telomere without mm
-
-    rect(xleft = gray_start, ybottom = -0.1, xright = gray_end, ytop = 0,
-         col = "yellow")
-    rect(xleft = gray_end + 1, ybottom = -0.1, xright = seq_length, ytop = 0,
-         col = "blue")
-    if (gray_start > 1) {
-      rect(xleft = 1, ybottom = -0.1, xright = gray_start, ytop = 0, col = "blue")
-    }
-
-    # check tvr
-    if(tvr_start != -1) {
-      if(gray_start > tvr_start) {
-        rect(xleft = tvr_start, ybottom = -0.1, xright = gray_start, ytop = 0,
-             col = "yellow3")
-      }
-
-      if(gray_end < tvr_end) {
-        rect(xleft = gray_end, ybottom = -0.1, xright = tvr_end, ytop = 0,
-             col = "yellow3")
-      }
-    }
-
-  }
-
-
-  abline(h = 1, col = "black", lty = 2)
-  abline(h = 0, col = "black", lty = 2)
-  legend(x = x_length, y = 1,
-         legend = c("telomere", "gray area", "tvr", "sub-telomere", "Density",
-                    "Density MM", "DensMM+TVRs"),
-         col = c("red","yellow", "yellow3","blue", "salmon", "orange", "orange3"), lty = 1, lwd = 2,
-         cex = 1.2)
-
-  # My last change : 2/10/2023 11:40
-  # incase no telo found
-  string_telo <- ifelse(seq_start == -1, yes = ", No telomere length", no = paste(", Telomere length:",
-                                                                                  abs(seq_start - seq_end) + 1))
-
-  sub_title <- paste("Read length:", seq_length, string_telo , ", Telomere length with mismatches:", abs(gray_start - gray_end) + 1)
-
-  if(tvr_start != -1) {
-    sub_title <- paste(sub_title, ", with mismatch+tvr:", abs(tvr_start - tvr_end) + 1 )
-  } else {
-    sub_title <- paste(sub_title, ", failed to calculate Telomere length with mismatch+tvr")
-  }
-
-
-  title(main = main_title, sub = sub_title, ylab = "Density")
-  dev.off()
-
-} # plot_single_telo_with_gray_area
-
-
-
-
-# add options for the image saved:
-#'ggsave currently recognises the extensions eps/ps, tex (pictex), pdf, jpeg,
-#'tiff, png, bmp, svg and wmf (windows only).
-
-
 # get the telomere end index, with more accuracy
 # find_telo_position gives only the indices according to the subseqs
 # When using the package : give option for a function as argument for the end/start
@@ -2255,17 +1709,15 @@ empty_telomere_summary <- function(tvr_patterns = NULL, summary_only = FALSE) {
 
 # Inputs: current_seq (Read sequence currently being analyzed); current_serial (Original read
 # number); pattern_list (Canonical and selected TVR search motifs); min_density (Minimum repeat
-# density as a fraction); output_dir (Directory for generated outputs); output_jpegs (Output jpegs);
-# output_jpegs_1 (Output jpegs 1); max_length (Max length); title (Displayed title); tvr_patterns
+# density as a fraction); output_dir (Directory for generated outputs); tvr_patterns
 # (Additional selected TVR motifs); right_edge (Whether to select the right-end candidate);
 # summary_only (Whether to omit individual-read pages from the report)
 # Outputs: Per-read summary row with measurements and boundary calls.
 analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
-                         output_dir, output_jpegs, output_jpegs_1, max_length, title, tvr_patterns, right_edge = FALSE,
+                         output_dir, tvr_patterns, right_edge = FALSE,
                          summary_only = FALSE ) {
   current_fastq_name <- names(current_seq)
   current_seq_unlist <- unlist(current_seq)
-  #analyze_read(current_seq, pattern_list, min_density,title, output_jpegs, output_jpegs_1, max_length )
 
   # returns a a list of (a data frame, list(numeric: total density,iranges))
   analyze_list <- analyze_subtelos(dna_seq = current_seq_unlist, patterns =
@@ -2357,64 +1809,7 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
     write_read_fasta(current_seq, output_telo_fasta)
 
 
-   if(global_max_mismatch == 0) {
-     exact_analysis <- analyze_list
-     exact_position <- telo_position
-
-     # Cropped JPEG used for the standard per-read plot collection.
-     plot_single_telo(x_length = max_length, seq_length = length(current_seq_unlist),
-                      subs = exact_analysis[[1]], serial_num = current_serial,
-                      seq_start = start(exact_position), seq_end = end(exact_position),
-                      save_it = TRUE, main_title = title, w = 750, h = 300,
-                      output_jpegs = output_jpegs,
-                      subs_tvr = if(is.null(tvr_patterns)) NULL else analyze_list3[[1]],
-                      tvr_start = if(is.null(tvr_patterns)) -1 else start(telo_position3),
-                      tvr_end = if(is.null(tvr_patterns)) -1 else end(telo_position3))
-
-     # Full-read JPEG used by the adjusted plot collection.
-     plot_single_telo(x_length = length(current_seq_unlist), seq_length = length(current_seq_unlist),
-                      subs = exact_analysis[[1]], serial_num = current_serial,
-                      seq_start = start(exact_position), seq_end = end(exact_position),
-                      save_it = TRUE, main_title = title, w = 750, h = 300,
-                      output_jpegs = output_jpegs_1,
-                      subs_tvr = if(is.null(tvr_patterns)) NULL else analyze_list3[[1]],
-                      tvr_start = if(is.null(tvr_patterns)) -1 else start(telo_position3),
-                      tvr_end = if(is.null(tvr_patterns)) -1 else end(telo_position3))
-
-   } else if(is.null(tvr_patterns)) {
-     plot_single_telo_with_gray_area(x_length = max_length, seq_length =
-                                       length(current_seq_unlist), subs =  analyze_list[[1]],subs_mismatch = analyze_list2[[1]],
-                                     serial_num = current_serial, seq_start = start(telo_position),
-                                     seq_end = end(telo_position), gray_start = start(telo_position2),
-                                     gray_end = end(telo_position2), save_it = TRUE, main_title = title, w = 750,
-                                     h = 300, output_jpegs = output_jpegs)
-
-     plot_single_telo_with_gray_area(x_length = length(current_seq_unlist), seq_length =
-                                       length(current_seq_unlist), subs =  analyze_list[[1]],subs_mismatch = analyze_list2[[1]],
-                                     serial_num = current_serial, seq_start = start(telo_position),
-                                     seq_end = end(telo_position), gray_start = start(telo_position2),
-                                     gray_end = end(telo_position2), save_it = TRUE, main_title = title, w = 750,
-                                     h = 300, output_jpegs = output_jpegs_1)
-
-   } else {
-     plot_single_telo_with_tvr(x_length = max_length, seq_length =
-                                       length(current_seq_unlist), subs =  analyze_list[[1]],subs_mismatch = analyze_list2[[1]], subs_tvr = analyze_list3[[1]],
-                                     serial_num = current_serial, seq_start = start(telo_position),
-                                     seq_end = end(telo_position), gray_start = start(telo_position2),
-                                     gray_end = end(telo_position2),tvr_start = start(telo_position3) , tvr_end = end(telo_position3), save_it = TRUE, main_title = title, w = 750,
-                                     h = 300, output_jpegs = output_jpegs)
-
-     plot_single_telo_with_tvr(x_length = length(current_seq_unlist), seq_length =
-                                       length(current_seq_unlist), subs =  analyze_list[[1]],subs_mismatch = analyze_list2[[1]], subs_tvr = analyze_list3[[1]],
-                                     serial_num = current_serial, seq_start = start(telo_position),
-                                     seq_end = end(telo_position), gray_start = start(telo_position2),
-                                     gray_end = end(telo_position2), tvr_start = start(telo_position3) , tvr_end = end(telo_position3),save_it = TRUE, main_title = title, w = 750,
-                                     h = 300, output_jpegs = output_jpegs_1)
-
-   }
   }
-
-
 
   # check for valid telomere iranges
   telo_length <- width(telo_position)
@@ -2539,11 +1934,6 @@ create_dirs <- function(output_dir, summary_only = FALSE, log_path = NULL) {
   ensure_output_directory(output_dir)
 
   if (!summary_only) {
-    output_jpegs <- paste(output_dir, "single_read_plots", sep = "/")
-    ensure_output_directory(output_jpegs)
-    output_jpegs_1 <- paste(output_dir, "single_read_plots_adj", sep = "/")
-    ensure_output_directory(output_jpegs_1)
-
     reads_dir <- paste(output_dir, "reads", sep = "/")
     ensure_output_directory(reads_dir)
   }
@@ -2583,14 +1973,14 @@ make_barcode_read_stem <- function(serial_num) {
 ############## Running functions ###############################################
 
 # Inputs: sample_telomeres (Candidate reads selected for detailed motif analysis); pattern_list
-# (Canonical and selected TVR search motifs); max_length (Max length); output_dir (Directory for
-# generated outputs); serial_start (Serial start); min_density (Minimum repeat density as a
-# fraction); title (Displayed title); tvr_patterns (Additional selected TVR motifs); right_edge
+# (Canonical and selected TVR search motifs); output_dir (Directory for generated outputs);
+# serial_start (Serial start); min_density (Minimum repeat density as a fraction);
+# tvr_patterns (Additional selected TVR motifs); right_edge
 # (Whether to select the right-end candidate); summary_only (Whether to omit individual-read pages
 # from the report); report_batch_dir (Report batch dir)
 # Outputs: Detailed candidate-read analysis table.
-search_patterns <- function(sample_telomeres, pattern_list, max_length = 1e5,
-     output_dir, serial_start = 1, min_density,  title = "Telomeric repeat density", tvr_patterns, right_edge = FALSE,
+search_patterns <- function(sample_telomeres, pattern_list,
+     output_dir, serial_start = 1, min_density, tvr_patterns, right_edge = FALSE,
      summary_only = FALSE, report_batch_dir = NULL) {
   if (!is.null(report_batch_dir)) {
     sink <- open_report_batch(report_batch_dir)
@@ -2600,12 +1990,10 @@ search_patterns <- function(sample_telomeres, pattern_list, max_length = 1e5,
   #'@title Search given Patterns over a DNA sequences.
   #'@param sample_telomeres: the DNAString Set of the reads.
   #'@param pattern_list: a list of patterns or a string of 1 pattern.
-  #'@param max_length: The x-axis length for the plot.
   #'@param output_dir:
   #'@param serial_start: The first id serial number.
   #'@param min_density: The minimal density of the patterns in a sequence to
   #'be consider relevant.
-  #'@param title: The title for the density plots.
   #'@param tvr_patterns : Additional patterns for TVR's.
   #'@param right_edge : if the expected telomere is to be to the rigth : NNNN....NNN(TTAGGG)n
   #'@param return: Returns a data frame of the reads.
@@ -2613,11 +2001,8 @@ search_patterns <- function(sample_telomeres, pattern_list, max_length = 1e5,
 
   # output_telo_csv <- paste(output_dir, paste(csv_name, "csv", sep = "."), sep = "/")
   # output_telo_fasta <- paste(output_dir, paste("reads", "fasta", sep = "."),  sep = "/")
-  output_jpegs <- paste(output_dir, "single_read_plots", sep = "/")
-  output_jpegs_1 <- paste(output_dir, "single_read_plots_adj", sep = "/")
   output_reads <- paste(output_dir, "reads", sep = "/")
 
-  #max_length <- max(width(sample_telomeres))
   #  I HAVE ADDED TLOMERE LENGTH, START @ END
 
 
@@ -2635,8 +2020,7 @@ search_patterns <- function(sample_telomeres, pattern_list, max_length = 1e5,
     #telo_position <- gray_area_adges(telo_position, current_seq)
     curr_df <- analyze_read(current_seq = sample_telomeres[i], current_serial =
                current_serial, pattern_list = pattern_list, min_density =
-               min_density, output_dir = output_reads, output_jpegs = output_jpegs,
-               output_jpegs_1 = output_jpegs_1, max_length = max_length, title = title, tvr_patterns = tvr_patterns,
+               min_density, output_dir = output_reads, tvr_patterns = tvr_patterns,
                right_edge = right_edge, summary_only = summary_only)
     # not a telomeric read
     if (is.na(curr_df[1,1])) {
@@ -3139,13 +2523,13 @@ if (isTRUE(opt$analysis)) {
   # KM uses density/start-filtered reads BEFORE running-median edge filtering.
   # Keep raw estimates and diagnostics internally, including withheld results.
   # Neutral internal names separate the measurement from its matching mode.
-  km_input <- data.frame(
-    sequence_length = df_step1_filtered$sequence_length,
-    telomere_length = df_step1_filtered[[analysis_columns[["length"]]]],
-    telomere_end    = df_step1_filtered[[analysis_columns[["end"]]]]
-  )
   km_result <- NULL
   if (isTRUE(opt$include_km)) {
+    km_input <- data.frame(
+      sequence_length = df_step1_filtered$sequence_length,
+      telomere_length = df_step1_filtered[[analysis_columns[["length"]]]],
+      telomere_end    = df_step1_filtered[[analysis_columns[["end"]]]]
+    )
     km_result <- fit_km_result(km_input)
   } else {
     log_print("KM disabled: skipping KM fitting and KM exports.",
@@ -3212,16 +2596,16 @@ if (isTRUE(opt$analysis)) {
 
   # KM survival fit: event = 1 when the telomere is fully captured in the read
   # (enough margin between sequence end and telomere end), 0 = censored.
-  df_filtered <- df_filtered %>%
+  if (isTRUE(opt$include_km)) df_filtered <- df_filtered %>%
     dplyr::mutate(
       margin = sequence_length - .data[[analysis_columns[["end"]]]],
       event  = as.integer(margin >= BUFFER)
     )
 
   n_reads        <- nrow(df_filtered)
-  n_complete     <- sum(df_filtered$event == 1)
-  n_censored     <- sum(df_filtered$event == 0)
-  censoring_rate <- if (n_reads > 0L) n_censored / n_reads else NA_real_
+  n_complete     <- if (isTRUE(opt$include_km)) sum(df_filtered$event == 1) else NULL
+  n_censored     <- if (isTRUE(opt$include_km)) sum(df_filtered$event == 0) else NULL
+  censoring_rate <- if (isTRUE(opt$include_km) && n_reads > 0L) n_censored / n_reads else NA_real_
 
   med_telo <- median(df_filtered[[analysis_columns[["length"]]]])
   # This is NanoTel.R's FINAL-filter population. r_analysis computes its own
@@ -3241,16 +2625,16 @@ if (isTRUE(opt$analysis)) {
     paste0("Results for ", barcode_name),
     "==========================================",
     paste0("Number of telomeric reads (post-filtration) : ", fmt(n_reads)),
-    paste0("Complete Telomeric Reads                    : ", fmt(n_complete)),
-    paste0("Incomplete Telomeric Reads                  : ", fmt(n_censored)),
-    paste0("Censoring Rate                              : ", round(100 * censoring_rate, 1), "%"),
     "",
     paste0("Median Telomeric Length (post-filtration)  : ", fmt(med_telo), " bp"),
     paste0("% of telomeres shorter than ", opt$short_telomere_threshold_bp,
            " bp : ", pct_short, "%")
   )
 
-  if (!is.null(km_result)) results_lines <- c(results_lines, "", format_km_report(km_result))
+  if (!is.null(km_result)) results_lines <- c(results_lines,
+    paste0("Complete Telomeric Reads : ", fmt(n_complete)),
+    paste0("Incomplete Telomeric Reads : ", fmt(n_censored)),
+    paste0("Censoring Rate : ", round(100 * censoring_rate, 1), "%"), "", format_km_report(km_result))
   if (n_reads == 0L) {
     empty_message <- "No reads passed the NanoTel analysis filters; length and percentage statistics are unavailable."
     results_lines <- c(results_lines, "", empty_message)
@@ -3284,16 +2668,16 @@ if (isTRUE(opt$analysis)) {
   # --- Telomere plot (uses pre-final-filter data so x-axis extends to the crossing point) ---
   # Preserve the line plot's pre-edge population; the histogram uses final reads.
   # Selected exact/mismatch columns are shared with filtering/KM, not TVR columns.
-  line_data <- make_analysis_plot_data(df_for_plot, analysis_columns, opt$max_edge_distance)
+  line_data <- make_analysis_plot_data(df_for_plot, analysis_columns, opt$max_edge_distance, opt$include_km)
   histogram_data <- make_telomere_histogram_data(
-    make_analysis_plot_data(df_filtered, analysis_columns, opt$max_edge_distance)
+    make_analysis_plot_data(df_filtered, analysis_columns, opt$max_edge_distance, opt$include_km)
   )
   save_analysis_plot(
     make_telomere_line_plot(line_data, barcode_name, global_max_mismatch),
     file.path(opt$save_path, paste0(barcode_name, "_telomere_plot"))
   )
   save_analysis_plot(
-    make_telomere_histogram_plot(histogram_data, barcode_name, global_max_mismatch),
+    make_telomere_histogram_plot(histogram_data, barcode_name, global_max_mismatch, include_km = opt$include_km),
     file.path(opt$save_path, paste0(barcode_name, "_telomere_histogram"))
   )
 

@@ -56,6 +56,8 @@ class ResultImporter:
         if saved_config.is_file():
             saved = json.loads(saved_config.read_text(encoding="utf-8-sig"))
             self.metadata = {"settings": saved, "stages": {}}
+            if isinstance(saved.get('organism'), str):
+                self.metadata['organism'] = saved['organism']
             for stage, key in (("mapping", "run_mapping_analysis"), ("methylation", "run_methylation_analysis")):
                 if type(saved.get(key)) is bool:
                     self.metadata["stages"][stage] = saved[key]
@@ -247,7 +249,7 @@ class ResultImporter:
                 if retained_sources and not sheet.title.startswith('_source_'):
                     continue
                 name = sheet.title.removeprefix('_source_')
-                if name not in {"NanoTel Statistics", "NanoTel analysis facts", "KM by barcode", "KM run statistics", "Run metadata", "Barcode source counts", "Read mappings", "Barcode figures", "Read motifs", "Read repeat summaries"} and not re.fullmatch(r"(?:(?:filtered|final|audit)_)?barcode\d+", name):
+                if name not in {"NanoTel Statistics", "NanoTel analysis facts", "KM by barcode", "KM run statistics", "Run metadata", "Barcode source counts", "Read mappings", "Barcode figures", "Read motifs", "Read repeat summaries"} and not re.fullmatch(r"(?:(?:filtered|final|audit|km)_)?barcode\d+", name):
                     continue
                 source = self.source(path, "xlsx", sheet.title)
                 iterator = iter(sheet.iter_rows(values_only=True))
@@ -452,9 +454,11 @@ class ResultImporter:
             stats = self.csv_table(stat_paths[0])
         # Excel is a fallback for pipeline runs that removed their summary CSVs.
         # setdefault below keeps any already-loaded CSV authoritative.
-        workbooks = self.files("nanotel_summary.xlsx")
+        # The completed unified workbook supersedes an earlier Summary/staging
+        # workbook, including source tables retained during final cleanup.
+        workbooks = self.files("nanotel_results.xlsx")
         if not workbooks:
-            workbooks = self.files('nanotel_results.xlsx')
+            workbooks = self.files('nanotel_summary.xlsx')
         if len(workbooks) > 1:
             raise ValueError("Ambiguous NanoTel workbooks; select one results directory")
         if workbooks:
@@ -638,6 +642,23 @@ class ResultImporter:
                         found.append((match.group(1), Evidence(self.source(path, "log").id, line_number)))
             if found and len({value for value, _ in found}) == 1:
                 organism = Fact(A.AVAILABLE, found[0][0], evidence=[ev for _, ev in found])
+        # Log-only projects establish the organism after mapping import. Refresh
+        # presentation labels now, preserving the raw reference and all mappings.
+        if organism.status == A.AVAILABLE:
+            from ..shared.mapping_labels import annotate_alignment
+            for barcode in barcodes:
+                for read in barcode.reads:
+                    if read.alignments.status == A.AVAILABLE:
+                        for alignment in read.alignments.value:
+                            annotate_alignment(alignment, organism.value, read.alignments.evidence)
+        from ..shared.organism import km_requested, without_km
+        options = self.metadata.get('settings', {})
+        options = options.get('nanotel_analysis', options.get('nanotel', options))
+        if not km_requested(options):
+            for barcode in barcodes:
+                figure = barcode.metrics.get('saved_barcode_figures')
+                if figure and figure.status == A.AVAILABLE:
+                    figure.value = without_km(figure.value)
         label = self.root.parent.name if self.root.name.lower() == "results" else self.root.name
         run = Run(safe_id("run", label), label, organism, settings, stages,
                   barcodes, list(self.sources.values()), {}, self.warnings)

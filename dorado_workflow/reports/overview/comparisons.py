@@ -6,6 +6,7 @@ import re
 from dorado_workflow.reports.shared.colors import motif_color
 from dorado_workflow.reports.barcode.repeats import motif_base_counts, composition_section
 from dorado_workflow.reports.reads.density import tvr_enabled, mismatch_enabled, motif_display_label
+from ..shared.mapping_labels import chromosome_end_label, chromosome_sort_key
 
 
 def mismatch_composition(barcode):
@@ -66,8 +67,8 @@ def comparison_data(run):
     Boundary-crossing matches count once; position markers clip to the call.
     Read prevalence counts each motif once per read. The composition chart instead
     counts individual exported matches, retaining overlaps and source motif roles.
-    Chromosome names come from annotations or explicit chrN[_Head/_Tail] labels;
-    Head/Tail is never interpreted as a chromosome arm.
+    Chromosome ends retain explicit paired annotations. Human/Mouse reference
+    Head/Tail labels display as p/q; ambiguous end assignments remain excluded.
     When only one-mismatch analysis was requested, a separate mismatch summary
     drives the repeat panels without changing TVR counts or chromosome groups.
 
@@ -144,20 +145,12 @@ def comparison_data(run):
                 motifs.update(found)
             if read.alignments.status != "available":
                 continue
-            chromosomes = set()
-            for alignment in read.alignments.value:
-                annotation = alignment.get("chromosome")
-                if annotation and annotation.status == "available":
-                    chromosomes.add(str(annotation.value))
-                    continue
-                reference = alignment["reference"]
-                if reference.status == "available":
-                    match = re.fullmatch(r"(chr(?:[0-9]+|X|Y|M|MT))(?:_(?:Head|Tail))?", reference.value)
-                    if match:
-                        chromosomes.add(match.group(1))
+            organism = run.organism.value if run.organism.status == 'available' else None
+            chromosomes = {label for alignment in read.alignments.value
+                           if (label := chromosome_end_label(alignment, organism)) is not None}
             # Do not assign a molecule to an arbitrary best alignment. Same-
-            # chromosome multimapping contributes once; cross-chromosome reads
-            # are excluded from this chromosome-specific median.
+            # end multimapping contributes once; reads with several possible
+            # chromosome ends are excluded from this end-specific summary.
             if len(chromosomes) == 1:
                 key = (barcode.label, next(iter(chromosomes)))
                 groups[key].append(item["length_bp"])
@@ -242,7 +235,7 @@ def comparison_figures(run, data=None):
     heatmap = go.Figure()
     cells = data["cells"]
     if cells:
-        chroms = sorted({c["chromosome"] for c in cells},key=lambda c:(0,int(c[3:])) if c[3:].isdigit() else (1,c))
+        chroms = sorted({c["chromosome"] for c in cells}, key=chromosome_sort_key)
         barcodes = [b.label for b in run.barcodes]
         lookup = {(c["barcode"],c["chromosome"]):c for c in cells}
         heatmap.add_trace(go.Heatmap(x=chroms,y=[b.replace("barcode","BC") for b in barcodes],

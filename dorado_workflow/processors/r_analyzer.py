@@ -318,8 +318,9 @@ class RAnalyzer(ProcessorBase):
             # Render while numeric CSV/JSON sources still exist. No read-track
             # generation is requested; cleanup follows both successful saves.
             from dorado_workflow.reports.overview.dashboard import write_summary_dashboard
+            from dorado_workflow.reports.shared.report_identity import summary_dashboard_path
             dashboard_path = write_summary_dashboard(
-                run, self.r_analysis_dir / "dashboard_summary.html", comparisons=comparisons
+                run, summary_dashboard_path(self.r_analysis_dir), comparisons=comparisons
             )
             self.context.logger.info(f"Summary dashboard saved to: {dashboard_path}")
             self._cleanup_summary_workspace()

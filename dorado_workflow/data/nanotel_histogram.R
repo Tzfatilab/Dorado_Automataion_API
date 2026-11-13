@@ -42,13 +42,14 @@ make_telomere_histogram_data <- function(data) {
 # Inputs: histogram (Previously calculated histogram bins and metadata); barcode (Barcode label or
 # record used by this operation); mismatch_allowance (Recorded canonical mismatch allowance)
 # Outputs: Plotly histogram with count/percentage controls.
-make_telomere_histogram_plot <- function(histogram, barcode, mismatch_allowance) {
+make_telomere_histogram_plot <- function(histogram, barcode, mismatch_allowance, include_km = FALSE) {
   bins <- histogram$bins
   reads <- histogram$reads
   trend <- histogram$trend
   mode <- if (mismatch_allowance == 0L) "exact" else "mismatch"
   title <- paste0("Telomere Lengths Distribution - ", analysis_barcode_title(barcode))
-  subtitle <- sprintf("Final-filtered reads | %s | complete: %d | censored: %d | unknown: %d",
+  subtitle <- paste0("Final-filtered reads | ", mode)
+  if (isTRUE(include_km)) subtitle <- sprintf("Final-filtered reads | %s | complete: %d | censored: %d | unknown: %d",
                       mode, sum(reads$event == 1L, na.rm = TRUE),
                       sum(reads$event == 0L, na.rm = TRUE), sum(is.na(reads$event)))
   if (histogram$excluded) subtitle <- paste0(subtitle, " | non-positive/non-finite lengths omitted: ", histogram$excluded)
@@ -84,9 +85,9 @@ make_telomere_histogram_plot <- function(histogram, barcode, mismatch_allowance)
   }
   # Export explicit per-read completeness; absence from the censored rug alone
   # must never be interpreted as proof of completeness by the dashboard.
-  p <- plotly::layout(p, meta = list(read_completeness = lapply(seq_len(nrow(reads)), function(i)
+  if (isTRUE(include_km)) p <- plotly::layout(p, meta = list(read_completeness = lapply(seq_len(nrow(reads)), function(i)
     list(read_id = as.character(reads$read_id[i]), event = as.integer(reads$event[i])))))
-  censored <- reads[which(reads$event == 0L), , drop = FALSE]
+  censored <- if (isTRUE(include_km)) reads[which(reads$event == 0L), , drop = FALSE] else reads[FALSE, , drop = FALSE]
   if (nrow(censored)) p <- plotly::add_trace(p,
     x = censored$telomere_length_bp, y = rep(0.5, nrow(censored)), yaxis = "y2",
     type = "scatter", mode = "markers", name = "Censored reads (observed lengths)",
@@ -96,12 +97,12 @@ make_telomere_histogram_plot <- function(histogram, barcode, mismatch_allowance)
     hovertemplate = "Read: %{text}<br>Observed telomere length: %{x:,.0f} bp<br>Censored: full length unknown<extra></extra>")
   p <- plotly::layout(p,
     title = list(text = paste0(htmltools::htmlEscape(title), "<br><sup>", subtitle, "</sup>")),
-    xaxis = list(title = "Telomere length (bp)", tickformat = ",d", anchor = "y2"),
-    yaxis = list(title = "Read count", tickformat = ",d", rangemode = "tozero", domain = c(0.12, 1)),
-    yaxis2 = list(domain = c(0, 0.07), range = c(0, 1), visible = FALSE, fixedrange = TRUE),
-    shapes = list(list(type = "rect", xref = "paper", yref = "paper",
+    xaxis = list(title = "Telomere length (bp)", tickformat = ",d", anchor = if (isTRUE(include_km)) "y2" else "y"),
+    yaxis = list(title = "Read count", tickformat = ",d", rangemode = "tozero", domain = if (isTRUE(include_km)) c(0.12, 1) else c(0, 1)),
+    yaxis2 = if (isTRUE(include_km)) list(domain = c(0, 0.07), range = c(0, 1), visible = FALSE, fixedrange = TRUE) else NULL,
+    shapes = if (isTRUE(include_km)) list(list(type = "rect", xref = "paper", yref = "paper",
                        x0 = 0, x1 = 1, y0 = 0, y1 = 0.07, fillcolor = "#FFF8FA",
-                       line = list(color = "#F1DCE5", width = 1), layer = "below")),
+                       line = list(color = "#F1DCE5", width = 1), layer = "below")) else NULL,
     legend = list(orientation = "h", y = -0.18), margin = list(t = 145, b = 110),
     dragmode = "zoom", plot_bgcolor = "white", paper_bgcolor = "white")
   if (!nrow(reads)) p <- plotly::layout(p, annotations = list(

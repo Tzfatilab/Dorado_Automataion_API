@@ -78,7 +78,7 @@
       const columns=[['Read number',r=>r.label||unavailable],['Read ID',r=>r.header||unavailable],
         ['Total read length (kb)',r=>kb(r.length),'decimal'],
         ['Telomere start (bp)',r=>scalar(mismatch?r.mismatch_start:r.canonical_start),'integer'],
-        ['Filtration status',r=>rowsFor(page)==null?'Unavailable':retained.has(r.id)?'Passed':'Not retained'],
+        ['Filtration status',r=>rowsFor(page)==null?'Unavailable':retained.has(r.id)?'Passed':'Filtered out'],
         ['Filtration reason',r=>retained.has(r.id)?'-':r.filtration_reason||r.filter_reason||unavailable],
         ['Canonical telomere length (kb)',r=>kb(r.exact_length),'decimal'],
         ...(mismatch?[[ 'Telomere length including mismatch (kb)',r=>kb(r.mismatch_length),'decimal']]:[]),
