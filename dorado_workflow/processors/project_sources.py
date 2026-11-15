@@ -55,10 +55,11 @@ class ProjectSources:
         snapshot = results / "reports" / "nanotel_source_settings.json"
         if config.is_file():
             settings = json.loads(config.read_text(encoding="utf-8-sig"))
+            organism = settings.get("organism")
         if snapshot.is_file():
             saved = json.loads(snapshot.read_text(encoding="utf-8-sig"))
             settings = settings or {"nanotel_analysis": saved["nanotel_analysis"]}
-            organism = saved.get("organism")
+            organism = organism or saved.get("organism")
         if workbook:
             book = load_workbook(workbook, read_only=True, data_only=True)
             try:
@@ -84,7 +85,25 @@ class ProjectSources:
         params = settings.get("nanotel_analysis", settings)
         if not isinstance(params, dict) or not {"max_mismatch", "tvr_patterns", "telomere_pattern"}.issubset(params):
             raise ValueError("Original NanoTel settings are missing. Select the complete project, including its saved configuration or source workbook.")
-        return cls(root, results, summaries, workbook, settings, organism or "")
+        def normalize_organism(value):
+            label = str(value).strip().lower() if isinstance(value, str) else ""
+            return "zebrafish" if label in {"fish", "zabra fish", "zebra fish"} else label
+        if not organism:
+            recorded = set()
+            for path in source_files(results / "logs", "*.log"):
+                if path.name.startswith("nanotel_"):
+                    continue
+                with path.open(encoding="utf-8", errors="replace") as stream:
+                    for line in stream:
+                        match = re.search(r" - INFO - Organism: ([A-Za-z ]+)\s*$", line)
+                        if match:
+                            recorded.add(normalize_organism(match.group(1)))
+            if len(recorded) == 1:
+                organism = recorded.pop()
+        organism = normalize_organism(organism)
+        if organism and organism not in {"human", "mouse", "zebrafish"}:
+            raise ValueError("The original run records an unsupported organism: " + organism)
+        return cls(root, results, summaries, workbook, settings, organism)
 
     @property
     def params(self):

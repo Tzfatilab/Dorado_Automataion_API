@@ -77,17 +77,21 @@ class AdvancedSection:
         self.allow_mismatch.setVisible(not post)
         self.allow_mismatch.setEnabled(not post)
         if post and not getattr(self, "_post_analysis_active", False):
+            self._organism_before_post = self.organism.currentText()
             self._summary_before_post = self.summary_only.isChecked()
             self._mismatch_before_post = self.allow_mismatch.isChecked()
             self.allow_mismatch.setChecked(False)
         elif not post and getattr(self, "_post_analysis_active", False):
+            self.organism.setToolTip("")
+            self.organism.setCurrentText(self._organism_before_post)
             self.summary_only.setChecked(self._summary_before_post)
             self.allow_mismatch.setChecked(self._mismatch_before_post)
         if not post:
             self._sync_tvr_mismatch_state()
         self._post_analysis_active = post
         self.summary_only.setEnabled(True)
-        self.organism.setEnabled(not post or not getattr(self, "_post_source_organism", ""))
+        self.organism_card.setVisible(not post)
+        self.organism.setEnabled(not post)
 
     @staticmethod
     def _set_option_card_enabled(card, enabled):

@@ -353,7 +353,7 @@ class AppWindow(
         profile_changed = initial or getattr(self, "_applied_profile", None) != self.settings_store.active
         organism_labels = {"mouse": "Mouse", "human": "Human", "zebrafish": "Zebra Fish"}
         organism = organism_labels[config["lab_info"]["default_organism"]]
-        if profile_changed or self.organism.currentText() == getattr(self, "_profile_organism", ""):
+        if "post_analysis" not in self.selected_workflows and (profile_changed or self.organism.currentText() == getattr(self, "_profile_organism", "")):
             self.organism.blockSignals(True)
             self.organism.setCurrentText(organism)
             self.organism.blockSignals(False)

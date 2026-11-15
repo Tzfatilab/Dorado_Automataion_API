@@ -60,6 +60,7 @@ class ConfigSection:
             None; uses instance state.
         """
         box = make_card("Configuration")
+        self.organism_card = box
         box.setStyleSheet(box.styleSheet() + """
             QGroupBox {
                 padding-top: 12px;

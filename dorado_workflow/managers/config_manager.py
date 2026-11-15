@@ -231,6 +231,15 @@ class ConfigManager:
         self._current_organism = organism
         self._update_merged_config()
 
+    def clear_organism_for_recalculation(self) -> None:
+        """Preserve missing legacy metadata without inheriting a profile organism.
+
+        Only saved populations/alignments are refiltered in this mode; no new
+        detection or reference alignment may use this unspecified organism.
+        """
+        self._current_organism = ""
+        self._update_merged_config()
+
     def get_current_organism(self) -> str:
         """Get the currently selected organism.
 

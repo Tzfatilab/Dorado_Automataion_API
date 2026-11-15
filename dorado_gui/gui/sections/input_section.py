@@ -220,7 +220,16 @@ class InputSection:
         if self.selected_input != "project" or not hasattr(self, "nanotel_mapping"):
             return
         path = self.input_path.text().strip()
-        if not path or path == getattr(self, "_post_loaded_path", None):
+        if path and path == getattr(self, "_post_loaded_path", None):
+            return
+        self.organism.setEnabled(False)
+        self.organism.setToolTip("Select the original project to load its organism.")
+        self._post_loaded_path = None
+        self._post_source_organism = ""
+        self.organism.blockSignals(True)
+        self.organism.setCurrentIndex(-1)
+        self.organism.blockSignals(False)
+        if not path:
             return
         try:
             from dorado_workflow.processors.project_sources import ProjectSources
@@ -228,13 +237,13 @@ class InputSection:
             self._post_loaded_path = path
             self.summary_only.setChecked(bool(source.params.get("summary_only", False)))
             self._post_source_organism = source.organism
-            self.organism.setEnabled(not bool(source.organism))
             # Detection is not rerun; this disabled control is not a request to
             # enable mismatches. The backend retains the saved source settings.
             self.allow_mismatch.setChecked(False)
             if source.organism:
-                index = self.organism.findText(source.organism, Qt.MatchFixedString)
-                if index >= 0: self.organism.setCurrentIndex(index)
+                label = {"human": "Human", "mouse": "Mouse", "zebrafish": "Zebra Fish"}[source.organism]
+                self.organism.setCurrentText(label)
+                self.organism.setToolTip("Organism is inherited from the original run and cannot be changed in Recalculate.")
             params = source.params
             for name, key in (("read_length", "min_read_length"), ("max_telomere_start", "max_telomere_start"),
                               ("min_density_threshold", "density_threshold"), ("short_telomere_threshold", "short_telomere_threshold_bp")):

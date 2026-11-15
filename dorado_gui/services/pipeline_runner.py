@@ -925,12 +925,14 @@ def _run_post_analysis(*, project_path, output_dir, organism, summary_only, read
     mapping = bool(source.settings.get("run_mapping_analysis", False))
     log("Recalculate: refiltering saved alignments; no new alignment will run."
         if mapping else "Recalculate: telomere filtering only; the original run had no mapping stage.")
-    organism = source.organism or organism
+    organism = source.organism
     from dorado_workflow.utils.source_discovery import RECALCULATED_FOLDER
     base = Path(_resolve_base_output_dir(output_dir or str(source.root / RECALCULATED_FOLDER))).resolve()
     context = _setup_pipeline_context(output_dir=str(base), organism=organism, log=log,
         do_basecalling=False, do_nanotel=True, bam_path="", nanotel_mapping=mapping,
         align_during_basecalling=False, config_data=config_data)
+    if not organism:
+        context.config_manager.clear_organism_for_recalculation()
     context.command_executor.stop_callback = stop_cb
     params = dict(context.config_manager.get_nanotel_params())
     params.update(source.params)
