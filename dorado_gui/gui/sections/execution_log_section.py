@@ -101,10 +101,15 @@ class ExecutionLogSection:
             if line.strip() == 'Run started':
                 self._recalculate_log = 'post_analysis' in getattr(self, 'selected_workflows', set())
                 self._recalculation_formatter = RecalculationLog()
+                self._barcode_progress_stage = None
             if line.strip().startswith('Recalculate:'):
                 self._recalculate_log = True
             recalculate = getattr(self, '_recalculate_log', False)
             self._update_progress_from_log(line.strip())
+            if re.fullmatch(r'Dashboard: barcode loading \d+/\d+ \([^)]+\)', line.strip()):
+                continue  # Update the existing progress bar without adding log rows.
+            if re.fullmatch(r'Stage progress: [\w-]+ \d+/\d+ \([^)]+\)', line.strip()):
+                continue
             if recalculate:
                 if not hasattr(self, '_recalculation_formatter'):
                     self._recalculation_formatter = RecalculationLog()
@@ -157,6 +162,47 @@ class ExecutionLogSection:
         if not line:
             return
 
+        stage_progress = re.fullmatch(r'Stage progress: ([\w-]+) (\d+)/(\d+) \(([^)]+)\)', line)
+        if stage_progress:
+            stage, completed, total, active = stage_progress.groups()
+            titles = {'telomere-filtering': 'Telomere filtering',
+                      'mapping-filtering': 'Saved mapping filtering' if getattr(self, '_recalculate_log', False) else 'Mapping filtering',
+                      'excel-tables': 'Excel barcode tables'}
+            completed, total = int(completed), int(total)
+            if stage in titles and total > 0:
+                self._barcode_progress_stage = stage
+                completed = min(completed, total)
+                percent = completed * 100 // total
+                self.progress_stage_label.setText(titles[stage])
+                self.progress_bar.setRange(0, 100)
+                self.progress_bar.setValue(percent)
+                self.progress_percent_label.setText(f'{percent}%')
+                detail = '' if active == 'complete' else ' - ' + active.removesuffix('_summary.csv').lower()
+                self.progress_label.setText(f'{completed} of {total} barcodes processed{detail}')
+            return
+
+        barcode_loading = re.fullmatch(r'Dashboard: barcode loading (\d+)/(\d+) \(([^)]+)\)', line)
+        if barcode_loading:
+            completed, total = int(barcode_loading[1]), int(barcode_loading[2])
+            if total > 0:
+                completed = min(completed, total)
+                percent = completed * 100 // total
+                self.progress_stage_label.setText('Loading barcode data')
+                self.progress_bar.setRange(0, 100)
+                self.progress_bar.setValue(percent)
+                self.progress_percent_label.setText(f'{percent}%')
+                active = '' if barcode_loading[3] == 'complete' else f' - {barcode_loading[3]}'
+                self.progress_label.setText(f'{completed} of {total} barcodes loaded{active}')
+            return
+        if line.startswith('Dashboard: saved data loaded'):
+            self.progress_stage_label.setText('Dashboard charts')
+            self._show_busy_progress('Building charts and HTML...')
+            return
+        if line.startswith('Excel:'):
+            self.progress_stage_label.setText('Excel export')
+            self._show_busy_progress(line.removeprefix('Excel:').strip())
+            return
+
         if getattr(self, '_recalculate_log', False):
             if line.startswith('STEP 1: NANOTEL ANALYSIS'):
                 self.progress_stage_label.setText('Telomere filtering')
@@ -168,7 +214,8 @@ class ExecutionLogSection:
                 return
             match = re.match(r'Processing NanoTel file:\s*(barcode\d+)_summary\.csv', line, re.I)
             if match:
-                self._show_busy_progress('Refiltering ' + match[1].lower())
+                if getattr(self, '_barcode_progress_stage', None) != 'telomere-filtering':
+                    self._show_busy_progress('Refiltering ' + match[1].lower())
                 return
             if line.startswith('Generating All Barcodes dashboard and Excel workbook'):
                 self.progress_stage_label.setText('Dashboard and Excel')

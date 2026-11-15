@@ -3,6 +3,60 @@
   const pages = [...document.querySelectorAll('.barcode-page')];
   const title = document.querySelector('header h1');
   const missing = document.getElementById('unknown-barcode');
+  // Population changes reuse compact precomputed figures; no scientific
+  // filtering, histogram binning or R work runs inside the browser.
+  function updateLengthPlot(plot, page) {
+    plot.populationRender = (plot.populationRender || Promise.resolve()).then(async () => {
+      const population = page.dataset.lengthPopulation || 'filtered';
+      if (plot.dataset.population === population && plot._fullLayout) {
+        if (!page.hidden) Plotly.Plots.resize(plot);
+        return;
+      }
+      const section = plot.closest('[data-length-population-chart]');
+      const variants = JSON.parse(section.querySelector('.length-population-figures').textContent);
+      const selected = variants[population];
+      const figure = selected?.figure || {data:[], layout:{}};
+      // Clone because Plotly mutates arrays and layout metadata during rendering.
+      const copy = JSON.parse(JSON.stringify(figure));
+      const controls = section.querySelector('.histogram-controls');
+      const oldUnit = controls.querySelector('button[aria-pressed="true"]')?.textContent || 'Read count';
+      controls.replaceChildren();
+      const menu = (copy.layout.updatemenus || []).find(m => m.buttons?.some(b => b.label === 'Read count'));
+      if (menu) menu.visible = false;
+      if (plot._fullLayout) await Plotly.react(plot, copy.data, copy.layout, {...copy.config, responsive:true});
+      else {
+        await Plotly.newPlot(plot, copy.data, copy.layout, {...copy.config, responsive:true});
+        plot.on('plotly_click', event => {
+          const point = event.points[0];
+          if (document.body.dataset.summaryOnly !== 'true' && point?.data.meta === 'read-links' && point.customdata?.[1])
+            location.hash = '#/barcode/' + point.customdata[0] + '/read/' + point.customdata[1];
+        });
+      }
+      if (menu) {
+        for (const saved of menu.buttons) {
+          const button = document.createElement('button');
+          button.type = 'button'; button.textContent = saved.label;
+          button.setAttribute('aria-pressed', String(saved.label === oldUnit));
+          button.onclick = () => Plotly.update(plot, ...saved.args).then(() => {
+            controls.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
+          });
+          controls.appendChild(button);
+        }
+        const active = menu.buttons.find(b => b.label === oldUnit);
+        if (active) await Plotly.update(plot, ...active.args);
+      }
+      section.querySelector(':scope > p.note').textContent = selected?.note || 'Selected population is unavailable.';
+      // The live graph is also the PNG/interactive export source.
+      plot.dataset.population = population;
+    }).catch(() => {
+      delete plot.dataset.population;
+      plot.closest('section').querySelector(':scope > p.note').textContent = 'This population could not be displayed. Select it again to retry.';
+    });
+  }
+  document.addEventListener('read-population-change', event => {
+    const page = event.target.closest('.barcode-page');
+    if (page && !page.hidden) page.querySelectorAll('[data-length-population-chart] .saved-histogram').forEach(plot => updateLengthPlot(plot, page));
+  });
   // Function: route.
   // Inputs: None; uses the current report/browser state.
   // Outputs: Shows the page selected by the URL hash and lazily renders its figures.
@@ -24,6 +78,7 @@
     // Render the source-saved histogram only once its barcode is visible, so
     // Plotly measures the correct width. No bins or scientific values change.
     if (page) page.querySelectorAll('.saved-histogram').forEach(plot => {
+      if (plot.closest('[data-length-population-chart]')) { updateLengthPlot(plot, page); return; }
       if (plot.dataset.started) { if (plot._fullLayout) Plotly.Plots.resize(plot); return; }
       plot.dataset.started = 'true';
       let figure;

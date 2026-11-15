@@ -186,7 +186,7 @@ batch_process_nanotel_files <- function(input_files,
 
   for (i in seq_along(input_files)) {
     file_path <- input_files[i]
-    show_progress(i, length(input_files), "Processing NanoTel files")
+    report_stage_progress("telomere-filtering", i - 1L, length(input_files), basename(file_path))
 
     tryCatch({
       # Process individual file
@@ -231,6 +231,7 @@ batch_process_nanotel_files <- function(input_files,
     })
   }
 
+  report_stage_progress("telomere-filtering", length(input_files), length(input_files))
   if (length(failed_files) > 0) {
     # The caller must not write a partial combined summary as a successful run.
     stop(

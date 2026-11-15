@@ -20,7 +20,7 @@ from dataclasses import asdict
 from dorado_workflow.reports.interactive.importers import import_results
 from dorado_workflow.reports.overview.comparisons import comparison_figures, comparison_data
 from dorado_workflow.reports.barcode.dashboard import barcode_views, barcode_summary_section, ROUTER
-from dorado_workflow.reports.barcode.length_plots import histogram_sections, telomere_plot_sections
+from dorado_workflow.reports.barcode.length_plots import length_plot_sections
 
 TITLE = "Telomere Analysis Summary - All Barcodes"
 # Inline SVG paths, in the same order as the six card specifications below.
@@ -157,11 +157,7 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
     from ..shared.barcode_exclusion import exclusion_data_html
     selection_data = exclusion_data_html(run, comparisons=comparisons)
     # Resolve beside this module, independent of the process working directory.
-    histograms = histogram_sections(run, results_root)
-    read_plots = telomere_plot_sections(run, results_root)
-    # Sections 2 and 3 share a row on desktop and stack on smaller screens.
-    barcode_plots = {b.id: '<div class="charts barcode-length-charts">' + histograms[b.id] + read_plots[b.id] + '</div>'
-                     for b in run.barcodes}
+    barcode_plots = length_plot_sections(run)
     navigation, barcode_pages = barcode_views(run, ICONS, barcode_plots, results_root=results_root,summary_only=summary_only,comparisons=comparisons)
     css = (Path(__file__).parents[1] / "assets" / "dashboard.css").read_text(encoding="utf-8")
     barcode_summary = barcode_summary_section(run, comparisons)

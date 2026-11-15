@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from ..storage.analysis_metadata import flatten_analysis
+from .source_policy import export_source_rows
 
 def barcode_from_summary_filename(filename: str) -> Optional[str]:
     """Return a normalized barcode from a CSV filename, or None if absent.
@@ -48,7 +49,7 @@ class NanoTelWorkbookWriter:
         self.results_dir = results_dir
         self.short_telomere_threshold_bp = short_telomere_threshold_bp
 
-    def write(self, run=None, comparisons=None, check_cancelled=None) -> Path:
+    def write(self, run=None, comparisons=None, check_cancelled=None, progress=None) -> Path:
         """Return the saved workbook path, preserving CSV values and sheet order.
 
         Raise if raw summaries are missing or duplicate barcode names exist.
@@ -65,10 +66,11 @@ class NanoTelWorkbookWriter:
         self._check_cancelled = check_cancelled
         check_cancelled()
         summary_csv = self.source_dir / "nanotel_summary_statistics.csv"
-        from ..shared.organism import filter_km_workbook, show_km, km_requested, is_km_field
+        from ..shared.organism import show_km, km_requested, is_km_field, without_km
         config = self.results_dir / 'reports' / 'r_pipeline_config.json'
         params = json.loads(config.read_text(encoding='utf-8')).get('nanotel_analysis', {}) if config.is_file() else {}
         include_km = show_km(run) if run is not None else km_requested(params)
+        self._include_km = include_km
 
         workbook = Workbook()
         summary_sheet = workbook.active
@@ -100,7 +102,7 @@ class NanoTelWorkbookWriter:
             )
             detail_file = filtered_files.get(barcode)
             if detail_file is None:
-                self._populate_empty_filtered_sheet(sheet, raw_files[barcode])
+                self._populate_empty_filtered_sheet(sheet, raw_files[barcode], include_km=include_km)
             else:
                 self._populate_csv_sheet(sheet, detail_file)
 
@@ -140,7 +142,7 @@ class NanoTelWorkbookWriter:
             sheet.column_dimensions["B"].width = 62
             sheet.column_dimensions["C"].width = 42
         definitions = workbook.create_sheet("Definitions")
-        for row in [
+        definition_rows = [
             ["Output", "Summary-only numeric results with a separate compact dashboard. No per-read plots, FASTA or density tracks. Original barcode figures and compact per-read motif summaries are retained for the shared dashboard, without motif coordinates."],
             ["NanoTel Statistics", "R post-analysis filtered population. Source column names and units are retained."],
             ["barcodeXX", "Imported NanoTel summary reads before post-analysis filtering; not every input/basecalled read."],
@@ -150,7 +152,8 @@ class NanoTelWorkbookWriter:
             ["Analysis facts", "Exact exported field names; length fields ending in bp are base pairs, pct fields are percentages (0 to 100)."],
             ["Missing data", "Blank source cells or Unavailable are missing data, not zero. Missing KM files do not imply zero censoring."],
             ["Other stages", "Separately selected mapping and modification analyses remain enabled; their outputs are retained separately."],
-        ]:
+        ]
+        for row in export_source_rows('Definitions', definition_rows, include_km, check_cancelled):
             definitions.append(row)
         definitions.column_dimensions["A"].width = 25
         definitions.column_dimensions["B"].width = 110
@@ -178,6 +181,8 @@ class NanoTelWorkbookWriter:
                 saved=barcode.metrics.get('saved_barcode_figures')
                 if saved and saved.status=='available':
                     for kind,figure in saved.value.items():
+                        if not include_km:
+                            figure = without_km(figure)
                         encoded=json.dumps(figure,ensure_ascii=True,allow_nan=False)
                         for i in range(0,len(encoded),30000):figures.append([barcode.label,kind,i//30000+1,encoded[i:i+30000]])
                 for read in barcode.reads:
@@ -193,22 +198,26 @@ class NanoTelWorkbookWriter:
             payload = {'organism': run.organism.value if run.organism.status == 'available' else None,
                        'settings': run.settings.value if run.settings.status == 'available' else None,
                        'stages': {k: f.value for k,f in run.stages.items() if f.status == 'available'}}
+            metadata_rows = [['Field', 'Part', 'Value']]
             for key, value in payload.items():
                 encoded = json.dumps(value, ensure_ascii=True, allow_nan=False)
                 for i in range(0,len(encoded),30000):
-                    metadata.append([key,i//30000+1,encoded[i:i+30000]])
-                    metadata.cell(metadata.max_row,3).data_type='s'
+                    metadata_rows.append([key,i//30000+1,encoded[i:i+30000]])
+            for row_index, row in enumerate(export_source_rows('Run metadata', metadata_rows, include_km, check_cancelled), 1):
+                if row_index == 1:
+                    continue  # Header was written when the worksheet was created.
+                metadata.append(row)
+                metadata.cell(row_index,3).data_type='s'
             # Keep the source tables for faithful re-import, while presenting the
             # same read-statistics layout as the full dashboard's workbook.
             for source in workbook:
                 source.title = '_source_' + source.title
                 source.sheet_state = 'hidden'
             from .dashboard_workbook import build_dashboard_workbook
-            workbook = build_dashboard_workbook(run, self.source_dir.parent, workbook, comparisons=comparisons, check_cancelled=check_cancelled)
+            workbook = build_dashboard_workbook(run, self.source_dir.parent, workbook, comparisons=comparisons, check_cancelled=check_cancelled, progress=progress)
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
         workbook_path = self.results_dir / "nanotel_summary.xlsx"
-        filter_km_workbook(workbook, include_km, check_cancelled=check_cancelled)
         temporary_path = workbook_path.with_suffix(".tmp.xlsx")
         try:
             from .workbook_io import save_cancellable
@@ -292,6 +301,8 @@ class NanoTelWorkbookWriter:
         Returns:
             Numeric value, text or None, preserving the source cell meaning.
         """
+        if value is None:
+            return None
         text = value.strip()
         if text == "":
             return None
@@ -313,7 +324,9 @@ class NanoTelWorkbookWriter:
             None.
         """
         with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
-            reader = csv.reader(handle)
+            reader = export_source_rows(sheet.title, csv.reader(handle),
+                                        getattr(self, '_include_km', True),
+                                        getattr(self, '_check_cancelled', None))
             column_widths: List[int] = []
             text_columns = set()
             row_count = 0
@@ -416,7 +429,7 @@ class NanoTelWorkbookWriter:
 
 
     @staticmethod
-    def _populate_empty_filtered_sheet(sheet, raw_csv: Path) -> None:
+    def _populate_empty_filtered_sheet(sheet, raw_csv: Path, include_km=True) -> None:
         """Create a header-only filtered sheet for a barcode with no passing reads.
 
         Args:
@@ -432,6 +445,7 @@ class NanoTelWorkbookWriter:
         for derived_name in ("running_median", "seqLen_runningMED", "barcode"):
             if derived_name not in header:
                 header.append(derived_name)
-        sheet.append(header or ["No reads passed filtering"])
+        rows = export_source_rows(sheet.title, [header or ["No reads passed filtering"]], include_km)
+        sheet.append(next(rows))
         sheet.freeze_panes = "A2"
         sheet.auto_filter.ref = sheet.dimensions

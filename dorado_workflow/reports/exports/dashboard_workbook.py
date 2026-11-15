@@ -12,6 +12,7 @@ from openpyxl.utils import get_column_letter
 from ..reads.browser import read_rows
 from ..shared.short_telomeres import short_cutoff_bp
 from ..shared.organism import show_km
+from .source_policy import km_reference, km_description
 from ..shared.barcode_statistics import barcode_key_statistics
 
 MISSING = 'Unavailable'
@@ -57,7 +58,8 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     progress = progress or (lambda message: None)
     check_cancelled = check_cancelled or (lambda: None)
     check_cancelled()
-    progress('Excel: building barcode tables and source facts')
+    include_km = show_km(run)
+    progress('Excel: writing barcode tables and source facts')
     wb = workbook if workbook is not None else Workbook()
     if workbook is None:
         wb.remove(wb.active)
@@ -154,7 +156,7 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     km_keys = ['km_status', 'km_median_bp', 'km_ci_lower_bp', 'km_ci_upper_bp',
         'km_whole_relative_ci_width_pct', 'km_input_read_count', 'km_complete_read_count',
         'km_censored_read_count', 'km_censoring_rate_pct', 'km_reporting_reason']
-    km = sheet('Kaplan-Meier', ['Barcode ID', *km_keys]) if show_km(run) else None
+    km = sheet('Kaplan-Meier', ['Barcode ID', *km_keys]) if include_km else None
 
     def fact_rows(barcode, read_id, key, fact):
         """Fact rows.
@@ -169,10 +171,10 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
             None.
         """
         from ..shared.organism import is_km_field, without_km
-        if not show_km(run) and is_km_field(key):
+        if not include_km and is_km_field(key):
             return
         raw = value(fact)
-        if not show_km(run):
+        if not include_km:
             raw = without_km(raw)
         if isinstance(raw, (dict, list, tuple)):
             raw = json.dumps(raw, default=lambda x: asdict(x) if is_dataclass(x) else str(x), ensure_ascii=True)
@@ -188,8 +190,9 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
 
     for key, fact in {'organism': run.organism, 'settings': run.settings, **run.stages, **run.metrics}.items():
         fact_rows('', '', key, fact)
-    for barcode in run.barcodes:
+    for barcode_index, barcode in enumerate(run.barcodes):
         check_cancelled()
+        progress(f'Stage progress: excel-tables {barcode_index}/{len(run.barcodes)} ({barcode.label})')
         filtered = read_rows(barcode)
         cutoff = short_cutoff_bp(run.settings, barcode)
         source_count = value(barcode.metrics.get('amount_of_telomeres'))
@@ -279,9 +282,14 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
             for method, calls in read.calls.items():
                 for key, fact in calls.items():
                     fact_rows(barcode.label, read.original_id, method+'.'+key, fact)
+    if run.barcodes:
+        progress(f'Stage progress: excel-tables {len(run.barcodes)}/{len(run.barcodes)} (complete)')
+    progress('Excel: formatting tables')
     sources = sheet('Sources', ['Source ID', 'Path', 'SHA256', 'Format', 'Sheet'])
     for source in run.sources:
-        append(sources, [source.id, source.path, source.sha256, source.format, source.sheet])
+        row = [source.id, source.path, source.sha256, source.format, source.sheet]
+        if include_km or not km_reference(row):
+            append(sources, row)
     definitions = sheet('Definitions', ['Field', 'Definition'])
     cutoff_note = ('Telomere length < '+str(next(iter(cutoffs)))+' bp. ') if len(cutoffs)==1 and None not in cutoffs else 'Per-barcode cutoffs are retained in Source facts. '
     for row in [
@@ -299,7 +307,8 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
         ['Source facts', 'Imported run/barcode/read metrics, calls, filtering and alignments with availability, populations and provenance. Long JSON values and evidence are split into numbered chunks.'],
         ['Scope', 'Automatic snapshot of all imported barcodes. Browser-only renaming/exclusion is not applied to this file. Plot images and density/motif track arrays remain in the dashboard and original scientific exports.'],
     ]:
-        append(definitions, row)
+        if include_km or not km_description(row):
+            append(definitions, row)
     for ws in wb:
         if ws.max_row > 1048576 or ws.max_column > 16384:
             raise ValueError(f'Excel worksheet size limit exceeded: {ws.title}')
@@ -328,13 +337,10 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     if results_root is not None:
         progress('Excel: retaining source data for future Recalculate')
         from ..storage.analysis_metadata import retain_analysis_sheet
-        retain_analysis_sheet(wb, results_root, include_km=show_km(run), check_cancelled=check_cancelled)
+        retain_analysis_sheet(wb, results_root, include_km=include_km, check_cancelled=check_cancelled)
         from ..storage.source_tables import retain_source_tables
         retain_source_tables(wb, results_root, run, check_cancelled=check_cancelled)
     facts.sheet_state = 'hidden'
-    from ..shared.organism import filter_km_workbook
-    progress('Excel: checking retained source fields')
-    filter_km_workbook(wb, show_km(run), check_cancelled=check_cancelled)
     return wb
 
 

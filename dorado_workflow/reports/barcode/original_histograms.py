@@ -5,35 +5,12 @@ import shutil
 import subprocess
 import tempfile
 
-from ..reads.browser import read_rows
-from ..reads.density import mismatch_enabled
+def original_histograms(requests):
+    """Render recorded length populations in one shared NanoTel R process.
 
-
-def original_histograms(barcodes, settings):
-    """Build original figures over the current exported post-filtered reads.
-
-    Args:
-        barcodes: Barcode records needing a regenerated histogram.
-        settings: Recorded settings used to label the exact/mismatch calling mode.
-
-    Returns:
-        Figure dictionary indexed by barcode ID. Missing populations are omitted.
-        Raises RuntimeError if the original R renderer cannot run; no alternate
-        histogram implementation is substituted.
+    Requests contain stable IDs, source lengths and the recorded matching mode.
+    Missing populations are omitted by the caller; empty populations are explicit.
     """
-    mode = mismatch_enabled(settings)
-    if mode is None:
-        return {}
-    requests = []
-    for barcode in barcodes:
-        rows = read_rows(barcode)
-        if rows is None or any(row['telomere'] is None for row in rows):
-            continue
-        from ..shared.organism import km_requested
-        params = settings.value if settings.status == 'available' else {}
-        params = params.get('nanotel_analysis', params)
-        requests.append(dict(id=barcode.id, barcode=barcode.label, mismatch_allowance=int(mode), include_km=km_requested(params),
-            lengths_bp=[row['telomere'] for row in rows], read_ids=[row['header'] for row in rows]))
     if not requests:
         return {}
     executable = shutil.which('Rscript')

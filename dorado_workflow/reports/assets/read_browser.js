@@ -120,14 +120,16 @@
     let populationSelect=null;
     {
       const label=node('label','Population ',controls);populationSelect=node('select','',label);
-      [['all','All reads'],['filtered','Included only'],['excluded','Excluded only']].forEach(([v,t])=>{const o=node('option',t,populationSelect);o.value=v;});
+      [['filtered','After filtering'],['all','All reads (before filtering)'],['excluded','Excluded by filtering']].forEach(([v,t])=>{const o=node('option',t,populationSelect);o.value=v;});
       const all=[...detailRows].sort((a,b)=>a.label.localeCompare(b.label,undefined,{numeric:true}));
       const excluded=all.filter(read=>read.excluded);
-      rows=all;
+      populationSelect.value='filtered';
+      page.dataset.lengthPopulation='filtered';
+      rows=filteredRows||[];
       // Function: populationSelect.onchange.
       // Inputs: None; uses the current report/browser state.
       // Outputs: Handles the UI action and updates the associated report controls.
-      populationSelect.onchange=()=>{rows=populationSelect.value==='all'?all:populationSelect.value==='excluded'?excluded:filteredRows||[];columnFilters.clear();current=1;render();};
+      populationSelect.onchange=()=>{rows=populationSelect.value==='all'?all:populationSelect.value==='excluded'?excluded:filteredRows||[];columnFilters.clear();current=1;render();page.dataset.lengthPopulation=populationSelect.value;section.dispatchEvent(new CustomEvent('read-population-change',{bubbles:true}));};
       // Function: reset.onclick.
       // Inputs: None; uses the current report/browser state.
       // Outputs: Handles the UI action and updates the associated report controls.

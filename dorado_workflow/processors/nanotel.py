@@ -11,9 +11,12 @@ from typing import Dict, List, Optional
 import gzip
 import json
 import math
+import os
 import re
+import shutil
+import tempfile
 from .base import ProcessorBase, ProcessorResult, WorkflowContext
-from ..utils.cancellation import WorkflowCancelled
+from ..utils.cancellation import WorkflowCancelled, CancellableWriter
 from ..utils.analysis_constants import NANOTEL_RECORDS_PER_CHUNK, FASTQ_LINES_PER_RECORD
 from ..utils.shell_commands import format_command
 from dorado_workflow.reports.exports.kaplan_meier import write_km_run_statistics
@@ -287,6 +290,37 @@ class NanoTelProcessor(ProcessorBase):
 
         return tasks
 
+    def _retain_original_reads(self, task: Dict) -> None:
+        """Keep unchanged barcode FASTQs in full runs, independently of filtering.
+
+        The report organizer moves this folder with the other barcode data.
+        Summary and recalculation do not create additional sequence copies.
+        """
+        if self.context.config_manager.get_nanotel_params().get('summary_only', False):
+            return
+        source_root = Path(task['input_dir']).resolve()
+        barcode_root = Path(task['output_dir']).resolve()
+        destination = barcode_root / 'original_reads'
+        sources = sorted(path for path in source_root.rglob('*') if path.is_file()
+                         and re.search(r'\.(fastq|fq)(\.gz)?$', path.name, re.I))
+        check_cancelled = self.context.command_executor.check_cancelled
+        self.context.logger.info(f"Saving original FASTQ reads for {task['barcode']} ({len(sources)} files)")
+        for source in sources:
+            check_cancelled()
+            target = destination / source.relative_to(source_root)
+            if not target.resolve().is_relative_to(barcode_root):
+                raise ValueError('Original-read destination leaves the barcode directory')
+            target.parent.mkdir(parents=True, exist_ok=True)
+            descriptor, name = tempfile.mkstemp(prefix=target.name + '.', suffix='.tmp', dir=target.parent)
+            temporary = Path(name)
+            try:
+                with os.fdopen(descriptor, 'wb') as output, source.open('rb') as original:
+                    shutil.copyfileobj(original, CancellableWriter(output, check_cancelled), 1024 * 1024)
+                check_cancelled()
+                os.replace(temporary, target)
+            finally:
+                temporary.unlink(missing_ok=True)
+
     @staticmethod
     def _count_fastq_chunks(
         fastq_files: List[Path], records_per_chunk: int = NANOTEL_RECORDS_PER_CHUNK
@@ -345,6 +379,8 @@ class NanoTelProcessor(ProcessorBase):
                     ),
                 )
                 duration = self._last_command_duration()
+
+                self._retain_original_reads(task)
 
                 # Mark as successful in barcode manager
                 self.context.barcode_manager.register_success(barcode, 'nanotel')

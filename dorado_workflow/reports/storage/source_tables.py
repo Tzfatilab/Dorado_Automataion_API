@@ -3,6 +3,7 @@ import csv
 import json
 from pathlib import Path
 import re
+from itertools import chain
 
 from openpyxl import load_workbook
 from dorado_workflow.utils.source_discovery import source_files
@@ -96,6 +97,7 @@ def retain_source_tables(workbook, results_root, run, check_cancelled=None):
         append_text(sheet, row)
     root = Path(results_root)
     from ..shared.organism import show_km, km_table
+    from ..exports.source_policy import export_source_rows
     include_km = show_km(run)
     candidates = [root / 'nanotel/nanotel_results.xlsx', root / 'nanotel_summary.xlsx',
                   root / 'reports/post_analysis_sources/nanotel_summary.xlsx']
@@ -123,9 +125,10 @@ def retain_source_tables(workbook, results_root, run, check_cancelled=None):
         if text_title in workbook.sheetnames:
             del workbook[text_title]
         sheet = workbook.create_sheet(text_title)
-        retain_row(sheet, ['Path', 'Part', 'Text'])
-        for (name, part), content in sorted(text_records.items()):
-            retain_row(sheet, [name, part, content])
+        rows = chain([['Path', 'Part', 'Text']],
+                     ([name, part, content] for (name, part), content in sorted(text_records.items())))
+        for row in export_source_rows(text_title, rows, include_km, check_cancelled):
+            retain_row(sheet, row)
         sheet.sheet_state = 'hidden'
     for path in source_files(root, '*.csv'):
         name = table_name(path.name)
@@ -139,7 +142,7 @@ def retain_source_tables(workbook, results_root, run, check_cancelled=None):
             continue
         sheet = workbook.create_sheet(title)
         with path.open(encoding='utf-8-sig', newline='') as stream:
-            for row in csv.reader(stream):
+            for row in export_source_rows(title, csv.reader(stream), include_km, check_cancelled):
                 retain_row(sheet, row)
         sheet.sheet_state = 'hidden'
     manifest = root / 'nanotel/report_sources.json'
@@ -164,7 +167,7 @@ def retain_source_tables(workbook, results_root, run, check_cancelled=None):
                 if not source.title.startswith('_source_') or not retained_name(name) or source.title in workbook.sheetnames:
                     continue
                 sheet = workbook.create_sheet(source.title)
-                for row in source.values:
+                for row in export_source_rows(source.title, source.values, include_km, check_cancelled):
                     retain_row(sheet, row)
                 sheet.sheet_state = 'hidden'
         finally:
@@ -199,12 +202,14 @@ def retain_source_tables(workbook, results_root, run, check_cancelled=None):
                 counts.cell(row, median_column, fact.value)
     if '_source_Run metadata' not in workbook.sheetnames:
         sheet = workbook.create_sheet('_source_Run metadata')
-        retain_row(sheet, ['Field', 'Part', 'Value'])
+        metadata_rows = [['Field', 'Part', 'Value']]
         metadata = {'settings': run.settings.value if run.settings.status == 'available' else {},
                     'organism': run.organism.value if run.organism.status == 'available' else '',
                     'stages': {key: fact.value for key, fact in run.stages.items() if fact.status == 'available'}}
         for key, value in metadata.items():
             encoded = json.dumps(value, ensure_ascii=True)
             for offset in range(0, len(encoded), 30000):
-                retain_row(sheet, [key, offset // 30000 + 1, encoded[offset:offset + 30000]])
+                metadata_rows.append([key, offset // 30000 + 1, encoded[offset:offset + 30000]])
+        for row in export_source_rows(sheet.title, metadata_rows, include_km, check_cancelled):
+            retain_row(sheet, row)
         sheet.sheet_state = 'hidden'

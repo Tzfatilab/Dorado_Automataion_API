@@ -272,7 +272,7 @@ main_mapping_analysis <- function(config_file) {
     barcode_name <- names(grouped_barcode_configs)[i]
     barcode_configs_list <- grouped_barcode_configs[[i]]
 
-    show_progress(i, length(grouped_barcode_configs), "Processing barcodes")
+    report_stage_progress("mapping-filtering", i - 1L, length(grouped_barcode_configs), barcode_name)
 
     tryCatch({
       result <- process_barcode_multiple_bams(barcode_configs_list, alignment_data = alignment_data)
@@ -289,6 +289,7 @@ main_mapping_analysis <- function(config_file) {
     })
   }
 
+  report_stage_progress("mapping-filtering", length(grouped_barcode_configs), length(grouped_barcode_configs))
   ensure_directory_exists(config$output_dir)
   jsonlite::write_json(list(successful_barcodes=names(results) %||% character(),
                            skipped_barcodes=skipped_barcodes, failed_barcodes=failed_barcodes),

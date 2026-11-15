@@ -196,6 +196,12 @@ run_system_command <- function(command, description = "Command", timeout_seconds
 # Inputs: current (Current completed item count); total (Total scheduled items); prefix (Field-name
 # prefix for nested source facts)
 # Outputs: Prints the current processing progress.
+report_stage_progress <- function(stage, completed, total, detail = "complete") {
+  if (total <= 0) return(invisible(NULL))
+  cat(sprintf("Stage progress: %s %d/%d (%s)\n", stage, completed, total, detail))
+  flush.console()
+}
+
 show_progress <- function(current, total, prefix = "Progress") {
   percent <- round((current / total) * 100, 1)
   cat("\r", prefix, ":", current, "/", total, "(", percent, "%)", sep = "")

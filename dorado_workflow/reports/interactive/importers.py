@@ -517,8 +517,9 @@ class ResultImporter:
 
         self.mapping_paths = self.files("mapped*.csv")
         barcodes = []
-        for label in sorted(set(raw) | set(filtered) | set(stat_rows)):
-            self.progress(f"Dashboard: loading saved reads and tracks for {label}")
+        barcode_labels = sorted(set(raw) | set(filtered) | set(stat_rows))
+        for index, label in enumerate(barcode_labels):
+            self.progress(f"Dashboard: barcode loading {index}/{len(barcode_labels)} ({label})")
             b = Barcode(safe_id("b", label), label)
             table = raw.get(label) or filtered.get(label)
             if table:
@@ -612,6 +613,9 @@ class ResultImporter:
                     A.AVAILABLE, [], unit='bp', population='post_filtered_telomeres',
                     origin='presentation_aggregate', evidence=empty_count.evidence.copy())
             barcodes.append(b)
+
+        if barcode_labels:
+            self.progress(f"Dashboard: barcode loading {len(barcode_labels)}/{len(barcode_labels)} (complete)")
 
         # A standalone/partially completed run may have NanoTel analysis exports
         # without R post-analysis tables. Use one population for the whole run;
