@@ -42,7 +42,7 @@ def numeric(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0
 
 
-def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=None):
+def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=None, progress=None):
     """Build the shared visible layout, optionally retaining hidden source sheets.
 
     Args:
@@ -54,6 +54,8 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     Returns:
         Workbook containing barcode summaries, read tables and source facts.
     """
+    progress = progress or (lambda message: None)
+    progress('Excel: building barcode tables and source facts')
     wb = workbook if workbook is not None else Workbook()
     if workbook is None:
         wb.remove(wb.active)
@@ -319,17 +321,19 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     wb.move_sheet(summary, offset=-wb.index(summary))
     wb.active = 0
     if results_root is not None:
+        progress('Excel: retaining source data for future Recalculate')
         from ..storage.analysis_metadata import retain_analysis_sheet
         retain_analysis_sheet(wb, results_root, include_km=show_km(run))
         from ..storage.source_tables import retain_source_tables
         retain_source_tables(wb, results_root, run)
     facts.sheet_state = 'hidden'
     from ..shared.organism import filter_km_workbook
+    progress('Excel: checking retained source fields')
     filter_km_workbook(wb, show_km(run))
     return wb
 
 
-def write_dashboard_workbook(run, destination, results_root=None, comparisons=None):
+def write_dashboard_workbook(run, destination, results_root=None, comparisons=None, progress=None):
     """Save imported facts atomically without refitting KM or scientific filters.
 
     Args:
@@ -342,10 +346,12 @@ def write_dashboard_workbook(run, destination, results_root=None, comparisons=No
         Path to the completed Excel workbook.
     """
     destination = Path(destination)
-    wb = build_dashboard_workbook(run, results_root, comparisons=comparisons)
+    progress = progress or (lambda message: None)
+    wb = build_dashboard_workbook(run, results_root, comparisons=comparisons, progress=progress)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix('.tmp.xlsx')
     try:
+        progress('Excel: saving workbook to disk')
         wb.save(temporary)
         os.replace(temporary, destination)
     finally:

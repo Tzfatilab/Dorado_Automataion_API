@@ -4,7 +4,7 @@ Usage: python -m dorado_workflow.reports.all_barcodes RESULTS --output REPORT
 Detection, filtering and source import remain in the existing modules.
 
 Data flow: results directory -> validated Run model -> presentation aggregates
--> HTML cards and Plotly figures. The source files are read, never modified.
+-> HTML cards and Plotly figures. The renderer reads source files; workflow publication manages their lifecycle.
 Outputs are index.html (self-contained browser view) and source-data.json
 (imported facts, availability states and provenance for auditing).
 
@@ -231,59 +231,9 @@ def generate_report(results, output):
 
 
 def generate_run_report(results, nanotel_directory, progress=None):
-    """Save a self-contained dashboard.html directly under NanoTel.
-
-    Source provenance and links to barcode reports are embedded in the HTML.
-    Native barcode exports are grouped under supporting_data; recalculations
-    keep references to their original read details without copying them.
-
-    Args:
-        results: Results directory or collected processing results.
-        nanotel_directory: Nanotel directory.
-
-    Returns:
-        Path to the completed run dashboard.
-    """
-    from dorado_workflow.reports.storage.layout import write_run_reports, organize_barcode_reports
-    from dorado_workflow.reports.storage.archive import available_details, pack_details
-    from time import perf_counter
-    progress = progress or (lambda message: None)
-    started = perf_counter()
-    progress("Dashboard: discovering saved report sources")
-    organize_barcode_reports(nanotel_directory)
-    is_recalculated_run = (Path(results) / 'reports' / 'post_analysis_source.json').is_file()
-    if not is_recalculated_run:
-        from ..storage.layout import organize_supporting_data
-        organize_supporting_data(nanotel_directory)
-    # Import and embed saved plots while the archive contents are available.
-    with available_details(results):
-        run = import_results(results, progress=progress)
-        progress(f"Dashboard: saved data loaded in {perf_counter()-started:.1f}s; building charts and HTML")
-        started = perf_counter()
-        comparisons = comparison_data(run)
-        page = render_screen(run, results_root=results, comparisons=comparisons)
-        destination = write_run_reports(nanotel_directory, run, page)
-        progress(f"Dashboard: HTML saved in {perf_counter()-started:.1f}s; writing unified Excel")
-        del page
-        started = perf_counter()
-        from dorado_workflow.reports.exports.dashboard_workbook import write_dashboard_workbook
-        write_dashboard_workbook(run, Path(nanotel_directory) / "nanotel_results.xlsx", results, comparisons=comparisons)
-        progress(f"Dashboard: Excel saved in {perf_counter()-started:.1f}s; verifying retained sources")
-        from dorado_workflow.reports.storage.analysis_metadata import cleanup_analysis_json
-        from ..shared.organism import show_km
-        cleanup_analysis_json(results, include_km=show_km(run))
-    from ..storage.source_tables import cleanup_source_tables
-    cleanup_source_tables(results, Path(nanotel_directory) / 'nanotel_results.xlsx')
-    progress("Dashboard: source verification complete")
-    # Recalculation references original details. Only native detection exports
-    # belong in a new archive; never repack source details for a recalculation.
-    if not is_recalculated_run:
-        # Archive only after a complete dashboard has been saved successfully.
-        from dorado_workflow.utils.source_discovery import barcode_directories
-        for barcode_directory in barcode_directories(nanotel_directory):
-            if barcode_directory.is_dir():
-                pack_details(barcode_directory)
-    return destination
+    """Compatibility entry point; publication is owned by the workflow service."""
+    from dorado_workflow.operators.report_publication import publish_run_report
+    return publish_run_report(results, nanotel_directory, progress=progress)
 
 
 
@@ -335,9 +285,6 @@ def write_summary_dashboard(run, destination, comparisons=None):
     from ..shared.report_identity import dashboard_filename
     destination = Path(destination).with_name(dashboard_filename(run.label, summary=True))
     atomic_text(destination, render_summary(run, results_root=destination.parent, comparisons=comparisons))
-    legacy = destination.parent / 'dashboard_summary.html'
-    if legacy != destination and legacy.is_file() and 'data-summary-only="true"' in legacy.read_text(encoding='utf-8'):
-        legacy.unlink()
     return destination
 
 

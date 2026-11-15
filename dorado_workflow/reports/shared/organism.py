@@ -85,14 +85,23 @@ def filter_km_workbook(workbook, enabled):
             continue
         headers = [cell.value for cell in sheet[1]]
         field = next((headers.index(key) for key in ('Source field', 'Field') if key in headers), None)
-        for index in range(sheet.max_row, 1, -1):
-            values = [cell.value for cell in sheet[index]]
-            if field is not None and is_km_field(values[field]):
-                sheet.delete_rows(index)
-            elif name == 'Sources' and any(km_table(str(v)) or re.search(r'(?:_km_statistics|km_(?:barcode|run)_statistics)\.csv$', str(v), re.I) for v in values):
-                sheet.delete_rows(index)
-            elif name == 'Definitions' and any(re.search(r'\bKM\b|Kaplan|censor', str(v), re.I) for v in values):
-                sheet.delete_rows(index)
+        if field is not None or name in {'Sources', 'Definitions'}:
+            # sheet[index] recomputes max_column by scanning every stored cell.
+            # Repeating it for every row makes large exports quadratic. Bound
+            # the width once and inspect values in one pass instead.
+            removed = []
+            for index, values in enumerate(sheet.iter_rows(min_row=2, max_col=len(headers), values_only=True), 2):
+                if ((field is not None and is_km_field(values[field]))
+                        or (name == 'Sources' and any(km_table(str(v)) or re.search(r'(?:_km_statistics|km_(?:barcode|run)_statistics)\.csv$', str(v), re.I) for v in values))
+                        or (name == 'Definitions' and any(re.search(r'\bKM\b|Kaplan|censor', str(v), re.I) for v in values))):
+                    removed.append(index)
+            # Delete consecutive matches together, from the bottom, preserving
+            # the order and formatting of all retained records.
+            while removed:
+                end = start = removed.pop()
+                while removed and removed[-1] == start - 1:
+                    start = removed.pop()
+                sheet.delete_rows(start, end - start + 1)
         for column in range(len(headers), 0, -1):
             if is_km_field(headers[column - 1]):
                 sheet.delete_cols(column)

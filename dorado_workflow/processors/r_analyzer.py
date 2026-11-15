@@ -322,6 +322,8 @@ class RAnalyzer(ProcessorBase):
             dashboard_path = write_summary_dashboard(
                 run, summary_dashboard_path(self.r_analysis_dir), comparisons=comparisons
             )
+            from dorado_workflow.operators.report_cleanup import cleanup_legacy_summary_dashboard
+            cleanup_legacy_summary_dashboard(dashboard_path)
             self.context.logger.info(f"Summary dashboard saved to: {dashboard_path}")
             self._cleanup_summary_workspace()
         return workbook_path

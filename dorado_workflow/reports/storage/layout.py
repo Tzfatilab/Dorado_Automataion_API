@@ -7,7 +7,6 @@ from dataclasses import asdict
 import os
 import tempfile
 import re
-import warnings
 
 SAVED_REPORTS_MARKER = '<!--nanotel-saved-reports-->'
 
@@ -129,8 +128,8 @@ def report_index(root):
             + ''.join(sections) + '</details>')
 
 
-def write_run_reports(root, run, page):
-    """Write one self-contained dashboard, with embedded source provenance.
+def prepare_run_report(root, run, page):
+    """Prepare a self-contained dashboard document without writing or removing files.
 
     Args:
         root: Root directory or root data object for this operation.
@@ -138,7 +137,7 @@ def write_run_reports(root, run, page):
         page: Rendered HTML document.
 
     Returns:
-        Path to the saved self-contained dashboard.
+        Destination path and complete HTML document ready for atomic publication.
     """
     root = Path(root).resolve()
     from ..shared.report_identity import dashboard_filename
@@ -160,39 +159,11 @@ def write_run_reports(root, run, page):
         raise ValueError('Dashboard document has no closing body tag')
     page = (before + saved_reports + '<script type="application/json" id="source-data">'
             + snapshot + '</script>' + closing + after)
-    atomic_text(destination, page)
-    # The self-contained dashboard has been saved successfully. Delete only
-    # known redundant barcode viewers/images with retained source specifications.
-    from dorado_workflow.utils.source_discovery import barcode_directories
-    for folder in barcode_directories(root):
-        for plot in folder.glob('plots/*'):
-            match = re.fullmatch(re.escape(folder.name) + r'_telomere_(plot|histogram)(?:_pct)?\.(html|png)', plot.name)
-            if match and (folder.name+'_telomere_'+match[1]+'.plotly.json') in page and plot.resolve().is_relative_to(root) and (folder/'report_details'/(folder.name+'_telomere_'+match[1]+'.plotly.json')).is_file():
-                plot.unlink()
-        plots = folder/'plots'
-        if plots.is_dir() and plots.resolve().is_relative_to(root) and not any(plots.iterdir()):
-            try:
-                plots.rmdir()
-            except PermissionError:
-                pass  # Windows can temporarily retain a directory handle.
+    return destination, page
 
-    # Retire only recognized generator-owned entry points, after the new file
-    # exists. Never recursively delete a directory that may contain user files.
-    legacy = [(root/'dashboard.html', 'id="source-data"'),
-              (root/'index.html', '<title>NanoTel Reports</title>'),
-              (root/'all_barcodes.html', '<title>NanoTel dashboard</title>'),
-              (root/'dashboard'/'index.html', 'Telomere Analysis Summary')]
-    old_folder = root/'dashboard'
-    owned_folder = (old_folder/'index.html').is_file() and 'Telomere Analysis Summary' in (old_folder/'index.html').read_text(encoding='utf-8')
-    for path, marker in legacy:
-        if path.resolve().is_relative_to(root) and path.is_file() and marker in path.read_text(encoding='utf-8'):
-            path.unlink()
-    old_snapshot = old_folder/'source-data.json'
-    if owned_folder and old_snapshot.resolve().is_relative_to(root) and old_snapshot.is_file():
-        old_snapshot.unlink()
-    if old_folder.is_dir() and old_folder.resolve().is_relative_to(root) and not any(old_folder.iterdir()):
-        try:
-            old_folder.rmdir()
-        except PermissionError:
-            warnings.warn(f'Dashboard saved, but Windows prevented removal of empty folder: {old_folder}', RuntimeWarning)
+
+def write_run_reports(root, run, page):
+    """Save a dashboard atomically; source cleanup belongs to the workflow."""
+    destination, document = prepare_run_report(root, run, page)
+    atomic_text(destination, document)
     return destination

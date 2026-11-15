@@ -2,7 +2,6 @@
 import json
 from pathlib import Path
 import re
-import warnings
 
 from openpyxl import load_workbook
 from dorado_workflow.utils.source_discovery import source_files
@@ -110,38 +109,3 @@ def retain_analysis_sheet(workbook, results_root, include_km=False):
             if isinstance(cell.value, str):
                 cell.data_type = 's'
     sheet.sheet_state = 'hidden'
-
-
-def cleanup_analysis_json(results_root, include_km=False):
-    """Remove intermediate JSON only when every field is retained in saved Excel.
-
-    Args:
-        results_root: Completed run's results directory; original projects are untouched.
-
-    Returns:
-        Number of JSON files removed. Unmatched or changed records are retained.
-    """
-    root = Path(results_root).resolve()
-    saved = {(row['Barcode'], row['Source field']): row['Value']
-             for row, _, _ in analysis_rows(root, include_native=False)}
-    removed = 0
-    for path in source_files(root, 'barcode*_analysis.json'):
-        barcode = path.name.removesuffix('_analysis.json')
-        if not re.fullmatch(r'barcode\d+', barcode) or not path.parent.resolve().is_relative_to(root):
-            continue
-        record = json.loads(path.read_text(encoding='utf-8-sig'))
-        if not isinstance(record, dict) or record.get('barcode') != barcode:
-            continue
-        fields = list(flatten_analysis(record))
-        if not include_km:
-            from ..shared.organism import is_km_field
-            fields = [(field, value) for field, value in fields if not is_km_field(field)]
-        if all((barcode, field) in saved and saved[(barcode, field)] == value for field, value in fields):
-            try:
-                path.unlink()
-                removed += 1
-            except OSError as exc:
-                # A locked or protected source link must not turn successfully
-                # saved dashboard/Excel outputs into a failed analysis.
-                warnings.warn(f'Reports saved; unable to remove intermediate {path.name}: {exc}', RuntimeWarning)
-    return removed
