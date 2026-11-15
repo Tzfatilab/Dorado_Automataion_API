@@ -6,17 +6,17 @@ Contains basecalling and NanoTel option cards and related helpers.
 The controls in this mixin are read by AppWindow when it creates a worker.
 Their enabled state follows the workflow selections managed by WorkflowSection.
 """
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QFrame, QWidget, QGridLayout, QCheckBox, QLineEdit, QDialog, QDialogButtonBox, QGraphicsOpacityEffect
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QFrame, QWidget, QGridLayout, QCheckBox, QLineEdit, QPlainTextEdit, QDialog, QDialogButtonBox, QGraphicsOpacityEffect
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap, QIntValidator, QDoubleValidator, QRegularExpressionValidator
-from PySide6.QtCore import QRegularExpression
+from PySide6.QtGui import QPixmap, QIntValidator, QDoubleValidator
 
 from gui.ui_styles import make_card
 from gui.widgets.selection_widgets import SelectOption
 from gui.widgets.advanced_controls import HoverHelpLabel, MappingCheckBox, ToggleSwitch
 from core.workflow_constants import BASE_DIR
 from dorado_workflow.managers.config_manager import ConfigManager
+from dorado_workflow.utils.analysis_validation import parse_tvr_patterns, validate_tvr_patterns
 
 
 class AdvancedSection:
@@ -919,7 +919,7 @@ class AdvancedSection:
                 color: #111827;
                 font-size: 13px;
             }
-            QLineEdit {
+            QLineEdit, QPlainTextEdit {
                 color: #111827;
                 background: white;
                 border: 1px solid #D1D5DB;
@@ -948,22 +948,36 @@ class AdvancedSection:
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
-        label = QLabel("Patterns separated by spaces:")
-        line_edit = QLineEdit(self.tvr_manual.text())
-        line_edit.setPlaceholderText("ACTG TTAGGG")
-        line_edit.setValidator(
-            QRegularExpressionValidator(
-                QRegularExpression("[ACGTacgt,;\\s]*"),
-                line_edit
-            )
-        )
+        label = QLabel("TVR sequences: at least 5 bases each (A, C, G, T).\nSeparate with new lines, spaces, commas or semicolons.")
+        line_edit = QPlainTextEdit(self.tvr_manual.text())
+        line_edit.setPlaceholderText("AACCGC\nACTGAA")
+        line_edit.setMinimumSize(380, 150)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(dialog.accept)
+        error_label = QLabel()
+        error_label.setWordWrap(True)
+        error_label.setStyleSheet("color: #b91c1c;")
+        error_label.hide()
+
+        def accept_patterns():
+            patterns = parse_tvr_patterns(line_edit.toPlainText())
+            try:
+                if not patterns:
+                    raise ValueError("Enter at least one TVR sequence.")
+                canonical = self.settings_store.snapshot().get('nanotel', {}).get('telomere_pattern', 'CCCTAA')
+                validate_tvr_patterns(patterns, canonical)
+            except ValueError as exc:
+                error_label.setText(str(exc))
+                error_label.show()
+                return
+            dialog.accept()
+
+        buttons.accepted.connect(accept_patterns)
         buttons.rejected.connect(dialog.reject)
 
         layout.addWidget(label)
         layout.addWidget(line_edit)
+        layout.addWidget(error_label)
         layout.addWidget(buttons)
 
         if dialog.exec() != QDialog.Accepted:
@@ -971,11 +985,7 @@ class AdvancedSection:
 
         # Normalize every accepted separator into the comma-separated format
         # expected by the NanoTel configuration override.
-        return ",".join(
-            pattern.strip().upper()
-            for pattern in line_edit.text().replace(";", ",").replace(" ", ",").split(",")
-            if pattern.strip()
-        )
+        return ",".join(parse_tvr_patterns(line_edit.toPlainText()))
 
     def _set_methylation(self, selected):
         """

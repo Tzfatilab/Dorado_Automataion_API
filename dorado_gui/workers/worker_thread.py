@@ -182,6 +182,9 @@ class WorkerThread(QObject):
         except WorkflowCancelled:
             self.done.emit(False, "Cancelled by user")
 
+        except ValueError as exc:
+            self.done.emit(False, f"Invalid analysis settings: {exc}")
+
         except Exception:
             err = traceback.format_exc()
             self.log.emit(err)

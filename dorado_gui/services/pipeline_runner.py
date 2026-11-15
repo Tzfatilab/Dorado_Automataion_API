@@ -17,6 +17,7 @@ sys.path.insert(0, str(project_root))
 
 from dorado_workflow.main import setup_context
 from dorado_workflow.utils.cancellation import WorkflowCancelled
+from dorado_workflow.utils.analysis_validation import parse_tvr_patterns, validate_tvr_patterns
 from dorado_workflow.operators.workflow_operator import WorkflowOperator
 
 APP_OUTPUT_FOLDER = "Telomere Analyzer"
@@ -798,9 +799,7 @@ def _build_nanotel_overrides(
         tvr_patterns.extend(_parse_patterns(tvr_manual))
 
     canonical = config_manager.config["nanotel"]["telomere_pattern"].upper()
-    reverse = canonical.translate(str.maketrans("ACGT", "TGCA"))[::-1]
-    if any(pattern.upper() in {canonical, reverse} for pattern in tvr_patterns):
-        raise ValueError("Canonical telomere repeats cannot be used as TVR patterns.")
+    validate_tvr_patterns(tvr_patterns, canonical)
 
     # Preserve selection order while removing patterns duplicated across modes.
     overrides["tvr_patterns"] = list(dict.fromkeys(tvr_patterns))
@@ -845,7 +844,7 @@ def _parse_float(value: str):
 
 
 def _parse_patterns(value: str) -> list:
-    """Normalize a comma- or semicolon-separated pattern string into a list.
+    """Normalize comma-, semicolon- or whitespace-separated motifs into a list.
 
     Args:
         value: str; value to inspect, convert or format.
@@ -853,14 +852,7 @@ def _parse_patterns(value: str) -> list:
     Returns:
         Nonempty motif strings normalized to uppercase.
     """
-    value = str(value or "").strip()
-    if not value:
-        return []
-    return [
-        pattern.strip().upper()
-        for pattern in value.replace(";", ",").replace(" ", ",").split(",")
-        if pattern.strip()
-    ]
+    return parse_tvr_patterns(value)
 
 
 def _resolve_pod5_trim_status(config_manager):

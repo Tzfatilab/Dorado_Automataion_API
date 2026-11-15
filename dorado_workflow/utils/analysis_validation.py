@@ -1,6 +1,28 @@
 """Validate analysis settings without changing defaults or coercing values."""
 import math
+import re
 from numbers import Real
+
+
+def parse_tvr_patterns(value):
+    """Normalize manual DNA motifs separated by commas, semicolons or whitespace."""
+    return [pattern.upper() for pattern in re.split(r'[,;\s]+', str(value or '').strip()) if pattern]
+
+
+def validate_tvr_patterns(patterns, canonical=None):
+    """Apply the same motif rules in manual input and workflow configuration."""
+    if not isinstance(patterns, list) or any(
+        not isinstance(pattern, str) or len(pattern) < 5
+        or any(base not in 'ACGT' for base in pattern) for pattern in patterns
+    ):
+        raise ValueError('Each TVR sequence must contain at least 5 bases, using only A, C, G and T.')
+    if canonical:
+        canonical = canonical.upper()
+        reverse = canonical.translate(str.maketrans('ACGT', 'TGCA'))[::-1]
+        repeated = sorted(set(patterns) & {canonical, reverse})
+        if repeated:
+            raise ValueError('Remove canonical telomere repeats from the TVR list: '
+                             + ', '.join(repeated) + '. They are already analyzed as canonical repeats.')
 
 
 def validate_nanotel_settings(settings):
@@ -15,12 +37,7 @@ def validate_nanotel_settings(settings):
     if "include_km" in settings and type(settings["include_km"]) is not bool:
         raise ValueError("include_km must be true or false.")
     if "tvr_patterns" in settings:
-        patterns = settings["tvr_patterns"]
-        if not isinstance(patterns, list) or any(
-            not isinstance(pattern, str) or len(pattern) < 5
-            or any(base not in "ACGT" for base in pattern) for pattern in patterns
-        ):
-            raise ValueError("Each TVR sequence must contain at least 5 bases, using only A, C, G and T.")
+        validate_tvr_patterns(settings['tvr_patterns'])
     ranges = {
         'min_density': (0, 1, False), 'density_threshold': (0, 1, False),
         'max_mismatch': (0, 1, True),
