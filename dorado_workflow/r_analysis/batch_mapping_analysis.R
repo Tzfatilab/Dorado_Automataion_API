@@ -37,6 +37,8 @@ process_barcode_multiple_bams <- function(barcode_configs_list, alignment_data =
   all_mapped_data <- list()
   all_filtered_bam_paths <- character()
   all_pileup_bed_paths <- character()
+  methylation_enabled <- any(vapply(barcode_configs_list,
+    function(config) isTRUE(config$run_modkit_pileup %||% FALSE), logical(1)))
   total_reads <- 0
   processing_errors <- character()
   if (is.null(alignment_data)) {
@@ -139,12 +141,14 @@ process_barcode_multiple_bams <- function(barcode_configs_list, alignment_data =
     merged_bed_path <- file.path(barcode_output_dir,
                                  paste0("pileup-", tolower(barcode_name), ".bed"))
     file.copy(all_pileup_bed_paths[1], merged_bed_path, overwrite = TRUE)
-  } else {
+  } else if (methylation_enabled) {
     merged_bed_path <- NA
     log_message(
       paste("No methylation BED file produced for", barcode_name),
       "WARNING"
     )
+  } else {
+    merged_bed_path <- NA
   }
 
   log_message(paste("Completed processing for", barcode_name, "- Total reads:", total_reads))
@@ -440,8 +444,10 @@ generate_mapping_report_multiple_bams <- function(results, failed_barcodes, outp
                       paste("    Telomeric reads:", result$read_count),
                       paste("    Combined mapped file:", basename(result$mapped_file)),
                       paste("    Individual filtered BAMs:", length(result$filtered_bams)),
-                      paste("    Individual BED files:", length(result$individual_beds)),
-                      paste("    Merged BED file:", merged_bed_label),
+                      if (isTRUE(config$run_modkit_pileup %||% FALSE)) c(
+                        paste("    Individual BED files:", length(result$individual_beds)),
+                        paste("    Merged BED file:", merged_bed_label)
+                      ),
                       ""
     )
   }

@@ -1,6 +1,10 @@
 # r_analysis/functions/utils.R
 # Shared utility functions for the R analysis pipeline
 
+# Stream each warning to the captured process log immediately. Deferred R
+# summaries suggest warnings(), which is unavailable to users of the app log.
+options(warn = 1)
+
 # Load required libraries with error handling
 # Inputs: None; uses configured process state.
 # Outputs: Loads required analysis packages or stops with the missing package names.

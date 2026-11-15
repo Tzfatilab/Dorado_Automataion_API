@@ -136,6 +136,11 @@ class ExecutionLogSection:
         progress = re.match(r'^Processing (?:NanoTel files|barcodes):\s*\d+/\d+\s*\([^)]*\)\s*(.*)$', line, re.I)
         if progress:
             return ExecutionLogSection._normalize_log_prefix(progress[1])
+        summary = re.fullmatch(r'There (?:were|was) (\d+(?: or more)?) warnings?\s*\(use warnings\(\).*\)', line, re.I)
+        if summary:
+            count = summary[1]
+            noun = 'warning' if count == '1' else 'warnings'
+            return f'WARNING: R reported {count} {noun}. This summary does not include the warning details.'
         if severity and not line.upper().startswith(severity):
             line = severity + ': ' + line
         return line
