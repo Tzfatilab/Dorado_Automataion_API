@@ -9,6 +9,7 @@ from datetime import datetime
 from html import escape
 from pathlib import Path
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QWidget
+from core.recalculation_log import RecalculationLog
 
 
 class ExecutionLogSection:
@@ -99,21 +100,18 @@ class ExecutionLogSection:
             line = self._normalize_log_prefix(raw_line)
             if line.strip() == 'Run started':
                 self._recalculate_log = 'post_analysis' in getattr(self, 'selected_workflows', set())
-                self._recalculate_table_output = False
+                self._recalculation_formatter = RecalculationLog()
             if line.strip().startswith('Recalculate:'):
                 self._recalculate_log = True
             recalculate = getattr(self, '_recalculate_log', False)
-            important = re.search(r'\b(?:warning|error|failed|failure|halted|traceback|cancelled)\b', line, re.I)
-            if recalculate and getattr(self, '_recalculate_table_output', False):
-                table_line = re.match(r'^(?:\s*\d+\s|\s*barcode\b|\s*[A-Za-z][\w.]*_|\s*#|\s*$)', raw_line)
-                if important or self._normalize_log_prefix(raw_line) != raw_line.strip() or not table_line:
-                    self._recalculate_table_output = False
-                else:
-                    continue
-            if recalculate and line.strip() == 'NanoTel Summary Statistics:':
-                self._recalculate_table_output = True
-                continue
             self._update_progress_from_log(line.strip())
+            if recalculate:
+                if not hasattr(self, '_recalculation_formatter'):
+                    self._recalculation_formatter = RecalculationLog()
+                line = self._recalculation_formatter.format(line)
+                if line is not None:
+                    self._render_log_line(line)
+                continue
             self._append_worker_log_line(line)
 
     @staticmethod
@@ -135,6 +133,9 @@ class ExecutionLogSection:
                 elif level == 'DEBUG' and not severity:
                     severity = 'DEBUG'
             line = line[match.end():].lstrip()
+        progress = re.match(r'^Processing (?:NanoTel files|barcodes):\s*\d+/\d+\s*\([^)]*\)\s*(.*)$', line, re.I)
+        if progress:
+            return ExecutionLogSection._normalize_log_prefix(progress[1])
         if severity and not line.upper().startswith(severity):
             line = severity + ': ' + line
         return line
@@ -150,6 +151,24 @@ class ExecutionLogSection:
         """
         if not line:
             return
+
+        if getattr(self, '_recalculate_log', False):
+            if line.startswith('STEP 1: NANOTEL ANALYSIS'):
+                self.progress_stage_label.setText('Telomere filtering')
+                self._show_busy_progress('Refiltering saved telomeric reads...')
+                return
+            if line.startswith('STEP 2: MAPPING ANALYSIS'):
+                self.progress_stage_label.setText('Saved mapping filtering')
+                self._show_busy_progress('Refiltering saved alignments...')
+                return
+            match = re.match(r'Processing NanoTel file:\s*(barcode\d+)_summary\.csv', line, re.I)
+            if match:
+                self._show_busy_progress('Refiltering ' + match[1].lower())
+                return
+            if line.startswith('Generating All Barcodes dashboard and Excel workbook'):
+                self.progress_stage_label.setText('Dashboard and Excel')
+                self._show_busy_progress('Generating reports...')
+                return
 
         barcode_match = re.match(r"Processing\s+(barcode\d+)", line, re.IGNORECASE)
         if barcode_match:
@@ -227,15 +246,6 @@ class ExecutionLogSection:
             return
 
         analysis_line = line.strip()
-        if getattr(self, '_recalculate_log', False):
-            if self._skip_recalculation_detail(analysis_line):
-                return
-            match = re.match(r'Processing NanoTel file:\s*(barcode\d+)_summary\.csv', analysis_line, re.I)
-            if match:
-                line = 'Refiltering ' + match.group(1).lower()
-            match = re.match(r'Processing \d+ BAM files for barcode:\s*(barcode\d+)', analysis_line, re.I)
-            if match:
-                line = 'Refiltering saved mapping for ' + match.group(1).lower()
         if re.match(r"^NanoTel:\s*chunk\s+\d+", analysis_line, re.IGNORECASE):
             return
         if self._handle_nanotel_analysis_result(analysis_line):
@@ -254,28 +264,6 @@ class ExecutionLogSection:
             return
 
         self._render_log_line(line)
-
-    @staticmethod
-    def _skip_recalculation_detail(line):
-        """Hide routine R chatter in the GUI while retaining diagnostic messages."""
-        if re.search(r'\b(?:warning|error|failed|failure|halted|traceback|cancelled)\b', line, re.I):
-            return False
-        if not line or set(line) <= {'=', '-', '#', ' '}:
-            return True
-        return bool(re.match(
-            r'^(?:DEBUG:|Starting command$|Command:|Location:|Exit code:\s*0$|'
-            r'Successfully (?:read|wrote):|Loaded (?:alignment|NanoTel) data:|'
-            r'Created (?:cleaned read IDs|directory|configurations)|'
-            r'Extracting read IDs|Extracted \d+ unique read IDs|'
-            r'After (?:NanoTel matching|removing unmapped|MAPQ/position filtering):|'
-            r'BAM file:|Processing BAM file |Processing barcodes:|Configuration loaded successfully|'
-            r'(?:Input directory|Output directory|BAM directory|Filtered NanoTel dir|Alignment summary):|'
-            r'(?:Density threshold|Max telomere start|Maximum edge distance|Minimum read length):|'
-            r'Looking for NanoTel summary files in:|All required packages loaded successfully|'
-            r'Generating (?:NanoTel analysis report|mapping analysis report|comprehensive pipeline report)|'
-            r'(?:Summary statistics|Analysis report|Mapping report|Complete pipeline report) saved to:|'
-            r'(?:NanoTel|Mapping) batch analysis completed|'
-            r'Skipping methylation analysis|Output directories initialized)', line, re.I))
 
     def _prepare_log_line(self, line):
         """Clean status glyphs and rewrite verbose NanoTel phrases.
@@ -676,6 +664,9 @@ class ExecutionLogSection:
             "NanoTel analysis",
             "Alignment",
             "Post-analysis",
+            "Telomere filtering",
+            "Saved mapping filtering",
+            "Generating dashboard and Excel workbook...",
         }
 
     @staticmethod

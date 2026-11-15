@@ -973,6 +973,8 @@ def _run_post_analysis(*, project_path, output_dir, organism, summary_only, read
                  if summary_only else _write_full_report(context, log, check_cancelled))
     if not dashboard.is_file():
         return (1, "Post-analysis finished without a dashboard; inspect the run log.")
+    if summary_only:
+        log(f"NanoTel summary (Excel): {dashboard.with_name('nanotel_summary.xlsx')}")
     if report_cb:
         report_cb(str(dashboard))
     log("Post-analysis complete: " + str(dashboard))
@@ -996,5 +998,5 @@ def _write_full_report(context, log, check_cancelled):
                                          context.path_manager.get_nanotel_output_dir_path(), progress=log))
     check_cancelled()
     log(f"All Barcodes report: {report_path}")
-    log(f"Excel workbook: {report_path.with_name('nanotel_results.xlsx')}")
+    log(f"NanoTel summary (Excel): {report_path.with_name('nanotel_results.xlsx')}")
     return report_path
