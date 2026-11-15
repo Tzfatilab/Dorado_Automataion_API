@@ -44,12 +44,14 @@ def km_table(name):
     return name in {'Kaplan-Meier', 'KM by barcode', 'KM run statistics'} or bool(re.fullmatch(r'km_barcode\d+', name))
 
 
-def filter_km_workbook(workbook, enabled):
+def filter_km_workbook(workbook, enabled, check_cancelled=None):
     """Prevent old source exports and hidden sheets from bypassing the opt-in."""
     if enabled:
         return
+    check_cancelled = check_cancelled or (lambda: None)
     import json
     for sheet in list(workbook):
+        check_cancelled()
         if km_table(sheet.title):
             workbook.remove(sheet)
             continue
@@ -91,6 +93,8 @@ def filter_km_workbook(workbook, enabled):
             # the width once and inspect values in one pass instead.
             removed = []
             for index, values in enumerate(sheet.iter_rows(min_row=2, max_col=len(headers), values_only=True), 2):
+                if index % 256 == 0:
+                    check_cancelled()
                 if ((field is not None and is_km_field(values[field]))
                         or (name == 'Sources' and any(km_table(str(v)) or re.search(r'(?:_km_statistics|km_(?:barcode|run)_statistics)\.csv$', str(v), re.I) for v in values))
                         or (name == 'Definitions' and any(re.search(r'\bKM\b|Kaplan|censor', str(v), re.I) for v in values))):

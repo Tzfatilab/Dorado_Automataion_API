@@ -48,7 +48,7 @@ class NanoTelWorkbookWriter:
         self.results_dir = results_dir
         self.short_telomere_threshold_bp = short_telomere_threshold_bp
 
-    def write(self, run=None, comparisons=None) -> Path:
+    def write(self, run=None, comparisons=None, check_cancelled=None) -> Path:
         """Return the saved workbook path, preserving CSV values and sheet order.
 
         Raise if raw summaries are missing or duplicate barcode names exist.
@@ -61,6 +61,9 @@ class NanoTelWorkbookWriter:
         Returns:
             Path to the completed workbook.
         """
+        check_cancelled = check_cancelled or (lambda: None)
+        self._check_cancelled = check_cancelled
+        check_cancelled()
         summary_csv = self.source_dir / "nanotel_summary_statistics.csv"
         from ..shared.organism import filter_km_workbook, show_km, km_requested, is_km_field
         config = self.results_dir / 'reports' / 'r_pipeline_config.json'
@@ -201,14 +204,17 @@ class NanoTelWorkbookWriter:
                 source.title = '_source_' + source.title
                 source.sheet_state = 'hidden'
             from .dashboard_workbook import build_dashboard_workbook
-            workbook = build_dashboard_workbook(run, self.source_dir.parent, workbook, comparisons=comparisons)
+            workbook = build_dashboard_workbook(run, self.source_dir.parent, workbook, comparisons=comparisons, check_cancelled=check_cancelled)
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
         workbook_path = self.results_dir / "nanotel_summary.xlsx"
-        filter_km_workbook(workbook, include_km)
+        filter_km_workbook(workbook, include_km, check_cancelled=check_cancelled)
         temporary_path = workbook_path.with_suffix(".tmp.xlsx")
         try:
-            workbook.save(temporary_path)
+            from .workbook_io import save_cancellable
+            with temporary_path.open('w+b') as stream:
+                save_cancellable(workbook, stream, check_cancelled)
+            check_cancelled()
             os.replace(temporary_path, workbook_path)
         finally:
             workbook.close()
@@ -312,6 +318,8 @@ class NanoTelWorkbookWriter:
             text_columns = set()
             row_count = 0
             for row_index, row in enumerate(reader, start=1):
+                if row_index % 256 == 0:
+                    getattr(self, '_check_cancelled', lambda: None)()
                 row_count = row_index
                 while len(column_widths) < len(row):
                     column_widths.append(0)

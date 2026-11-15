@@ -84,7 +84,16 @@ def append_text(sheet, row):
             cell.data_type = 's'
 
 
-def retain_source_tables(workbook, results_root, run):
+def retain_source_tables(workbook, results_root, run, check_cancelled=None):
+    check_cancelled = check_cancelled or (lambda: None)
+    check_cancelled()
+    appended = 0
+    def retain_row(sheet, row):
+        nonlocal appended
+        appended += 1
+        if appended % 256 == 0:
+            check_cancelled()
+        append_text(sheet, row)
     root = Path(results_root)
     from ..shared.organism import show_km, km_table
     include_km = show_km(run)
@@ -114,9 +123,9 @@ def retain_source_tables(workbook, results_root, run):
         if text_title in workbook.sheetnames:
             del workbook[text_title]
         sheet = workbook.create_sheet(text_title)
-        append_text(sheet, ['Path', 'Part', 'Text'])
+        retain_row(sheet, ['Path', 'Part', 'Text'])
         for (name, part), content in sorted(text_records.items()):
-            append_text(sheet, [name, part, content])
+            retain_row(sheet, [name, part, content])
         sheet.sheet_state = 'hidden'
     for path in source_files(root, '*.csv'):
         name = table_name(path.name)
@@ -131,7 +140,7 @@ def retain_source_tables(workbook, results_root, run):
         sheet = workbook.create_sheet(title)
         with path.open(encoding='utf-8-sig', newline='') as stream:
             for row in csv.reader(stream):
-                append_text(sheet, row)
+                retain_row(sheet, row)
         sheet.sheet_state = 'hidden'
     manifest = root / 'nanotel/report_sources.json'
     if manifest.is_file():
@@ -139,9 +148,9 @@ def retain_source_tables(workbook, results_root, run):
         if title in workbook.sheetnames:
             del workbook[title]
         sheet = workbook.create_sheet(title)
-        append_text(sheet, ['Barcode', 'Original detail folder'])
+        retain_row(sheet, ['Barcode', 'Original detail folder'])
         for label, folder in sorted(json.loads(manifest.read_text(encoding='utf-8')).items()):
-            append_text(sheet, [label, folder])
+            retain_row(sheet, [label, folder])
         sheet.sheet_state = 'hidden'
     for path in candidates:
         if not path.is_file():
@@ -156,7 +165,7 @@ def retain_source_tables(workbook, results_root, run):
                     continue
                 sheet = workbook.create_sheet(source.title)
                 for row in source.values:
-                    append_text(sheet, row)
+                    retain_row(sheet, row)
                 sheet.sheet_state = 'hidden'
         finally:
             previous.close()
@@ -190,12 +199,12 @@ def retain_source_tables(workbook, results_root, run):
                 counts.cell(row, median_column, fact.value)
     if '_source_Run metadata' not in workbook.sheetnames:
         sheet = workbook.create_sheet('_source_Run metadata')
-        append_text(sheet, ['Field', 'Part', 'Value'])
+        retain_row(sheet, ['Field', 'Part', 'Value'])
         metadata = {'settings': run.settings.value if run.settings.status == 'available' else {},
                     'organism': run.organism.value if run.organism.status == 'available' else '',
                     'stages': {key: fact.value for key, fact in run.stages.items() if fact.status == 'available'}}
         for key, value in metadata.items():
             encoded = json.dumps(value, ensure_ascii=True)
             for offset in range(0, len(encoded), 30000):
-                append_text(sheet, [key, offset // 30000 + 1, encoded[offset:offset + 30000]])
+                retain_row(sheet, [key, offset // 30000 + 1, encoded[offset:offset + 30000]])
         sheet.sheet_state = 'hidden'

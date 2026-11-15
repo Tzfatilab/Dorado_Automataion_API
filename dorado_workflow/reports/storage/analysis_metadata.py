@@ -82,7 +82,7 @@ def analysis_rows(results_root, include_native=True):
     return list(rows.values())
 
 
-def retain_analysis_sheet(workbook, results_root, include_km=False):
+def retain_analysis_sheet(workbook, results_root, include_km=False, check_cancelled=None):
     """Add hidden original analysis fields to an existing output workbook.
 
     Args:
@@ -92,6 +92,8 @@ def retain_analysis_sheet(workbook, results_root, include_km=False):
     Returns:
         None; writes only a hidden worksheet, preserving scientific field values.
     """
+    check_cancelled = check_cancelled or (lambda: None)
+    check_cancelled()
     rows = analysis_rows(results_root)
     name = '_source_' + SHEET
     if name in workbook.sheetnames:
@@ -101,6 +103,7 @@ def retain_analysis_sheet(workbook, results_root, include_km=False):
     sheet = workbook.create_sheet(name)
     sheet.append(HEADERS)
     for row, _, _ in rows:
+        check_cancelled()
         from ..shared.organism import is_km_field
         if not include_km and is_km_field(row['Source field']):
             continue

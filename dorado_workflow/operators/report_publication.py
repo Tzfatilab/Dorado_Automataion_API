@@ -9,7 +9,7 @@ from dorado_workflow.reports.overview.comparisons import comparison_data
 from dorado_workflow.reports.overview.dashboard import render_screen
 
 
-def publish_run_report(results, nanotel_directory, progress=None):
+def publish_run_report(results, nanotel_directory, progress=None, check_cancelled=None):
     """Save a self-contained dashboard.html directly under NanoTel.
 
     Source provenance and links to barcode reports are embedded in the HTML.
@@ -26,7 +26,11 @@ def publish_run_report(results, nanotel_directory, progress=None):
     from dorado_workflow.reports.storage.layout import prepare_run_report, atomic_text, organize_barcode_reports
     from dorado_workflow.reports.storage.archive import available_details, pack_details
     from time import perf_counter
-    progress = progress or (lambda message: None)
+    check_cancelled = check_cancelled or (lambda: None)
+    report_progress = progress or (lambda message: None)
+    def progress(message):
+        check_cancelled()
+        report_progress(message)
     started = perf_counter()
     progress("Dashboard: discovering saved report sources")
     organize_barcode_reports(nanotel_directory)
@@ -49,7 +53,7 @@ def publish_run_report(results, nanotel_directory, progress=None):
         del page
         started = perf_counter()
         from dorado_workflow.reports.exports.dashboard_workbook import write_dashboard_workbook
-        write_dashboard_workbook(run, Path(nanotel_directory) / "nanotel_results.xlsx", results, comparisons=comparisons, progress=progress)
+        write_dashboard_workbook(run, Path(nanotel_directory) / "nanotel_results.xlsx", results, comparisons=comparisons, progress=progress, check_cancelled=check_cancelled)
         progress(f"Dashboard: Excel saved in {perf_counter()-started:.1f}s; verifying retained sources")
         from .report_cleanup import cleanup_analysis_json
         from dorado_workflow.reports.shared.organism import show_km

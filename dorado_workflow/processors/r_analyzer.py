@@ -313,7 +313,8 @@ class RAnalyzer(ProcessorBase):
         run = import_results(self.context.path_manager.get_results_dir_path()) if cleanup_sources else None
         from dorado_workflow.reports.overview.comparisons import comparison_data
         comparisons = comparison_data(run) if run is not None else None
-        workbook_path = writer.write(run=run, comparisons=comparisons)
+        workbook_path = writer.write(run=run, comparisons=comparisons,
+                                     check_cancelled=self.context.command_executor.check_cancelled)
         if cleanup_sources:
             # Render while numeric CSV/JSON sources still exist. No read-track
             # generation is requested; cleanup follows both successful saves.

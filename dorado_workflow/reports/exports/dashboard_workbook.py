@@ -42,7 +42,7 @@ def numeric(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0
 
 
-def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=None, progress=None):
+def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=None, progress=None, check_cancelled=None):
     """Build the shared visible layout, optionally retaining hidden source sheets.
 
     Args:
@@ -55,6 +55,8 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
         Workbook containing barcode summaries, read tables and source facts.
     """
     progress = progress or (lambda message: None)
+    check_cancelled = check_cancelled or (lambda: None)
+    check_cancelled()
     progress('Excel: building barcode tables and source facts')
     wb = workbook if workbook is not None else Workbook()
     if workbook is None:
@@ -91,6 +93,8 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
             Worksheet row number used for the appended output record.
         """
         row_number = next_rows[ws]
+        if row_number % 256 == 0:
+            check_cancelled()
         ws.append(row)
         next_rows[ws] += 1
         for column in range(1, len(row) + 1):
@@ -185,6 +189,7 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     for key, fact in {'organism': run.organism, 'settings': run.settings, **run.stages, **run.metrics}.items():
         fact_rows('', '', key, fact)
     for barcode in run.barcodes:
+        check_cancelled()
         filtered = read_rows(barcode)
         cutoff = short_cutoff_bp(run.settings, barcode)
         source_count = value(barcode.metrics.get('amount_of_telomeres'))
@@ -323,17 +328,17 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     if results_root is not None:
         progress('Excel: retaining source data for future Recalculate')
         from ..storage.analysis_metadata import retain_analysis_sheet
-        retain_analysis_sheet(wb, results_root, include_km=show_km(run))
+        retain_analysis_sheet(wb, results_root, include_km=show_km(run), check_cancelled=check_cancelled)
         from ..storage.source_tables import retain_source_tables
-        retain_source_tables(wb, results_root, run)
+        retain_source_tables(wb, results_root, run, check_cancelled=check_cancelled)
     facts.sheet_state = 'hidden'
     from ..shared.organism import filter_km_workbook
     progress('Excel: checking retained source fields')
-    filter_km_workbook(wb, show_km(run))
+    filter_km_workbook(wb, show_km(run), check_cancelled=check_cancelled)
     return wb
 
 
-def write_dashboard_workbook(run, destination, results_root=None, comparisons=None, progress=None):
+def write_dashboard_workbook(run, destination, results_root=None, comparisons=None, progress=None, check_cancelled=None):
     """Save imported facts atomically without refitting KM or scientific filters.
 
     Args:
@@ -347,12 +352,16 @@ def write_dashboard_workbook(run, destination, results_root=None, comparisons=No
     """
     destination = Path(destination)
     progress = progress or (lambda message: None)
-    wb = build_dashboard_workbook(run, results_root, comparisons=comparisons, progress=progress)
+    check_cancelled = check_cancelled or (lambda: None)
+    wb = build_dashboard_workbook(run, results_root, comparisons=comparisons, progress=progress, check_cancelled=check_cancelled)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix('.tmp.xlsx')
     try:
         progress('Excel: saving workbook to disk')
-        wb.save(temporary)
+        from .workbook_io import save_cancellable
+        with temporary.open('w+b') as stream:
+            save_cancellable(wb, stream, check_cancelled)
+        check_cancelled()
         os.replace(temporary, destination)
     finally:
         wb.close()

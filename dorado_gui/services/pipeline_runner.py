@@ -995,7 +995,7 @@ def _write_full_report(context, log, check_cancelled):
     from dorado_workflow.operators.report_publication import publish_run_report
     log("Generating All Barcodes dashboard and Excel workbook...")
     report_path = Path(publish_run_report(context.path_manager.get_results_dir_path(),
-                                         context.path_manager.get_nanotel_output_dir_path(), progress=log))
+                                         context.path_manager.get_nanotel_output_dir_path(), progress=log, check_cancelled=check_cancelled))
     check_cancelled()
     log(f"All Barcodes report: {report_path}")
     log(f"NanoTel summary (Excel): {report_path.with_name('nanotel_results.xlsx')}")
