@@ -96,10 +96,11 @@ process_barcode_mapping <- function(alignment_summary_path,
                                     head_max_start = 5000,
                                     tail_min_end = 35000,
                                     alignment_data = NULL,
-                                    retained_nanotel_path = NULL) {
+                                    retained_nanotel_path = NULL,
+                                    analyzed_read_reverse_complemented = NULL) {
 
   log_message(paste("Processing mapping for barcode:", barcode_name))
-  log_message("Mapping filter mode: MAPQ + Head/Tail position; strand is diagnostic only")
+  log_message("Mapping: MAPQ + reference position, then subtelomeric coverage/boundary proximity; ties remain ambiguous")
 
   # Validate input files
   validate_file_exists(alignment_summary_path, "Alignment summary")
@@ -120,8 +121,7 @@ process_barcode_mapping <- function(alignment_summary_path,
   }
 
   # Remove unwanted columns
-  unwanted_nanotel_cols <- c("...1", "telo_density", "Telomere_start",
-                             "Telomere_end", "Telomere_length",
+  unwanted_nanotel_cols <- c("...1", "telo_density", "Telomere_length",
                              "running_median", "seqLen_runningMED")
   nanotel_data <- nanotel_data[, !(names(nanotel_data) %in% unwanted_nanotel_cols)]
 
@@ -199,6 +199,21 @@ process_barcode_mapping <- function(alignment_summary_path,
     data.frame(step = "after_strand_position_filtering", count = nrow(strand_position_filtered))
   )
   minimap_filtered <- position_filtered
+  orientation <- analyzed_read_reverse_complemented
+  if (is.null(orientation)) orientation <- mapping_read_orientation(filtered_nanotel_path)
+  selection <- select_mapping_candidates(minimap_filtered, nanotel_data, orientation)
+  # Retain all quality-passing candidates and their decisions for audit/review.
+  # The original BAM and alignment summary remain the recalculation source.
+  candidates_file <- file.path(output_dir, paste0("mapping_candidates_", barcode_name, ".csv"))
+  safe_write_csv(selection$candidates, candidates_file)
+  unranked <- sum(startsWith(selection$candidates$mapping_selection_reason, "Not ranked:"))
+  if (unranked) log_message(paste(unranked,
+    "alignment candidates could not be ranked; kept without guessing. See", basename(candidates_file)), "WARNING")
+  minimap_filtered <- selection$selected
+  diagnostic_counts <- rbind(diagnostic_counts,
+    data.frame(step="after_coverage_boundary_selection", count=nrow(minimap_filtered)))
+  log_message(paste("Mapping selection:", nrow(minimap_filtered), "of",
+    nrow(position_filtered), "alignment candidates retained; ties/trade-offs remain available"))
   diagnostic_file <- file.path(output_dir, paste0("mapping_diagnostics_", barcode_name, ".csv"))
   safe_write_csv(diagnostic_counts, diagnostic_file)
 

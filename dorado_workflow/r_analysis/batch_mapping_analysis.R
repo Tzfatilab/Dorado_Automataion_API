@@ -17,6 +17,7 @@ script_dir <- tryCatch({
   getwd()
 })
 source(file.path(script_dir, "functions", "utils.R"))
+source(file.path(script_dir, "functions", "mapping_selection.R"))
 source(file.path(script_dir, "functions", "mapping_functions.R"))
 
 # Process a single barcode with multiple BAM files
@@ -64,7 +65,8 @@ process_barcode_multiple_bams <- function(barcode_configs_list, alignment_data =
         head_max_start = config$head_max_start,
         tail_min_end = config$tail_min_end,
         alignment_data = alignment_data,
-        retained_nanotel_path = config$retained_nanotel_path
+        retained_nanotel_path = config$retained_nanotel_path,
+        analyzed_read_reverse_complemented = config$read_orientations[[tolower(barcode_name)]]
       )
 
       if (nrow(mapping_result$mapped_data) == 0) {
@@ -261,6 +263,7 @@ main_mapping_analysis <- function(config_file) {
     min_mapq = min_mapq,
     head_max_start = head_max_start,
     tail_min_end = tail_min_end,
+    read_orientations = config$read_orientations,
     filter_threshold_c = filter_threshold_c,
     filter_threshold_g = filter_threshold_g,
     mod_threshold_m = mod_threshold_m,

@@ -197,6 +197,17 @@ class RAnalyzer(ProcessorBase):
 
             # Merge mapping / methylation thresholds into their respective sections
             pipeline_config["mapping_analysis"].update(mapping_params)
+            if run_mapping:
+                # Recalculate retains detector orientation in the source workbook,
+                # while fresh runs still have native analysis JSON. Use the same
+                # source-facts reader for both; never infer it from SAM strand.
+                from ..reports.storage.analysis_metadata import analysis_rows
+                pipeline_config["mapping_analysis"]["read_orientations"] = {
+                    row["Barcode"]: row["Value"]
+                    for row, _, _ in analysis_rows(path_mgr.get_results_dir_path())
+                    if row["Source field"] == "analyzed_read_reverse_complemented"
+                    and type(row["Value"]) is bool
+                }
             pipeline_config["methylation_analysis"].update(methylation_params)
 
             # 4. Write JSON config into the trial's reports directory

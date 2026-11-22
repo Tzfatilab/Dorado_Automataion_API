@@ -92,6 +92,7 @@ dorado_workflow = [
     "r_analysis/batch_methylation_prep.R",
     "r_analysis/batch_nanotel_analysis.R",
     "r_analysis/functions/mapping_functions.R",
+    "r_analysis/functions/mapping_selection.R",
     "r_analysis/functions/methylation_functions.R",
     "r_analysis/functions/nanotel_functions.R",
     "r_analysis/functions/utils.R",
