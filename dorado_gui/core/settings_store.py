@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dorado_workflow.managers.config_manager import ConfigManager
 from dorado_workflow.utils.analysis_validation import validate_nanotel_settings
+from dorado_workflow.utils.reference_registry import reference_library, apply_reference_library, ensure_reference_presets, merge_app_references
 
 
 def canonical_patterns(config=None):
@@ -45,13 +46,15 @@ def local_paths(paths, defaults):
         if not value.exists():
             value = package / defaults[key]
         result[key] = str(value.resolve())
-    for org, path in result["references"].items():
-        value = Path(path).expanduser()
+    library = reference_library(result)
+    for key, item in library.items():
+        value = Path(item['path']).expanduser()
         if not value.is_absolute():
             value = package / value
-        if not value.exists():
-            value = package / defaults["references"][org]
-        result["references"][org] = str(value.resolve())
+        if not value.exists() and key in defaults['references']:
+            value = package / defaults['references'][key]
+        item['path'] = str(value.resolve())
+    result = apply_reference_library(result, library)
     return result
 
 
@@ -144,6 +147,7 @@ def validate_config(config):
         None.
     """
     validate_nanotel_settings(config["nanotel"])
+    reference_library(config['paths'])
     analysis_sections = [config["nanotel"]]
     if not config["demuxing"].get("kit_name"):
         raise ValueError("A demultiplexing kit ID is required.")
@@ -160,15 +164,22 @@ def validate_config(config):
             raise ValueError(f"{key} must be a nonempty A/C/G/T sequence.")
     pattern_lists = [config["nanotel"].get("tvr_patterns", [])]
     organisms = config["organism_specific"]
-    for organism in ("mouse", "human", "zebrafish"):
-        if not isinstance(organisms.get(organism), dict):
+    for organism in config["paths"]["references"]:
+        if not isinstance(organisms.get(organism, {}), dict):
             raise ValueError(f"Missing organism preset: {organism}")
-        analysis = organisms[organism].get("nanotel", {})
+        demuxing = organisms.get(organism, {}).get("demuxing", {})
+        if not isinstance(demuxing, dict):
+            raise ValueError(f"Demultiplexing defaults for {organism} must be an object.")
+        if "kit_name" in demuxing:
+            kit = demuxing["kit_name"]
+            if not isinstance(kit, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", kit):
+                raise ValueError(f"A valid demultiplexing kit ID is required for {organism}.")
+        analysis = organisms.get(organism, {}).get("nanotel", {})
         if not isinstance(analysis, dict):
             raise ValueError(f"Analysis defaults for {organism} must be an object.")
         validate_nanotel_settings(analysis)
         analysis_sections.append(analysis)
-        pattern_lists.append(organisms[organism].get("tvr_patterns", []))
+        pattern_lists.append(organisms.get(organism, {}).get("tvr_patterns", []))
         reference = config["paths"]["references"].get(organism)
         if not isinstance(reference, str) or not reference.strip():
             raise ValueError(f"A reference path is required for {organism}.")
@@ -194,8 +205,8 @@ def validate_config(config):
         value = config["paths"].get(key)
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"A nonempty path is required for {key}.")
-    if config["lab_info"].get("default_organism") not in ("mouse", "human", "zebrafish"):
-        raise ValueError("Select a supported default organism.")
+    if config["lab_info"].get("default_organism") not in config["paths"]["references"]:
+        raise ValueError("Select a registered default reference.")
     if config["logging"].get("log_level") not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
         raise ValueError("Invalid logging level.")
 
@@ -239,6 +250,7 @@ class SettingsStore:
         self.path = Path(path)
         self.defaults = copy.deepcopy(ConfigManager().config)
         self.defaults["paths"] = local_paths(self.defaults["paths"], self.defaults["paths"])
+        ensure_reference_presets(self.defaults)
         remove_legacy_canonical(self.defaults)
         self.profiles = {"Lab default": copy.deepcopy(self.defaults)}
         self.active = "Lab default"
@@ -257,6 +269,7 @@ class SettingsStore:
                     migrate_legacy_telomere_start(config, data)
                     remove_legacy_canonical(config)
                     config["paths"] = local_paths(config["paths"], self.defaults["paths"])
+                    ensure_reference_presets(config)
                     validate_config(config)
                     profiles[name] = config
                 if document.get("active") not in profiles:
@@ -322,7 +335,8 @@ class SettingsStore:
             None.
         """
         for name, config in self.profiles.items():
-            config["paths"] = copy.deepcopy(self.path_overrides.get(name, self.app_paths))
+            config["paths"] = merge_app_references(self.path_overrides.get(name, self.app_paths), self.app_paths)
+            ensure_reference_presets(config)
 
     def _document(self, profiles, active, app_paths, overrides):
         """Serializable settings document containing profiles and path overrides.
@@ -349,7 +363,7 @@ class SettingsStore:
             None.
         """
         probe = copy.deepcopy(self.defaults)
-        paths = copy.deepcopy(paths)
+        paths = apply_reference_library(paths, reference_library(paths))
         for key in ("default_input_base", "default_output_base"):
             folder = Path(paths.get(key, "")).expanduser()
             if not paths.get(key, "").strip() or not folder.is_dir():
@@ -359,7 +373,8 @@ class SettingsStore:
         validate_config(probe)
         profiles = copy.deepcopy(self.profiles)
         for name, config in profiles.items():
-            config["paths"] = copy.deepcopy(self.path_overrides.get(name, paths))
+            config["paths"] = merge_app_references(self.path_overrides.get(name, paths), paths)
+            ensure_reference_presets(config)
         self._backup_unreadable()
         write_json(self.path, self._document(profiles, self.active, paths, self.path_overrides))
         self.profiles, self.app_paths = profiles, copy.deepcopy(paths)
@@ -400,6 +415,8 @@ class SettingsStore:
             None.
         """
         self.validate_name(name)
+        config = copy.deepcopy(config)
+        ensure_reference_presets(config)
         validate_config(config)
         profiles = copy.deepcopy(self.profiles)
         profiles[name] = copy.deepcopy(config)

@@ -101,7 +101,7 @@ class ProjectSources:
             if len(recorded) == 1:
                 organism = recorded.pop()
         organism = normalize_organism(organism)
-        if organism and organism not in {"human", "mouse", "zebrafish"}:
+        if organism and organism not in {"human", "mouse", "zebrafish"} and not re.fullmatch(r'reference_[a-z0-9_]+', organism):
             raise ValueError("The original run records an unsupported organism: " + organism)
         return cls(root, results, summaries, workbook, settings, organism)
 

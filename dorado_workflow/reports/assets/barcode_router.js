@@ -3,18 +3,67 @@
   const pages = [...document.querySelectorAll('.barcode-page')];
   const title = document.querySelector('header h1');
   const missing = document.getElementById('unknown-barcode');
-  // Population changes reuse compact precomputed figures; no scientific
-  // filtering, histogram binning or R work runs inside the browser.
+  // Standard populations reuse saved NanoTel figures. Table subsets display
+  // source measurements directly; they never rerun telomere detection/filtering.
+  function tableLengthFigure(page, section, selected, rows) {
+    const method=page.dataset.mismatchEnabled==='true'?'mismatch_length':'exact_length';
+    const numeric=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0;
+    const layout=JSON.parse(JSON.stringify(selected.figure.layout));
+    delete layout.updatemenus;delete layout.xaxis.range;delete layout.yaxis.range;
+    layout.xaxis.autorange=true;layout.yaxis.autorange=true;
+    layout.annotations=[];
+    const label=method==='mismatch_length'?'including mismatch':'canonical';
+    let note=`Table filters: ${rows.length.toLocaleString()} matching reads. Telomere lengths: ${label}. `;
+    let data;
+    if(section.dataset.lengthPopulationChart==='histogram') {
+      const lengths=rows.map(r=>r[method]).filter(v=>numeric(v)&&v>0);
+      data=[{type:'histogram',x:lengths,name:'Telomeric reads',marker:{color:'#dbe7f6'},histnorm:'',nbinsx:50}];
+      layout.yaxis.title={text:'Read count'};
+      layout.updatemenus=[{buttons:[
+        {label:'Read count',args:[{histnorm:''},{'yaxis.title.text':'Read count'}]},
+        {label:'Percentage',args:[{histnorm:'percent'},{'yaxis.title.text':'Percentage (%)'}]}
+      ]}];
+      note+=`${lengths.length} measured of ${rows.length} reads; missing or non-positive lengths omitted. Histogram of matching reads; original NanoTel smoothing is not recalculated for table filters.`;
+    } else {
+      const ordered=rows.slice().sort((a,b)=>(numeric(b.length)?b.length:0)-(numeric(a.length)?a.length:0));
+      const x=ordered.map((_,i)=>i+1);
+      data=[['length','Total read length','#e8735a'],[method,`Telomere length (${label})`,'#228b22']].map(([key,name,color])=>({
+        type:'scatter',x,y:ordered.map(r=>numeric(r[key])?r[key]/1000:null),mode:'lines+markers',
+        name,line:{color},marker:{size:4},meta:'read-links',customdata:ordered.map(r=>[page.id,r.id]),
+        text:ordered.map(r=>r.label),hovertemplate:`%{text}<br>${name}: %{y:.3f} kb<extra></extra>`
+      }));
+      // Two heaps keep the cumulative median fast even for large selections.
+      const low=[],high=[];
+      const push=(heap,value,less)=>{heap.push(value);let i=heap.length-1;while(i){const p=(i-1)>>1;if(!less(heap[i],heap[p]))break;[heap[i],heap[p]]=[heap[p],heap[i]];i=p;}};
+      const pop=(heap,less)=>{const top=heap[0],last=heap.pop();if(heap.length){heap[0]=last;let i=0;while(2*i+1<heap.length){let c=2*i+1;if(c+1<heap.length&&less(heap[c+1],heap[c]))c++;if(!less(heap[c],heap[i]))break;[heap[i],heap[c]]=[heap[c],heap[i]];i=c;}}return top;};
+      const greater=(a,b)=>a>b,less=(a,b)=>a<b;
+      const median=ordered.map(r=>{
+        if(!numeric(r[method]))return null;
+        const v=r[method]/1000;
+        if(!low.length||v<=low[0])push(low,v,greater);else push(high,v,less);
+        if(low.length>high.length+1)push(high,pop(low,greater),less);
+        if(high.length>low.length)push(low,pop(high,less),greater);
+        return low.length===high.length?(low[0]+high[0])/2:low[0];
+      });
+      data.push({type:'scatter',x,y:median,mode:'lines',name:'Running median telomere length',line:{color:'#4169e1',width:2.5},hovertemplate:'Running median telomere length: %{y:.3f} kb<extra></extra>'});
+      note+='Sorted by total read length. Running median uses measured telomere lengths in this order; missing values are excluded. Summary cards remain after filtering.';
+    }
+    if(!rows.length)layout.annotations=[{text:'No reads match these table filters',x:.5,y:.5,xref:'paper',yref:'paper',showarrow:false}];
+    return {figure:{data,layout},note};
+  }
   function updateLengthPlot(plot, page) {
     plot.populationRender = (plot.populationRender || Promise.resolve()).then(async () => {
       const population = page.dataset.lengthPopulation || 'filtered';
-      if (plot.dataset.population === population && plot._fullLayout) {
+      const selection=page.readLengthSelection;
+      const renderKey=population+(selection?':'+selection.key:'');
+      if (plot.dataset.population === renderKey && plot._fullLayout) {
         if (!page.hidden) Plotly.Plots.resize(plot);
         return;
       }
       const section = plot.closest('[data-length-population-chart]');
       const variants = JSON.parse(section.querySelector('.length-population-figures').textContent);
-      const selected = variants[population];
+      let selected = variants[population];
+      if(selection&&selected?.figure)selected=tableLengthFigure(page,section,selected,selection.rows);
       const figure = selected?.figure || {data:[], layout:{}};
       // Clone because Plotly mutates arrays and layout metadata during rendering.
       const copy = JSON.parse(JSON.stringify(figure));
@@ -47,7 +96,7 @@
       }
       section.querySelector(':scope > p.note').textContent = selected?.note || 'Selected population is unavailable.';
       // The live graph is also the PNG/interactive export source.
-      plot.dataset.population = population;
+      plot.dataset.population = renderKey;
     }).catch(() => {
       delete plot.dataset.population;
       plot.closest('section').querySelector(':scope > p.note').textContent = 'This population could not be displayed. Select it again to retry.';

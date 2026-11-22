@@ -11,6 +11,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Dict, Any, Optional
 from ..utils.analysis_validation import validate_nanotel_settings
+from ..utils.reference_registry import ensure_reference_presets
 
 
 def organism_nanotel_settings(config, organism):
@@ -30,6 +31,18 @@ def organism_nanotel_settings(config, organism):
     settings.update(config.get("organism_specific", {}).get(organism, {}).get("nanotel", {}))
     settings.setdefault("include_km", False)
     return settings
+
+def organism_demuxing_settings(config, organism):
+    """Resolve the reference's kit within a profile, retaining legacy fallback."""
+    organism = str(organism).strip().lower()
+    if organism in {"fish", "zebra fish", "zabra fish"}:
+        organism = "zebrafish"
+    settings = deepcopy(config.get("demuxing", {}))
+    override = config.get("organism_specific", {}).get(organism, {}).get("demuxing", {})
+    if "kit_name" in override:
+        settings["kit_name"] = override["kit_name"]
+    return settings
+
 
 class ConfigManager:
     """
@@ -73,6 +86,7 @@ class ConfigManager:
             raise ValueError(f"Configuration must be a JSON object: {self.config_path}")
         if not isinstance(self.config.get('nanotel', {}), dict):
             raise ValueError("Configuration section 'nanotel' must be a JSON object")
+        ensure_reference_presets(self.config)
         validate_nanotel_settings(self.config.get('nanotel', {}))
 
         # Current organism (can be changed dynamically)
@@ -182,6 +196,7 @@ class ConfigManager:
                     # Update the parameter
                     merged['r_analysis'][target_section][param_name] = param_value
 
+        merged["demuxing"] = organism_demuxing_settings(self.config, self._current_organism)
         merged["nanotel"] = organism_nanotel_settings(self.config, self._current_organism)
         # Explicit run choices take precedence over organism defaults.
         merged["nanotel"].update(self._nanotel_run_overrides)
@@ -340,7 +355,7 @@ class ConfigManager:
         Returns:
             Dict[str, Any]: Selected stored value, or the supplied fallback when absent.
         """
-        return self.config.get('demuxing', {})
+        return self._merged_config.get('demuxing', {})
 
     def get_nanotel_params(self) -> Dict[str, Any]:
         """Get organism defaults overlaid with explicit settings for this run.

@@ -9,13 +9,15 @@ def median_summary_html(barcode, settings, icon):
     parts = []
     for method, label in [('exact', 'Canonical'), ('mismatch', '+ Mismatch'), ('tvr_inclusive', '+ TVRs')]:
         result = method_statistics(barcode, settings, method, 'after')
+        attributes = ''
         if result['requested'] is False:
             display = 'Off'
         elif result['median_bp'] is None:
-            display = 'Unavailable'
+            display = '\u2014'
+            attributes = ' aria-label="Unavailable" title="Median unavailable: no complete measured telomere lengths after filtering."'
         else:
             display = f"{result['median_bp'] / 1000:,.2f}"
-        parts.append('<div class="median-method"><h4>' + label + '</h4><strong>' + display + '</strong></div>')
+        parts.append('<div class="median-method"><h4>' + label + '</h4><strong' + attributes + '>' + display + '</strong></div>')
     return ('<article class="stat stat-2 stat-median-compact"><svg aria-hidden="true" viewBox="0 0 48 48">'
             + icon + '</svg><h3>Median telomere length (kb)</h3><div class="median-method-values">'
             + ''.join(parts) + '</div><p>After filtering</p></article>')

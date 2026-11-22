@@ -165,6 +165,9 @@ class RAnalyzer(ProcessorBase):
 
             # 1. Base path structure for the R pipeline (per-trial)
             pipeline_config = path_mgr.generate_r_pipeline_config()
+            reference_key = config_mgr.get_current_organism()
+            pipeline_config['organism'] = reference_key
+            pipeline_config['reference_name'] = config_mgr.config['paths'].get('reference_names', {}).get(reference_key, reference_key)
 
             # 2. Add NanoTel parameters (density thresholds etc.)
             nanotel_params = config_mgr.get_nanotel_params()

@@ -104,6 +104,9 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
             customdata=customdata, points="all", bandwidth=1.0 if len(set(values)) > 1 else 0, spanmode="hard", scalemode="width", box=dict(visible=False), pointpos=0, fillcolor="#a6d0f5", line_color="#214e78",
             marker=dict(color="#3d83c9", size=5), hovertemplate="%{customdata[2]}<br>Telomere length: %{y:.3f} kb<br>Click to open read<extra>%{fullData.name}</extra>"))
     boxes.update_layout(xaxis_title="Barcode", yaxis_title="Telomere length (kb)",
+                        xaxis=dict(type='category',categoryorder='array',
+                                   categoryarray=[trace.name for trace in boxes.data],
+                                   range=[-.5, max(.5, len(boxes.data)-.5)], autorange=False),
                         yaxis_type="linear", yaxis_rangemode="tozero",
                         updatemenus=[dict(type='dropdown',direction='down',active=0,
                             x=1,y=1.42,xanchor='right',yanchor='bottom',
@@ -164,6 +167,8 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
     body_attributes = ' data-run-label="' + escape(run.label, quote=True) + '"'
     body_attributes += ' data-summary-only="true"' if summary_only else ''
     organism = str(run.organism.value) if run.organism.status == 'available' else 'Not recorded'
+    if organism.startswith('reference_') and run.settings.status == 'available':
+        organism = run.settings.value.get('reference_name') or organism
     report_title = TITLE + ' | ' + run.label
     run_identity = ('Run: ' + escape(run.label) + ' &nbsp; | &nbsp; Organism: ' + escape(organism)
                     + (' &nbsp; | &nbsp; Summary' if summary_only else ''))

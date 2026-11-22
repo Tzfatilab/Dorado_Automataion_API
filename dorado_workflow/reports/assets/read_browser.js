@@ -129,7 +129,7 @@
       // Function: populationSelect.onchange.
       // Inputs: None; uses the current report/browser state.
       // Outputs: Handles the UI action and updates the associated report controls.
-      populationSelect.onchange=()=>{rows=populationSelect.value==='all'?all:populationSelect.value==='excluded'?excluded:filteredRows||[];columnFilters.clear();current=1;render();page.dataset.lengthPopulation=populationSelect.value;section.dispatchEvent(new CustomEvent('read-population-change',{bubbles:true}));};
+      populationSelect.onchange=()=>{rows=populationSelect.value==='all'?all:populationSelect.value==='excluded'?excluded:filteredRows||[];columnFilters.clear();current=1;render();};
       // Function: reset.onclick.
       // Inputs: None; uses the current report/browser state.
       // Outputs: Handles the UI action and updates the associated report controls.
@@ -370,6 +370,11 @@
           (rows.some(read=>read.plot_only)?' Rows marked Data unavailable are counted here, but their full table records were not exported. Any measurements shown come from saved plots; missing values are not included in summary statistics.':'');
       }
       const filtered = rows.filter(r => (r.label+' '+r.header+' '+columnValues(r).join(' ')).toLowerCase().includes(search.value.toLowerCase()) && [...columnFilters].every(([index,filter])=>matchesColumnFilter(r,index,filter)));
+      page.dataset.lengthPopulation=populationSelect?.value||'filtered';
+      // Charts use every matching row, independent of table pagination/sorting.
+      page.readLengthSelection=search.value||columnFilters.size
+        ? {rows:filtered.slice(),key:JSON.stringify(filtered.map(r=>r.id))}:null;
+      section.dispatchEvent(new CustomEvent('read-population-change',{bubbles:true}));
       sizeColumns(filtered);
       direction.disabled = sort.value === 'original';
       section.querySelectorAll('.reads-table thead th').forEach((th,index)=>{

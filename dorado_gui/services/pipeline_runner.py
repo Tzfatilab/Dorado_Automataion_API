@@ -918,6 +918,13 @@ def _run_post_analysis(*, project_path, output_dir, organism, summary_only, read
     log("Recalculate: refiltering saved alignments; no new alignment will run."
         if mapping else "Recalculate: telomere filtering only; the original run had no mapping stage.")
     organism = source.organism
+    if organism.startswith('reference_'):
+        from copy import deepcopy
+        from dorado_workflow.managers.config_manager import ConfigManager
+        config_data = deepcopy(config_data or ConfigManager().config)
+        # Recalculation can outlive removal of the local FASTA registration.
+        # It reuses saved measurements and never requires a new alignment.
+        config_data.setdefault('organism_specific', {}).setdefault(organism, {'nanotel': dict(source.params)})
     from dorado_workflow.utils.source_discovery import RECALCULATED_FOLDER
     base = Path(_resolve_base_output_dir(output_dir or str(source.root / RECALCULATED_FOLDER))).resolve()
     context = _setup_pipeline_context(output_dir=str(base), organism=organism, log=log,
@@ -925,6 +932,8 @@ def _run_post_analysis(*, project_path, output_dir, organism, summary_only, read
         align_during_basecalling=False, config_data=config_data)
     if not organism:
         context.config_manager.clear_organism_for_recalculation()
+    elif organism.startswith('reference_') and source.settings.get('reference_name'):
+        context.config_manager.config['paths'].setdefault('reference_names', {})[organism] = source.settings['reference_name']
     context.command_executor.stop_callback = stop_cb
     params = dict(context.config_manager.get_nanotel_params())
     params.update(source.params)

@@ -12,10 +12,39 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from gui.ui_styles import make_card
+from core.settings_store import reference_library
 
 
 class ConfigSection:
     """Mixin that builds the Configuration card used in the main window."""
+
+    def _selected_organism(self):
+        """Return the biological organism independently of a reference label."""
+        choice = self.organism.currentData()
+        if isinstance(choice, dict):
+            return choice['organism']
+        return self.organism.currentText().lower().replace(' ', '')
+
+    def _refresh_reference_choices(self, config, default_organism=None):
+        """Show the general named-reference catalog in the run selector."""
+        previous = self.organism.currentData()
+        previous_text = self.organism.currentText()
+        empty = self.organism.currentIndex() < 0
+        library = reference_library(config['paths'])
+        selected = default_organism or (previous.get('organism') if isinstance(previous, dict) else None)
+        self.organism.blockSignals(True)
+        self.organism.clear()
+        for key, item in library.items():
+            label = 'Zebra Fish' if key == 'zebrafish' and item['name'] == 'Zebrafish' else item['name']
+            self.organism.addItem(label, dict(organism=key, name=item['name'], path=item['path']))
+            self.organism.setItemData(self.organism.count()-1, item['path'], Qt.ToolTipRole)
+        index = next((i for i in range(self.organism.count()) if self.organism.itemData(i)['organism'] == selected), -1)
+        if index < 0 and not empty:
+            index = self.organism.findText(previous_text)
+        if index < 0 and selected:
+            index = 0
+        self.organism.setCurrentIndex(index)
+        self.organism.blockSignals(False)
 
     def _build_profile_selector(self):
         """Profile choice anchored at the bottom of the sidebar.

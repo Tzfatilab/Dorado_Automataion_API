@@ -127,7 +127,7 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
                     else 'per-barcode cutoff; see Definitions')
     method_fields = [('Median telomere length after filtration (kb)', 'median_bp', 1000),
                      (f'Short telomeres after filtration (%, {cutoff_title})', 'short_percent', 100)]
-    summary = sheet('Barcode summary', ['Barcode ID', 'Sample name', 'Total number of reads',
+    summary = sheet('Barcode summary', ['Barcode ID', 'Total number of reads',
         'Median total read length (kb)', 'Telomeric reads before filtration',
         'Telomeric reads before filtration (%)', 'Median total read length of telomeric reads before filtration (kb)',
         'Number of telomeric reads after filtration',
@@ -139,16 +139,16 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     summary.append([None] * len(flat_headers))
     for column, title in enumerate(flat_headers, 1):
         summary.cell(1, column).value = title
-        if column <= 8 or column > 8 + 2 * len(methods):
+        if column <= 7 or column > 7 + 2 * len(methods):
             summary.merge_cells(start_row=1, end_row=2, start_column=column, end_column=column)
     for group_index, (title, _, _) in enumerate(method_fields):
-        first = 9 + group_index * len(methods)
+        first = 8 + group_index * len(methods)
         for method_index, (_, label) in enumerate(methods):
             summary.cell(1, first + method_index).value = title if method_index == 0 else None
             summary.cell(2, first + method_index).value = label
         if len(methods) > 1:
             summary.merge_cells(start_row=1, end_row=1, start_column=first, end_column=first + len(methods) - 1)
-    summary.freeze_panes = 'C3'
+    summary.freeze_panes = 'B3'
     summary.print_title_rows = '1:2'
     next_rows[summary] = 3
     facts = sheet('Source facts', ['Barcode ID', 'Read ID', 'Field', 'Availability', 'Unit',
@@ -203,21 +203,21 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
         measurements = {method: method_statistics(barcode, run.settings, method, 'after') for method, _ in methods}
         def scaled(v, scale=1):
             return v / scale if numeric(v) else v if v == 'Not requested' else MISSING
-        row_number = append(summary, [barcode.label, table_stats['sample_name'], value(barcode.metrics.get('total_reads')),
+        row_number = append(summary, [barcode.label, value(barcode.metrics.get('total_reads')),
             scaled(table_stats['total_read_length_median_bp'], 1000), scaled(table_stats['detected_reads']),
             scaled(table_stats['detected_percent'], 100), scaled(table_stats['detected_read_length_median_bp'], 1000),
             source_count,
             *[scaled(measurements[method][key], scale) for _, key, scale in method_fields for method, _ in methods],
             *([scaled(table_stats['tvr_read_percent_after'], 100)] if tvr_requested is not False else []),
             stats['chromosomes'] if stats['chromosomes'] is not None else MISSING])
-        for col in (4, 7):
+        for col in (3, 6):
             summary.cell(row_number, col).number_format = '0.000'
-        summary.cell(row_number, 6).number_format = '0.00%'
+        summary.cell(row_number, 5).number_format = '0.00%'
         for index, (_, key, _) in enumerate(method_fields):
             for method_index in range(len(methods)):
-                summary.cell(row_number, 9 + index * len(methods) + method_index).number_format = '0.000' if key == 'median_bp' else '0.00%'
+                summary.cell(row_number, 8 + index * len(methods) + method_index).number_format = '0.000' if key == 'median_bp' else '0.00%'
         if tvr_requested is not False:
-            summary.cell(row_number, 9 + len(method_fields) * len(methods)).number_format = '0.00%'
+            summary.cell(row_number, 8 + len(method_fields) * len(methods)).number_format = '0.00%'
         def kb(v):
             """Length converted from base pairs to kilobases, or the missing-value marker.
 
@@ -325,7 +325,7 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
         for i in range(1, ws.max_column+1):
             ws.column_dimensions[get_column_letter(i)].width = min(44, max(15, len(str(flat_headers[i-1] if ws is summary else ws.cell(1,i).value or ''))+2))
         if ws is summary:
-            for column in range(9, 9 + 2 * len(methods)):
+            for column in range(8, 8 + 2 * len(methods)):
                 ws.column_dimensions[get_column_letter(column)].width = 26
         if ws is definitions:
             ws.column_dimensions['B'].width = 105

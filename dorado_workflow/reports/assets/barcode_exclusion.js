@@ -148,6 +148,14 @@
         if(Array.isArray(a.categoryarray))a.categoryarray=a.categoryarray.filter(v=>keep(resolve(v)));
         a.autorange=true;delete a.range;
       }
+      // Plotly autorange stops at the last nonempty violin, hiding selected
+      // barcodes with no lengths. Reserve a slot for every selected barcode.
+      const distributions=figure.data.filter(t=>['box','violin'].includes(t.type)||t.meta?.barcodeDistribution);
+      if(distributions.length&&figure.layout.xaxis){
+        const axis=figure.layout.xaxis,names=distributions.map(t=>t.name);
+        Object.assign(axis,{type:'category',categoryorder:'array',categoryarray:names,
+          tickmode:'array',tickvals:names,ticktext:names,autorange:false,range:[-.5,Math.max(.5,names.length-.5)]});
+      }
       figure.layout.annotations=(figure.layout.annotations||[]).filter(a=>keep(resolve(a.x))&&keep(resolve(a.y)));
       // Cutoff segments in numeric category positions follow the remaining groups.
       const oldGroups=snapshot.data.filter(t=>resolve(t.name));
@@ -189,6 +197,16 @@
     const status=document.createElement('p');status.setAttribute('role','status');controls.appendChild(status);
     const list=document.createElement('div');list.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin:12px 0';controls.appendChild(list);
     const help=document.createElement('p');help.className='note';help.textContent='Checked barcodes contribute to overview graphs and the barcode table. Individual barcode and read pages remain available. Selection is saved in this browser.';controls.appendChild(help);
+    const actions=document.createElement('div');actions.className='barcode-selection-actions';controls.appendChild(actions);
+    const selectAllButton=document.createElement('button');selectAllButton.type='button';selectAllButton.className='select-all-barcodes';
+    selectAllButton.textContent='Select all';selectAllButton.onclick=()=>includeAll();actions.appendChild(selectAllButton);
+    const clearSelectionButton=document.createElement('button');clearSelectionButton.type='button';clearSelectionButton.className='clear-barcode-selection';
+    clearSelectionButton.textContent='Clear selection';clearSelectionButton.onclick=()=>clearSelection();actions.appendChild(clearSelectionButton);
+    const excludeEmptyButton=document.createElement('button');
+    excludeEmptyButton.type='button';excludeEmptyButton.className='exclude-empty-barcodes';
+    excludeEmptyButton.textContent='Exclude barcodes with 0 telomeric reads';
+    excludeEmptyButton.title='Uncheck barcodes with exactly 0 telomeric reads after filtering. Barcodes with unavailable counts are kept.';
+    excludeEmptyButton.onclick=()=>excludeEmpty();actions.appendChild(excludeEmptyButton);
     // Function: field.
     // Inputs: page (barcode page element); parent (parent element)
     // Outputs: Created barcode-control DOM element with its event listeners attached.
@@ -229,6 +247,9 @@
         }
         status.textContent=(pages.length-excluded.size)+' of '+pages.length+' barcodes included.'+(excluded.size?' Excluded: '+[...excluded].map(label).join(', ')+'.':' All barcodes are included.');
         summary.textContent='Include or exclude barcodes ('+(pages.length-excluded.size)+' / '+pages.length+' included)';
+        excludeEmptyButton.disabled=!pages.some(page=>facts.get(page.id).filtered===0&&!excluded.has(page.id));
+        selectAllButton.disabled=excluded.size===0;
+        clearSelectionButton.disabled=excluded.size===pages.length;
         updateStatisticsTables();
         // Do not redraw the original overview until the selection actually changes.
         if(!excluded.size&&!snapshots.size)return;
@@ -264,10 +285,16 @@
     // Inputs: id (stable barcode/read identity); out (whether to exclude this barcode)
     // Outputs: Overview-update promise after changing one barcode exclusion setting.
     const set=(id,out)=>{if(!facts.has(id))throw Error('Unknown barcode');if(out)excluded.add(id);else excluded.delete(id);persist();return apply();};
+    const excludeEmpty=()=>{
+      for(const page of pages)if(facts.get(page.id).filtered===0)excluded.add(page.id);
+      persist();return apply();
+    };
+    const includeAll=()=>{excluded.clear();persist();return apply();};
+    const clearSelection=()=>{for(const page of pages)excluded.add(page.id);persist();return apply();};
     // Function: includeAll.
     // Inputs: None; uses the current report/browser state.
     // Outputs: Clears barcode exclusions and returns the overview-update promise.
-    window.reportBarcodeExclusion={set,includeAll:()=>{excluded.clear();persist();return apply();},
+    window.reportBarcodeExclusion={set,excludeEmpty,includeAll,clearSelection,
       // Function: excluded.
       // Inputs: None; uses the current report/browser state.
       // Outputs: Array of excluded stable barcode identities.

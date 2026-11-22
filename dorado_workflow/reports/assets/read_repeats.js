@@ -18,23 +18,33 @@ window.readRepeatSummary = data => {
   };
   const regions = [], unassignedRegions = [];
   data.motifs.forEach(motif => {
-    const positions = motif.positions.map(([a, b]) => [Math.max(start, a), Math.min(end, b)])
-      .filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const positions = motif.positions.map(([a, b]) => {
+      // Read the complete exported match before clipping it to the interval.
+      // Keep the shared composition category, but name table regions by the
+      // actual observed sequence when that sequence is available.
+      const observed=motif.label==='Mismatch'&&typeof data.sequence==='string'
+        &&Number.isInteger(a)&&Number.isInteger(b)&&a>=0&&b>a&&b<=data.sequence.length
+        ? data.sequence.slice(a,b):null;
+      const label=observed&&/^[ACGT]+$/.test(observed)?observed+' (mismatch)':motif.label;
+      return {start:Math.max(start,a),end:Math.min(end,b),label};
+    }).filter(p=>p.end>p.start).sort((a,b)=>a.start-b.start||a.end-b.end);
     // Multiple searched motifs can contribute to the shared Mismatch category.
     // Treat their overlapping spans as one category, counting each base once.
     let index = groups.findIndex(group => group.label === motif.label);
     if (index < 0) { index = groups.length; groups.push({label: motif.label, color: motif.color, bases: 0}); }
-    let region = null;
-    positions.forEach(([a, b]) => {
+    const lastRegions=new Map();
+    positions.forEach(({start:a,end:b,label}) => {
       event(a, index, 1); event(b, index, -1);
       if (motif.role !== 'tvr') return;
       // Merge touching/overlapping hits only within the same motif. The count
       // records exported matches, not an inferred number of perfect repeats.
+      let region=lastRegions.get(label);
       if (region && a <= region.end) {
         region.end = Math.max(region.end, b); region.matches++;
       } else {
-        region = {start: a, end: b, matches: 1, motif: motif.label, color: motif.color};
+        region = {start: a, end: b, matches: 1, motif: label, color: motif.color};
         regions.push(region);
+        lastRegions.set(label,region);
       }
     });
   });
@@ -83,13 +93,19 @@ window.renderReadRepeats = (parent, read) => {
   const summary = window.readRepeatSummary(data);
   const grid = add('div', '', parent); grid.className = 'read-repeat-panels';
   const detected = add('section', '', grid), composition = add('section', '', grid);
-  add('h3', 'TVRs and unassigned regions' + (summary ? ' (' + summary.regions.length.toLocaleString() + ' TVRs, ' + summary.unassignedRegions.length.toLocaleString() + ' unassigned)' : ''), detected);
+  const regionsHeading=add('h3', 'TVRs and unassigned regions', detected);
   add('h3', 'Repeat composition in telomere region', composition);
   if (!summary) {
     [detected, composition].forEach(panel => add('p', 'Complete motif positions and a TVR-inclusive telomere interval are required.', panel).className = 'note');
     return grid;
   }
   const span = summary.end - summary.start;
+  const shortUnassigned=summary.unassignedRegions.filter(region=>region.end-region.start<4);
+  const hiddenBases=shortUnassigned.reduce((total,region)=>total+region.end-region.start,0);
+  let showAllUnassigned=false;
+  const gapNote=add('p','',detected);gapNote.className='note read-short-gap-note';gapNote.setAttribute('role','status');
+  const gapToggle=shortUnassigned.length?add('button','Show all',detected):null;
+  if(gapToggle){gapToggle.type='button';gapToggle.className='read-short-gap-toggle';gapToggle.setAttribute('aria-label','Show all unassigned regions, including gaps shorter than 4 bp');}
   // Group by motif, retaining genomic order within each motif and stable region
   // numbers across pages. Only presentation order changes, never source values.
   const byMotif = new Map();
@@ -148,7 +164,14 @@ window.renderReadRepeats = (parent, read) => {
   // Outputs: Rebuilds the visible table/page using the current filters, sort and pagination.
   const render = () => {
     body.replaceChildren(); nav.replaceChildren();
-    const sorted=tableRegions.filter(region=>selectedMotifs.has(region.motif));
+    const shownCount=summary.unassignedRegions.length-(showAllUnassigned?0:shortUnassigned.length);
+    regionsHeading.textContent='TVRs and unassigned regions ('+summary.regions.length.toLocaleString()+' TVRs, '+shownCount.toLocaleString()+' unassigned shown)';
+    gapNote.textContent=showAllUnassigned?'All unassigned regions are listed. Base composition and percentages include every base.':
+      shortUnassigned.length?shortUnassigned.length.toLocaleString()+' short unassigned regions (1\u20133 bp), totaling '+hiddenBases.toLocaleString()+' bp, are hidden. Base composition and percentages include these bases.':
+      'No unassigned regions shorter than 4 bp. All unassigned regions are listed.';
+    if(gapToggle){gapToggle.textContent=showAllUnassigned?'Show 4 bp and above':'Show all';gapToggle.setAttribute('aria-pressed',String(showAllUnassigned));}
+    const sorted=tableRegions.filter(region=>selectedMotifs.has(region.motif)
+      &&(showAllUnassigned||region.motif!=='Unassigned bases'||region.end-region.start>=4));
     if(sortKey) sorted.sort((a,b)=>{
       // Function: value.
       // Inputs: r (r)
@@ -207,6 +230,7 @@ window.renderReadRepeats = (parent, read) => {
       });
     }
   };
+  if(gapToggle)gapToggle.onclick=()=>{showAllUnassigned=!showAllUnassigned;page=0;render();};
   render();
   if (!summary.regions.length) add('p', 'No exported TVR matches in this telomere interval.', detected);
   add('p', 'Adjacent or overlapping matches of the same motif form one row. Positions are 1-based inclusive, clipped to the TVR-inclusive telomere. Unassigned regions have no exported motif match and are not TVRs. Repeats counts exported matches; relative position is the row start within that interval.', detected).className = 'note';

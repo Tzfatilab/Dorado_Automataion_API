@@ -351,12 +351,14 @@ class AppWindow(
         self._sync_profile_selector()
         config = self.settings_store.snapshot()
         profile_changed = initial or getattr(self, "_applied_profile", None) != self.settings_store.active
-        organism_labels = {"mouse": "Mouse", "human": "Human", "zebrafish": "Zebra Fish"}
-        organism = organism_labels[config["lab_info"]["default_organism"]]
-        if "post_analysis" not in self.selected_workflows and (profile_changed or self.organism.currentText() == getattr(self, "_profile_organism", "")):
-            self.organism.blockSignals(True)
-            self.organism.setCurrentText(organism)
-            self.organism.blockSignals(False)
+        from dorado_workflow.utils.reference_registry import reference_library
+        key = config['lab_info']['default_organism']
+        organism = reference_library(config['paths'])[key]['name']
+        if key == 'zebrafish' and organism == 'Zebrafish':
+            organism = 'Zebra Fish'
+        follow_profile = "post_analysis" not in self.selected_workflows and (
+            profile_changed or self.organism.currentText() == getattr(self, "_profile_organism", ""))
+        self._refresh_reference_choices(config, config['lab_info']['default_organism'] if follow_profile else None)
         self._profile_organism = organism
         output = self.output_input["edit"]
         previous = getattr(self, "_profile_output", "")
@@ -380,7 +382,7 @@ class AppWindow(
         Returns:
             None.
         """
-        self._apply_analysis_defaults(force=True)
+        self._apply_analysis_defaults(force=self._selected_organism() != getattr(self, '_analysis_organism', None))
 
     def _apply_analysis_defaults(self, force=False):
         """Keep run edits on ordinary saves; reset them on profile/organism changes.
@@ -391,8 +393,9 @@ class AppWindow(
         Returns:
             None.
         """
-        defaults = organism_nanotel_settings(self.settings_store.snapshot(), self.organism.currentText())
-        organism_changed = getattr(self, "_analysis_organism", None) != self.organism.currentText()
+        organism = self._selected_organism()
+        defaults = organism_nanotel_settings(self.settings_store.snapshot(), organism)
+        organism_changed = getattr(self, "_analysis_organism", None) != organism
         for name, key in (("read_length", "min_read_length"),
                           ("max_telomere_start", "max_telomere_start"), ("min_density_threshold", "min_density"),
                           ("short_telomere_threshold", "short_telomere_threshold_bp")):
@@ -403,7 +406,7 @@ class AppWindow(
             if force or organism_changed or edit.text() == old_text:
                 edit.setText("" if value is None else format(value * 100, ".6g") if key == "min_density" else str(value))
         self._profile_nanotel = defaults
-        self._analysis_organism = self.organism.currentText()
+        self._analysis_organism = organism
 
     def _sync_profile_selector(self):
         """Sync profile selector.
@@ -510,9 +513,15 @@ class AppWindow(
             WorkerThread: configured worker instance.
         """
         output_dir = self.output_input["edit"].text().strip()
+        config = self.settings_store.snapshot()
+        choice = self.organism.currentData()
+        if not flags.get('do_post_analysis', False) and isinstance(choice, dict):
+            # The run owns this snapshot. Choosing a reference never rewrites
+            # the saved profile or changes the underlying biological organism.
+            config['paths']['references'][choice['organism']] = choice['path']
 
         return WorkerThread(
-            config_data=self.settings_store.snapshot(),
+            config_data=config,
             trial_name=Path(output_dir).name,
             pod5_path=inputs["pod5"],
             fastq_path=inputs["fastq"],
@@ -521,7 +530,7 @@ class AppWindow(
             do_post_analysis=flags.get("do_post_analysis", False),
             output_dir=output_dir,
 
-            organism=self.organism.currentText().lower(),
+            organism=self._selected_organism(),
 
             do_basecalling=flags["do_basecalling"],
             do_nanotel=flags["do_nanotel"],

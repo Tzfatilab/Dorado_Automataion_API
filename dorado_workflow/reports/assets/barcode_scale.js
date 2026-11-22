@@ -83,8 +83,8 @@ window.reportBarcodeScaleUI=(section,graph)=>{
     layout.height=720;layout.updatemenus=[];layout.showlegend=false;
     delete layout.width;layout.autosize=true;
     layout.xaxis={...layout.xaxis,type:'category',tickmode:'array',tickvals:names,ticktext:names,
-      categoryorder:'array',categoryarray:names,autorange:true,tickangle:-45};
-    delete layout.xaxis.range;
+      categoryorder:'array',categoryarray:names,autorange:false,
+      range:[-.5,Math.max(.5,names.length-.5)],tickangle:-45};
     for(const a of layout.annotations||[])if(a.name==='group-statistics'){
       const index=typeof a.x==='number'?Math.round(a.x):names.indexOf(a.x);
       a.x=names[index];
@@ -97,7 +97,13 @@ window.reportBarcodeScaleUI=(section,graph)=>{
   // Function: refresh.
   // Inputs: None; uses the current report/browser state.
   // Outputs: Updates visible chart controls for the current report state.
-  const refresh=()=>{
+  const refresh=(event)=>{
+    // Autoscale/double-click should restore every selected barcode slot,
+    // including empty groups; manual range zoom remains available.
+    if(event?.['xaxis.autorange']===true){
+      const count=graph.layout.xaxis?.categoryarray?.length||0;
+      Plotly.relayout(graph,{'xaxis.autorange':false,'xaxis.range':[-.5,Math.max(.5,count-.5)]});
+    }
     for(const {button,type} of buttons){
       const active=type===(graph.layout.yaxis?.type||'linear');
       button.setAttribute('aria-pressed',String(active));button.style.background=active?'#2d65ce':'white';button.style.color=active?'white':'#20324c';

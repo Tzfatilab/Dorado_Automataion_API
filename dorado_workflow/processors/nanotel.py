@@ -139,6 +139,7 @@ class NanoTelProcessor(ProcessorBase):
             snapshot.parent.mkdir(parents=True, exist_ok=True)
             snapshot.write_text(json.dumps({
                 "organism": self.context.config_manager.get_current_organism(),
+                "reference_name": self.context.config_manager.config['paths'].get('reference_names', {}).get(self.context.config_manager.get_current_organism()),
                 "nanotel_analysis": self.context.config_manager.get_nanotel_params(),
             }, indent=2), encoding="utf-8")
             # Discover barcode directories

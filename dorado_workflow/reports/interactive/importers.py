@@ -65,6 +65,17 @@ class ResultImporter:
             if type(summary_only) is bool:
                 self.metadata["stages"]["summary_only"] = summary_only
             self.meta_evidence.append(Evidence(self.source(saved_config, "json").id))
+        detection_snapshot = self.root / 'reports/nanotel_source_settings.json'
+        if detection_snapshot.is_file():
+            detection = json.loads(detection_snapshot.read_text(encoding='utf-8-sig'))
+            if detection.get('organism') and not self.metadata.get('organism'):
+                self.metadata['organism'] = detection['organism']
+            settings = self.metadata.setdefault('settings', {})
+            if detection.get('reference_name'):
+                settings.setdefault('reference_name', detection['reference_name'])
+            if detection.get('nanotel_analysis'):
+                settings.setdefault('nanotel_analysis', detection['nanotel_analysis'])
+            self.meta_evidence.append(Evidence(self.source(detection_snapshot, 'json').id))
         # An explicit snapshot is authoritative, but its types and coordinate
         # convention must be validated before downstream adapters use it.
         if metadata_path:

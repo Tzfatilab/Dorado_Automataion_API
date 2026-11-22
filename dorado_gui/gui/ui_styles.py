@@ -70,6 +70,9 @@ class _ReadableTooltips(QObject):
         """
         watched = self.target
         try:
+            # A delayed hover must not open a second popup over a combo menu.
+            if QApplication.activePopupWidget() is not None:
+                return
             if watched is None or not watched.isVisible() or not watched.underMouse():
                 return
             message = watched.toolTip()
@@ -78,6 +81,13 @@ class _ReadableTooltips(QObject):
             QToolTip.showText(QCursor.pos() + QPoint(12, 8),
                 '<div style="max-width:340px;font-size:13px;color:#162238;">' + message + '</div>',
                 watched, watched.rect(), 15000)
+            # Local styles on the hovered widget (for example the sidebar's
+            # transparent background) can override application tooltip styles.
+            # Style the popup itself so its background matches the text color.
+            for popup in QApplication.topLevelWidgets():
+                if popup.inherits('QTipLabel'):
+                    popup.setStyleSheet('QToolTip { color: #162238; background: #ffffff; '
+                                       'border: 1px solid #cbd5e1; font-size: 13px; padding: 5px 7px; }')
         except RuntimeError:
             self.target = None
 
@@ -91,10 +101,15 @@ class _ReadableTooltips(QObject):
         Returns:
             True when the event is consumed; False to continue normal event handling.
         """
+        if event.type() in (QEvent.MouseButtonPress, QEvent.KeyPress):
+            self.timer.stop()
+            self.target = None
+            QToolTip.hideText()
         if isinstance(watched, QWidget) and watched.toolTip():
             if event.type() == QEvent.Enter:
-                self.target = watched
-                self.timer.start(250)
+                if QApplication.activePopupWidget() is None:
+                    self.target = watched
+                    self.timer.start(250)
             if event.type() == QEvent.ToolTip:
                 return True
             if event.type() in (QEvent.Leave, QEvent.Hide) and self.target is watched:

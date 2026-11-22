@@ -241,8 +241,9 @@ class InputSection:
             # enable mismatches. The backend retains the saved source settings.
             self.allow_mismatch.setChecked(False)
             if source.organism:
-                label = {"human": "Human", "mouse": "Mouse", "zebrafish": "Zebra Fish"}[source.organism]
-                self.organism.setCurrentText(label)
+                index = next((i for i in range(self.organism.count())
+                              if (self.organism.itemData(i) or {}).get('organism') == source.organism), -1)
+                self.organism.setCurrentIndex(index)
                 self.organism.setToolTip("Organism is inherited from the original run and cannot be changed in Recalculate.")
             params = source.params
             for name, key in (("read_length", "min_read_length"), ("max_telomere_start", "max_telomere_start"),

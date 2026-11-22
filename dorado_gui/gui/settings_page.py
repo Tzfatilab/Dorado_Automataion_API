@@ -20,7 +20,8 @@ from gui.app_settings_page import AppSettingsPage
 from gui.ui_styles import ask_unsaved_settings
 from core.sequencing_kits import DORADO_KITS
 from core.settings_store import canonical_patterns, merge_config, parse_patterns, validate_config, write_json
-from dorado_workflow.managers.config_manager import organism_nanotel_settings
+from dorado_workflow.managers.config_manager import organism_nanotel_settings, organism_demuxing_settings
+from dorado_workflow.utils.reference_registry import reference_library, ensure_reference_presets, merge_app_references
 
 
 class SettingsPage(QWidget):
@@ -154,18 +155,18 @@ class SettingsPage(QWidget):
         organism_layout.setSpacing(0)
         organism_row = QHBoxLayout()
         organism_row.setSpacing(10)
-        organism_row.addWidget(self.label("Organism", bold=True, size=15))
+        organism_row.addWidget(self.label("Reference", bold=True, size=15))
         self.organism = QComboBox()
-        for text, key in (("Mouse", "mouse"), ("Human", "human"), ("Zebrafish", "zebrafish")):
-            self.organism.addItem(text, key)
+        for key, item in reference_library(self.draft['paths']).items():
+            self.organism.addItem(item['name'], key)
         self.organism.setMinimumWidth(180)
         self.organism.setFixedHeight(30)
         self.organism.setStyleSheet("QComboBox { padding: 3px 8px; min-height: 0; }")
-        self.organism.setAccessibleName("Organism")
+        self.organism.setAccessibleName("Reference profile")
         organism_row.addWidget(self.organism)
         self.scope = self.label("", muted=True)
         organism_row.addWidget(self.scope, 1)
-        self.organism.setToolTip("Also sets the default organism for new runs with this profile.")
+        self.organism.setToolTip("Also sets the default reference for new runs with this profile.")
         organism_layout.addLayout(organism_row)
         root.addWidget(organism_card)
 
@@ -190,7 +191,8 @@ class SettingsPage(QWidget):
         kit_title = self.label("Sequencing kit", size=17, bold=True)
         kit_title.setFixedHeight(30)
         kit_row.addWidget(kit_title)
-        kit_row.addSpacing(8)
+        self.kit_scope = self.label("", muted=True)
+        kit_row.addWidget(self.kit_scope)
         self.kit = QComboBox()
         self.kit.setEditable(False)
         self.kit.setMaxVisibleItems(12)
@@ -199,12 +201,12 @@ class SettingsPage(QWidget):
         self.kit.setAccessibleName("Sequencing kit")
         self.kit.setFixedHeight(30)
         self.kit.setStyleSheet("QComboBox { padding: 3px 8px; min-height: 0; }")
-        self.kit.setToolTip("Barcode demultiplexing kit for all organisms in this profile. Choose a kit supported by your installed Dorado version.")
+        self.kit.setToolTip("Barcode demultiplexing kit for the selected reference in this profile. Choose a kit supported by your installed Dorado version.")
         kit_row.addWidget(self.kit, 1)
         kit_layout.addLayout(kit_row)
         kit_layout.setSpacing(6)
         kit_layout.addWidget(self.label(
-            "Barcode demultiplexing kit for all organisms in this profile.\n"
+            "Barcode demultiplexing kit for the selected reference in this profile.\n"
             "Choose a Dorado barcoding kit supported by your installed version.", muted=True))
         left_layout.addWidget(kit_card)
 
@@ -228,7 +230,7 @@ class SettingsPage(QWidget):
         self.org_badge.setStyleSheet("background: #edf3ff; color: #2563eb; padding: 3px 8px; border-radius: 5px;")
         tvr_header.addWidget(self.org_badge)
         tvr_header.addStretch()
-        restore = self.button("Restore organism defaults", self.restore_patterns, link=True)
+        restore = self.button("Restore reference defaults", self.restore_patterns, link=True)
         tvr_header.addWidget(restore)
         tvr_layout.addLayout(tvr_header)
         tvr_layout.addWidget(self.label("Used when Preset mode is selected on Pipeline Setup.", muted=True))
@@ -280,7 +282,7 @@ class SettingsPage(QWidget):
         for row, (key, title, minimum) in enumerate(specs):
             if key == "min_density":
                 control = QDoubleSpinBox()
-                control.setDecimals(4)
+                control.setDecimals(1)
                 control.setRange(0, 100)
                 control.setSingleStep(1)
             else:
@@ -468,9 +470,17 @@ class SettingsPage(QWidget):
                       if profile["demuxing"].get("kit_name")}
         if c["demuxing"].get("kit_name"):
             saved_kits.add(c["demuxing"]["kit_name"])
+        for config in [*self.store.profiles.values(), c]:
+            saved_kits.update(preset.get('demuxing', {}).get('kit_name')
+                              for preset in config.get('organism_specific', {}).values()
+                              if preset.get('demuxing', {}).get('kit_name'))
         self.kit.addItems(sorted(set(DORADO_KITS) | saved_kits))
         self.kit.setCurrentText(c["demuxing"].get("kit_name") or "")
-        self.current_org = c["lab_info"]["default_organism"]
+        ensure_reference_presets(c)
+        self.organism.clear()
+        for key, item in reference_library(c['paths']).items():
+            self.organism.addItem(item['name'], key)
+        self.current_org = c['lab_info']['default_organism']
         self.organism.setCurrentIndex(self.organism.findData(self.current_org))
         self.load_analysis_defaults()
         self.undo_patterns.clear()
@@ -494,7 +504,9 @@ class SettingsPage(QWidget):
             Current editor values as a configuration or path dictionary.
         """
         c = copy.deepcopy(self.draft)
-        c["demuxing"]["kit_name"] = self.kit.currentText().strip() or None
+        kit = self.kit.currentText().strip() or None
+        if kit != organism_demuxing_settings(self.draft, self.current_org).get('kit_name'):
+            c["organism_specific"][self.current_org].setdefault("demuxing", {})["kit_name"] = kit
         c["lab_info"]["default_organism"] = self.current_org
         # Write only changed values into this organism's override dictionary.
         # Legacy profiles keep their profile-wide fallback without becoming dirty.
@@ -560,8 +572,21 @@ class SettingsPage(QWidget):
         Returns:
             None.
         """
+        self.draft = self.collect()
         if self._using_app_paths:
-            self.draft["paths"] = copy.deepcopy(self.store.app_paths)
+            self.draft['paths'] = copy.deepcopy(self.store.app_paths)
+        self.draft['paths'] = merge_app_references(self.draft['paths'], self.store.app_paths)
+        ensure_reference_presets(self.draft)
+        self.loading = True
+        self.organism.clear()
+        for key, item in reference_library(self.draft['paths']).items():
+            self.organism.addItem(item['name'], key)
+        if self.current_org not in self.draft['paths']['references']:
+            self.current_org = self.draft['lab_info']['default_organism']
+        self.organism.setCurrentIndex(self.organism.findData(self.current_org))
+        self.load_analysis_defaults()
+        self.render_patterns()
+        self.loading = False
         self.refresh_path_scope()
         self.mark_dirty()
         self.saved.emit()
@@ -576,6 +601,11 @@ class SettingsPage(QWidget):
             None.
         """
         defaults = organism_nanotel_settings(self.draft, self.current_org)
+        kit = organism_demuxing_settings(self.draft, self.current_org).get('kit_name') or ''
+        if kit and self.kit.findText(kit) < 0:
+            self.kit.addItem(kit)
+        self.kit.setCurrentText(kit)
+        self.kit_scope.setText(f"{self.organism.currentText()} sequencing kit in this profile.")
         self.include_km.setChecked(defaults.get("include_km", False))
         for key, control in self.analysis_fields.items():
             value = defaults[key]
@@ -663,7 +693,7 @@ class SettingsPage(QWidget):
         self.pattern_grid.setColumnStretch(1, 1)
         self.count.setText(f"{len(self.patterns())} patterns")
         self.org_badge.setText(self.organism.currentText())
-        self.scope.setText(f"TVR patterns and analysis defaults apply only to {self.organism.currentText()} in this profile.")
+        self.scope.setText(f"Sequencing kit, TVR patterns and analysis defaults apply only to {self.organism.currentText()} in this profile.")
         self.undo_button.setEnabled(bool(self.undo_patterns))
 
     def add_patterns(self, *_ , text=None):
@@ -754,7 +784,8 @@ class SettingsPage(QWidget):
             None.
         """
         self.undo_patterns.append(list(self.patterns()))
-        self.draft["organism_specific"][self.current_org]["tvr_patterns"] = list(self.store.defaults["organism_specific"][self.current_org]["tvr_patterns"])
+        self.draft['organism_specific'][self.current_org]['tvr_patterns'] = list(
+            self.store.defaults['organism_specific'].get(self.current_org, {}).get('tvr_patterns', []))
         self.render_patterns()
         self.mark_dirty()
 
