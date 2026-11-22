@@ -112,16 +112,20 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
 
     from ..overview.comparisons import comparison_data
     from ..reads.density import tvr_enabled, mismatch_enabled
+    from ..shared.repeat_categories import tsq_enabled
     comparisons = comparison_data(run) if comparisons is None else comparisons
     compositions = {row['barcode']: row for row in comparisons['composition']}
     tvr_requested = tvr_enabled(run.settings)
     mismatch_requested = mismatch_enabled(run.settings)
+    tsq_requested = tsq_enabled(run.settings)
     from ..shared.measurement_statistics import method_statistics, barcode_table_statistics
     methods = [('exact', 'Canonical')]
     if mismatch_requested is True:
         methods.append(('mismatch', 'Including mismatch'))
     if tvr_requested is not False:
         methods.append(('tvr_inclusive', 'Including TVRs (without mismatch)' if mismatch_requested is False else 'Including TVRs (with mismatch)'))
+    if tsq_requested is True:
+        methods.append(('tsq_inclusive', 'Including TSQ'))
     cutoffs = {short_cutoff_bp(run.settings, barcode) for barcode in run.barcodes}
     cutoff_title = (f"telomere length < {next(iter(cutoffs)):g} bp" if len(cutoffs) == 1 and None not in cutoffs
                     else 'per-barcode cutoff; see Definitions')
@@ -133,6 +137,7 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
         'Number of telomeric reads after filtration',
         *[f'{title} - {label}' for title, _, _ in method_fields for _, label in methods],
         *(['Telomeric reads containing TVRs after filtration (%)'] if tvr_requested is not False else []),
+        *(['Telomeric reads containing TSQ after filtration (%)'] if tsq_requested is True else []),
         'Number of chromosome ends'])
     # A shared title spans the enabled methods, with concise subheaders below.
     flat_headers = [cell.value for cell in summary[1]]
@@ -209,6 +214,7 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
             source_count,
             *[scaled(measurements[method][key], scale) for _, key, scale in method_fields for method, _ in methods],
             *([scaled(table_stats['tvr_read_percent_after'], 100)] if tvr_requested is not False else []),
+            *([scaled(table_stats['tsq_read_percent_after'], 100)] if tsq_requested is True else []),
             stats['chromosomes'] if stats['chromosomes'] is not None else MISSING])
         for col in (3, 6):
             summary.cell(row_number, col).number_format = '0.000'
@@ -216,8 +222,8 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
         for index, (_, key, _) in enumerate(method_fields):
             for method_index in range(len(methods)):
                 summary.cell(row_number, 8 + index * len(methods) + method_index).number_format = '0.000' if key == 'median_bp' else '0.00%'
-        if tvr_requested is not False:
-            summary.cell(row_number, 8 + len(method_fields) * len(methods)).number_format = '0.00%'
+        for extra_index in range(int(tvr_requested is not False) + int(tsq_requested is True)):
+            summary.cell(row_number, 8 + len(method_fields) * len(methods) + extra_index).number_format = '0.00%'
         def kb(v):
             """Length converted from base pairs to kilobases, or the missing-value marker.
 
@@ -248,6 +254,9 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
             columns += [('Telomere length including mismatch (kb)', lambda r:kb(r['mismatch_length']), '0.000')]
         if tvr_requested is not False:
             columns += [('Telomere length including TVRs (kb)', lambda r:kb(r['tvr_length']), '0.000')]
+        if tsq_requested is True:
+            columns += [('Telomere length including TSQ (kb)', lambda r:kb(r['tsq_length']), '0.000'),
+                        ('TSQ content (%)', lambda r:pct(r['tsq']), '0.00%')]
         columns += [('Canonical repeat density (%)', lambda r:r['exact_density'], '0.00%')]
         if mismatch_requested is True:
             columns += [('Repeat density including mismatch (%)', lambda r:r['mismatch_density'], '0.00%')]
@@ -293,6 +302,7 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     definitions = sheet('Definitions', ['Field', 'Definition'])
     cutoff_note = ('Telomere length < '+str(next(iter(cutoffs)))+' bp. ') if len(cutoffs)==1 and None not in cutoffs else 'Per-barcode cutoffs are retained in Source facts. '
     for row in [
+        ['TSQ and TVR separation', 'TSQ and ordinary TVRs have independent canonical-inclusive telomere calls. Base percentages share the combined telomere interval. TSQ-covered bases are excluded from ordinary TVR base coverage; overlapping variants are not counted twice. Legacy combined lengths cannot be split without a new NanoTel analysis.'],
         ['Measurement methods', 'Canonical: without mismatch or TVR. Mismatch: recorded canonical mismatch-inclusive call without TVR. TVR: recorded TVR-inclusive call using the run matching settings. Methods share the saved filtered membership; no new filtering or detection is run.'],
         ['Before/after filtration', 'Before uses the complete exported detected population. After uses saved filtered record identities. Medians use measured telomere lengths only; short percentages use those same non-missing lengths as denominator and telomere length strictly below the recorded cutoff. Zero measured telomere lengths have no defined median or percentage.'],
         ['Barcode sheets', 'Barcode summary contains barcode-level Key Statistics. Each barcode sheet combines all imported before-filtration telomeric records with a Filtration status column. These are detected summary records, not necessarily all input reads.'],

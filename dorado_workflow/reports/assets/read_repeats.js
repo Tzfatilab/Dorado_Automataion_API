@@ -93,7 +93,7 @@ window.renderReadRepeats = (parent, read) => {
   const summary = window.readRepeatSummary(data);
   const grid = add('div', '', parent); grid.className = 'read-repeat-panels';
   const detected = add('section', '', grid), composition = add('section', '', grid);
-  const regionsHeading=add('h3', 'TVRs and unassigned regions', detected);
+  const regionsHeading=add('h3', summary?.regions.some(region=>region.motif==='TSQ')?'TVRs, TSQ and unassigned regions':'TVRs and unassigned regions', detected);
   add('h3', 'Repeat composition in telomere region', composition);
   if (!summary) {
     [detected, composition].forEach(panel => add('p', 'Complete motif positions and a TVR-inclusive telomere interval are required.', panel).className = 'note');

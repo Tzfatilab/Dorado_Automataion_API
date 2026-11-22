@@ -74,8 +74,8 @@ def short_summary_html(barcode, settings):
     Returns:
         HTML markup for short summary html.
     """
-    from .measurement_statistics import METHODS
-    return _combined_summary_html([(method, short_statistics(barcode, settings, method)) for method, _ in METHODS])
+    from .repeat_categories import displayed_methods
+    return _combined_summary_html([(method, short_statistics(barcode, settings, method)) for method, _ in displayed_methods(settings)])
 
 
 def _combined_summary_html(results):
@@ -111,7 +111,7 @@ def _summary_html(result, *, method=None):
     else:
         display = '\u2014'
         note = definition + ' A recorded cutoff and complete post-filtered telomere lengths are required.'
-    mode = {'exact': 'Canonical', 'mismatch': '+ Mismatch', 'tvr_inclusive': '+ TVRs'}.get(method, 'Short telomeres')
+    mode = {'exact': 'Canonical', 'mismatch': '+ Mismatch', 'tvr_inclusive': '+ TVRs', 'tsq_inclusive': '+ TSQ'}.get(method, 'Short telomeres')
     description = {'exact': 'Without mismatch or TVR. ', 'mismatch': 'With mismatch, without TVR. ',
                    'tvr_inclusive': 'Including TVRs, using the recorded matching settings. '}.get(method, '')
     return ('<div class="short-telomere-stat" data-compact-card="true" data-short-method="'+(method or '')
@@ -122,10 +122,10 @@ def _summary_html(result, *, method=None):
 
 def short_table_summary_html(barcode, settings):
     """One overview-table cell retaining three distinct post-filter percentages."""
-    results = [(label, short_statistics(barcode, settings, method)) for method, label in
-               [('exact', 'Canonical'), ('mismatch', '+ Mismatch'), ('tvr_inclusive', '+ TVRs')]]
+    from .repeat_categories import displayed_methods
+    results = [(method, label, short_statistics(barcode, settings, method)) for method, label in displayed_methods(settings)]
     parts = []
-    for label, result in results:
+    for method, label, result in results:
         attributes = ''
         if result.get('requested') is False:
             display = 'Off'
@@ -134,7 +134,7 @@ def short_table_summary_html(barcode, settings):
         else:
             display = '\u2014'
             attributes = ' aria-label="Unavailable" title="Percentage unavailable: a valid cutoff and measured telomere lengths are required."'
-        parts.append('<div class="short-summary-method"><span>' + label + '</span><strong' + attributes + '>'
+        parts.append('<div class="short-summary-method" data-short-method="' + method + '"><span>' + label + '</span><strong' + attributes + '>'
                      + display + '</strong></div>')
     cutoff = short_cutoff_bp(settings, barcode)
     note = f'After filtering \u00b7 Telomere length < {cutoff / 1000:g} kb' if cutoff is not None else 'After filtering \u00b7 Cutoff unavailable'

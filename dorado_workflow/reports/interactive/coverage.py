@@ -6,7 +6,7 @@ from .models import Availability as A, Evidence, Fact, unavailable
 from .identities import ReadIndex
 
 DEFINITION = 'union_coverage_tvr_interval_v2'
-KEYS = ('canonical_pct', 'tvr_pct', 'tvr_bp', 'repeat_overlap_bp', 'repeat_unassigned_bp')
+KEYS = ('canonical_pct', 'tvr_pct', 'tvr_bp', 'repeat_overlap_bp', 'repeat_unassigned_bp', 'tsq_pct', 'tsq_bp')
 
 
 def import_coverage(importer, barcode):
@@ -71,6 +71,14 @@ def import_coverage(importer, barcode):
                     ('tvr_bp','tvr_bp','bp'),('repeat_overlap_bp','overlap_bp','bp'),
                     ('repeat_unassigned_bp','unassigned_bp','bp')]:
                 read.metrics[key]=Fact(A.AVAILABLE,row[field],unit=unit,population=DEFINITION,evidence=[ev])
+            if 'tsq_bp' in row or 'ordinary_tvr_bp' in row:
+                s, t = row.get('tsq_bp'), row.get('ordinary_tvr_bp')
+                if (type(s) is not int or type(t) is not int or min(s, t) < 0
+                        or s + t != row['tvr_bp'] or not isinstance(row.get('tsq_pattern'), str)):
+                    raise ValueError('inconsistent separate TSQ/TVR coverage')
+                for prefix, bases in [('tsq', s), ('tvr', t)]:
+                    read.metrics[prefix+'_bp'] = Fact(A.AVAILABLE, bases, unit='bp', evidence=[ev])
+                    read.metrics[prefix+'_pct'] = Fact(A.AVAILABLE, 100*bases/n, unit='%', evidence=[ev])
             read.evidence.append(ev)
         except (ValueError,TypeError,KeyError,AttributeError) as exc:
             barcode.warnings.append(f'{name}: invalid coverage export: {exc}')

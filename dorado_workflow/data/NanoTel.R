@@ -85,12 +85,14 @@ option_list = list(
   make_option("--summary_only", action = "store_true", default = FALSE,
               help = "Summary-only mode: keep numeric CSV/JSON/KM analysis; skip FASTA, tracks, per-read and aggregate plots.",
               metavar = "Skip detailed per-read output files"),
+  make_option("--tsq_pattern", action = "store", default = "AACCGC", type = "character",
+              help = "TSQ1 search motif, reported separately from other TVRs."),
   make_option("--tvr_patterns", action = "store", default = NULL, type = "character",
               help = "Space separated list of additional pattern(s) for Telomere variant repeats. Must be in double quotes.",
               metavar = " Telomere variant repeats patterns"),
 
   make_option("--max_mismatch", action = "store", default = 0, type = "integer",
-              help = "Maximum mismatches allowed for telomere and TVR patterns (0 or 1).",
+              help = "Maximum mismatches allowed for canonical telomere patterns (0 or 1). TVR and TSQ patterns always match exactly.",
               metavar = "maximum mismatches"),
   make_option("--short_telomere_threshold_bp", action = "store", default = 2000,
               type = "integer",
@@ -447,8 +449,8 @@ save_analysis_plot <- function(plot, prefix) {
 
 
 
-#' 3. Mismatch behavior is controlled by the single global_max_mismatch value
-#'    (default 0) for both canonical telomere and TVR patterns.
+#' 3. Only canonical patterns use global_max_mismatch (default 0).
+#'    TVR and TSQ patterns always use exact matching.
 
 
 
@@ -662,12 +664,12 @@ get_density_iranges <- function(sequence, patterns, with_mismatch = FALSE, tvr_p
         fixed <- !str_detect(string = pat, pattern = "[WSMKRYBDHVN]")
         curr_mp <- matchPattern(pattern = pat, subject =
                                   unlist(sequence), fixed = fixed,
-                                  max.mismatch = global_max_mismatch)
-        if( (fixed == FALSE) || (global_max_mismatch > 0) ) {
+                                  max.mismatch = 0L)
+        if( (fixed == FALSE) ) {
           curr_mp <- trim(curr_mp)
         }
 
-        retain_hits(curr_mp, pat, "tvr", global_max_mismatch)
+        retain_hits(curr_mp, pat, "tvr", 0L)
         mp_all <- IRanges::union(mp_all, curr_mp)
       }
 
@@ -680,13 +682,13 @@ get_density_iranges <- function(sequence, patterns, with_mismatch = FALSE, tvr_p
       fixed <- !str_detect(string = tvr_patterns, pattern = "[WSMKRYBDHVN]")
       mp_curr <- matchPattern(pattern = tvr_patterns, subject = unlist(sequence),
                               fixed = fixed,
-                              max.mismatch = global_max_mismatch)
-      report_hits <- if (!fixed || global_max_mismatch > 0) trim(mp_curr) else mp_curr
-      retain_hits(report_hits, tvr_patterns, "tvr", global_max_mismatch)
-      if( (fixed == FALSE) || (global_max_mismatch > 0) ) {
+                              max.mismatch = 0L)
+      report_hits <- if (!fixed) trim(mp_curr) else mp_curr
+      retain_hits(report_hits, tvr_patterns, "tvr", 0L)
+      if( (fixed == FALSE) ) {
         mp_curr <- trim(mp_curr)
-        mp_all <- IRanges::union(mp_all, mp_curr) # incase there are overlaps
       }
+      mp_all <- IRanges::union(mp_all, mp_curr) # include exact TVR/TSQ matches too
       mp_all <- IRanges::union(mp_all, mp_all) # incase there are overlaps
     }
   }
@@ -706,7 +708,8 @@ report_repeat_coverage <- function(read_id, boundary, hits) {
   # Inputs: role (Canonical or TVR role of the motif)
   # Outputs: Unioned matched ranges clipped to the selected role and boundary.
   clipped_union <- function(role) {
-    chosen <- hits[hits$role == role, , drop=FALSE]
+    chosen <- if (role == "tsq") hits[hits$role == "tvr" & hits$motif == global_tsq_pattern, , drop=FALSE]
+      else hits[hits$role == role, , drop=FALSE]
     if (!nrow(chosen)) return(IRanges::IRanges())
     ranges <- IRanges::IRanges(start=chosen$start, end=chosen$end)
     IRanges::reduce(IRanges::intersect(ranges, boundary))
@@ -717,8 +720,14 @@ report_repeat_coverage <- function(read_id, boundary, hits) {
   # Categories may overlap each other; export that ambiguity, do not assign it.
   canonical_bp <- sum(width(canonical)); tvr_bp <- sum(width(tvr))
   overlap_bp <- sum(width(IRanges::intersect(canonical, tvr)))
+  tsq <- clipped_union("tsq")
+  tsq_bp <- sum(width(tsq))
+  # TSQ is removed from ordinary TVR coverage, so variant bases count once.
+  ordinary_tvr_bp <- sum(width(IRanges::setdiff(tvr, tsq)))
   denominator <- as.integer(width(boundary))
-  list(schema_version=2L, definition="union_coverage_tvr_interval_v2",
+  list(tsq_pattern=global_tsq_pattern, tsq_bp=tsq_bp,
+    ordinary_tvr_bp=ordinary_tvr_bp,
+    schema_version=2L, definition="union_coverage_tvr_interval_v2",
     read_id=read_id, method="tvr_inclusive", convention="one_based_inclusive",
     space="nanotel_analyzed_read", start=as.integer(start(boundary)),
     end=as.integer(end(boundary)), denominator_bp=denominator,
@@ -739,6 +748,7 @@ report_repeat_summary <- function(boundary, hits) {
   labels <- ifelse(is.na(observed) | !nzchar(observed), paste0(motif, " (searched motif; sequence unavailable)"),
     ifelse(nchar(observed) != nchar(motif), paste0(observed, " (partial match to ", motif, ")"),
       ifelse(observed != motif, "Mismatch", paste0(motif, ifelse(hits$role == "canonical", " (canonical)", "")))))
+  labels[hits$role == "tvr" & motif == global_tsq_pattern] <- "TSQ"
   bases <- list()
   if (nrow(hits)) {
     ranges <- IRanges::IRanges(start=pmax(lo, hits$start), end=pmin(hi, hits$end))
@@ -857,6 +867,9 @@ export_report_density <- function(read_id, serial, analyses, output_dir, tvr_bou
     densities[[method]] <- data.frame(read_id=read_id, method=method,
       start=windows$start_index, end=windows$end_index, density=windows$density,
       convention="one_based_inclusive", space="nanotel_analyzed_read")
+    # Combined motif hits already retain the searched category. Independent
+    # calls need their own densities/boundaries, not duplicate motif files.
+    if (method %in% c("tvr_only", "tsq_inclusive")) next
     hits <- analysis[[2]]$motif_matches
     marker <- data.frame(motif="", matched_sequence="", start=NA_integer_, end=NA_integer_,
                          role="", max_mismatch=NA_integer_)
@@ -941,7 +954,7 @@ get_sub_density <- function(sub_irange, ranges) {
 #' @param subseq_start - Index for the start of the subsequence we want to check.
 #' @param subseq_end - "               end ".
 #' @param with_mismatches - If True, allow 1 mismatch.
-#' @tvr_patterns - Additional patterns that use the shared mismatch setting.
+#' @tvr_patterns - Additional TVR and TSQ patterns, always matched exactly.
 #' @returns  - New index, or Inf if there is no updated start index.
 # Inputs: read (Imported read record and its available measurements); patterns (Canonical/search
 # motifs used by this analysis); subseq_start (Subsequence start on the analyzed-read axis);
@@ -951,8 +964,7 @@ get_sub_density <- function(sub_irange, ranges) {
 multi_pattern_step_left <- function(read,patterns, subseq_start, subseq_end, with_mismatches = FALSE, tvr_patterns = NULL) {
   new_start <- Inf
 
-  if( (is.null(tvr_patterns) || with_mismatches) == FALSE &&
-      global_max_mismatch == 0 ) { # exact canonical and TVR matching
+  if (!is.null(tvr_patterns) && !with_mismatches) { # exact canonical, TVR and TSQ matching
     all_patterns <- unique(unlist(list(patterns, tvr_patterns)))
     for(pat in all_patterns) {
       curr_mp <- matchPattern(pattern = pat, subject = subseq(read, start = subseq_start, end = subseq_end ) )
@@ -974,7 +986,7 @@ multi_pattern_step_left <- function(read,patterns, subseq_start, subseq_end, wit
     for(pat in tvr_patterns) {
       curr_mp <- matchPattern(pattern = pat,
                               subject = subseq(read, start = subseq_start, end = subseq_end),
-                              max.mismatch = global_max_mismatch)
+                              max.mismatch = 0L)
       if(length(curr_mp) > 0) {
         new_start <- min(new_start, min(start(curr_mp)))
       }
@@ -998,7 +1010,7 @@ multi_pattern_step_left <- function(read,patterns, subseq_start, subseq_end, wit
 #' @param subseq_start - Index for the start of the subsequence we want to check.
 #' @param subseq_end - "               end ".
 #' @param with_mismatches - If True, allow 1 mismatch.
-#' @tvr_patterns - Additional patterns that use the shared mismatch setting.
+#' @tvr_patterns - Additional TVR and TSQ patterns, always matched exactly.
 # Inputs: read (Imported read record and its available measurements); patterns (Canonical/search
 # motifs used by this analysis); subseq_start (Subsequence start on the analyzed-read axis);
 # subseq_end (Subsequence end on the analyzed-read axis); with_mismatches (Whether canonical
@@ -1006,8 +1018,7 @@ multi_pattern_step_left <- function(read,patterns, subseq_start, subseq_end, wit
 # Outputs: Candidate right boundary, preserving the search sentinel when no hit is found.
 multi_pattern_step_right <- function(read,patterns, subseq_start, subseq_end, with_mismatches = FALSE, tvr_patterns = NULL) {
   new_end <- -1
-  if( (is.null(tvr_patterns) || with_mismatches) == FALSE &&
-      global_max_mismatch == 0 ) { # exact canonical and TVR matching
+  if (!is.null(tvr_patterns) && !with_mismatches) { # exact canonical, TVR and TSQ matching
     all_patterns <- unique(unlist(list(patterns, tvr_patterns)))
     for(pat in all_patterns) {
       curr_mp <- matchPattern(pattern = pat, subject = subseq(read, start = subseq_start, end = subseq_end ) )
@@ -1029,7 +1040,7 @@ multi_pattern_step_right <- function(read,patterns, subseq_start, subseq_end, wi
     for(pat in tvr_patterns) {
       curr_mp <- matchPattern(pattern = pat,
                               subject = subseq(read, start = subseq_start, end = subseq_end),
-                              max.mismatch = global_max_mismatch)
+                              max.mismatch = 0L)
       if(length(curr_mp) > 0) {
         new_end <- max(new_end,max(end(curr_mp)))
       }
@@ -1198,7 +1209,7 @@ search_right_patterns <- function(read, end_index, subseq_width = 18, step_size 
 # (Additional selected TVR motifs)
 # Outputs: List containing candidate windows and their pattern-density measurements.
 analyze_subtelos <- function(dna_seq, patterns, sub_length,
-                       min_density, with_mismatch = FALSE, tvr_patterns = NULL) {
+                       min_density, with_mismatch = FALSE, tvr_patterns = NULL, density_result = NULL) {
   # return list(subtelos, list_density_mp[1])
   #' @title Analyze the patterns for each subsequence.
   #' @description s split a dna sequence to subsequences and calculate the
@@ -1214,7 +1225,7 @@ analyze_subtelos <- function(dna_seq, patterns, sub_length,
   # aother option is to create 5 vector s and then make a data.table from them
 
   # density and iranges of matchPattern
-  list_density_mp <- get_density_iranges(dna_seq, patterns = patterns, with_mismatch = with_mismatch, tvr_patterns)
+  list_density_mp <- if (is.null(density_result)) get_density_iranges(dna_seq, patterns = patterns, with_mismatch = with_mismatch, tvr_patterns) else density_result
   mp_iranges <- list_density_mp[[2]]
   # get start indexes of "subtelo"
   idx_iranges <- split_telo(dna_seq, sub_length = sub_length)
@@ -1534,7 +1545,7 @@ find_telo_position_wraper <- function(read, patterns, with_mismatch, tvr_pattern
   if (telo_density < 0.85 && num_rows > 5) {
     min_rows <- ifelse(num_rows <= 7, yes = num_rows - 2, no = 7)
     min_density <- 0.6*min_rows
-    telo_position <- find_telo_position(seq_length = length(current_seq_unlist),
+    telo_position <- find_telo_position(seq_length = seq_length,
                                         subtelos = analyze_list[[1]], min_in_a_row = min_rows,
                                         min_density_score = min_density)
 
@@ -1698,6 +1709,13 @@ empty_telomere_summary <- function(tvr_patterns = NULL, summary_only = FALSE) {
                      Telomere_length_mismatch_tvr = integer())
   }
 
+  if (!is.null(tvr_patterns) && global_tsq_pattern %in% unlist(tvr_patterns)) {
+    for (suffix in c("_tsq", "_tvr_only")) {
+      df[[paste0("telo_density", suffix)]] <- double()
+      for (field in c("Telomere_start", "Telomere_end", "Telomere_length"))
+        df[[paste0(field, suffix)]] <- integer()
+    }
+  }
   # Retain compact coverage facts even when detailed tracks are skipped.
   if (summary_only) {
     df$repeat_coverage <- character()
@@ -1767,6 +1785,35 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
 
 
 
+  # Independent boundaries: TSQ never contributes to the ordinary TVR call.
+  separate_calls <- list()
+  if (!is.null(tvr_patterns) && global_tsq_pattern %in% unlist(tvr_patterns)) {
+    groups <- list(tsq_inclusive=global_tsq_pattern,
+                   tvr_only=setdiff(unlist(tvr_patterns), global_tsq_pattern))
+    for (method in names(groups)) {
+      group <- groups[[method]]
+      if (!length(group)) next
+      if (setequal(group, unlist(tvr_patterns))) {
+        analysis <- analyze_list3; boundary <- telo_position3
+      } else {
+        selected <- if (length(group) > 1L) as.list(group) else group
+        # Reuse the combined search hits: only windows and boundary refinement
+        # differ between categories. Do not rescan the entire read per category.
+        hits <- analyze_list3[[2]]$motif_matches
+        hits <- hits[hits$role == "canonical" | hits$motif %in% group, , drop=FALSE]
+        ranges <- IRanges::reduce(IRanges::IRanges(start=hits$start, end=hits$end))
+        density_result <- list(sum(width(ranges))/length(current_seq_unlist), ranges, motif_matches=hits)
+        analysis <- analyze_subtelos(dna_seq=current_seq_unlist, patterns=pattern_list,
+          min_density=min_density, sub_length=global_subseq_length,
+          with_mismatch=global_max_mismatch > 0, tvr_patterns=selected, density_result=density_result)
+        boundary <- find_telo_position_wraper(read=current_seq_unlist, patterns=pattern_list,
+          with_mismatch=global_max_mismatch > 0, tvr_patterns=selected,
+          seq_length=length(current_seq_unlist), subtelos=analysis[[1]],
+          analyze_list=analysis, right_edge=right_edge)
+      }
+      separate_calls[[method]] <- list(analysis=analysis, boundary=boundary)
+    }
+  }
   df <- empty_telomere_summary(tvr_patterns, summary_only)
 
   # last update
@@ -1802,7 +1849,8 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
 
   if(!summary_only) {
     export_report_density(current_fastq_name, current_serial,
-      list(exact=analyze_list, mismatch=analyze_list2, tvr_inclusive=analyze_list3), dirname(output_dir), if (is.null(tvr_patterns)) NULL else telo_position3)
+      c(list(exact=analyze_list, mismatch=analyze_list2, tvr_inclusive=analyze_list3),
+        lapply(separate_calls, function(call) call$analysis)), dirname(output_dir), if (is.null(tvr_patterns)) NULL else telo_position3)
     # changed to compressed file: 2026-01-29
     output_telo_fasta <- file.path(output_dir, paste0(make_barcode_read_stem(current_serial),
                                                       ".fasta.gz"))
@@ -1862,6 +1910,15 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
               telo_density_mismatch_tvr = telo_density3
               , Telomere_start_mismatch_tvr = telo_start3, Telomere_end_mismatch_tvr = telo_end3,
               Telomere_length_mismatch_tvr = telo_length3)
+  }
+  for (method in names(separate_calls)) {
+    call <- separate_calls[[method]]; boundary <- call$boundary
+    suffix <- if (method == "tsq_inclusive") "_tsq" else "_tvr_only"
+    valid <- length(boundary) == 1L && start(boundary) > 0L && width(boundary) > 0L
+    df[[paste0("Telomere_start", suffix)]] <- if (valid) start(boundary) else NA_integer_
+    df[[paste0("Telomere_end", suffix)]] <- if (valid) end(boundary) else NA_integer_
+    df[[paste0("Telomere_length", suffix)]] <- if (valid) width(boundary) else NA_integer_
+    df[[paste0("telo_density", suffix)]] <- if (valid) get_sub_density(boundary, call$analysis[[2]][[2]]) else NA_real_
   }
   if (summary_only && !is.null(tvr_patterns) && !is.na(telo_start3) && telo_start3 > 0) {
     coverage <- report_repeat_coverage(current_fastq_name, telo_position3,
@@ -2361,6 +2418,7 @@ if(!is.null(opt$tvr_patterns)) {
 }
 
 
+global_tsq_pattern <- toupper(opt$tsq_pattern)
 global_min_density <- opt$min_density
 global_subseq_length <- opt$subseq_length
 global_max_mismatch <- max(0L, min(1L, as.integer(opt$max_mismatch)))
@@ -2372,6 +2430,7 @@ global_max_mismatch <- max(0L, min(1L, as.integer(opt$max_mismatch)))
 lockBinding("global_subseq_length", globalenv())
 lockBinding("global_min_density", globalenv())
 lockBinding("global_max_mismatch", globalenv())
+lockBinding("global_tsq_pattern", globalenv())
 
 
 # log function blueprint : summary(sample), %telomeric_reads , summary(telo_read) ...
@@ -2461,10 +2520,19 @@ log_print(summary(ans_list$df_summary$Telomere_length_mismatch), hide_notes = TR
 
 
 if(!is.null(cur_tvr_patterns)) {
-  log_print('Telomere length with 1 mismatch allowed + tvr patterns.:', hide_notes = TRUE, console = FALSE)
+  log_print('Combined telomere length including selected TVRs and TSQ (run matching settings):', hide_notes = TRUE, console = FALSE)
   log_print(summary(ans_list$df_summary$Telomere_length_mismatch_tvr), hide_notes = TRUE, console = FALSE)
 }
 
+if ("Telomere_length_tsq" %in% names(ans_list$df_summary)) {
+  log_print("Telomere length including TSQ (independent call):", hide_notes=TRUE, console=FALSE)
+  log_print(summary(ans_list$df_summary$Telomere_length_tsq), hide_notes=TRUE, console=FALSE)
+}
+if ("Telomere_length_tvr_only" %in% names(ans_list$df_summary) &&
+    length(setdiff(unlist(cur_tvr_patterns), global_tsq_pattern))) {
+  log_print("Telomere length including TVRs, excluding TSQ (independent call):", hide_notes=TRUE, console=FALSE)
+  log_print(summary(ans_list$df_summary$Telomere_length_tvr_only), hide_notes=TRUE, console=FALSE)
+}
 
 # Write top-level NanoTel outputs with the barcode in the filename. This avoids
 # generic names like reads_ids.txt and makes files self-describing outside their

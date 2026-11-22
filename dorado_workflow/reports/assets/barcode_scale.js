@@ -1,3 +1,35 @@
+// Hollow read points with an explicit median and interquartile interval.
+// Only presentation changes: observations and read-link identities stay intact.
+window.reportBarcodeDistributionStyle=figure=>{
+  const groups=figure.data.filter(t=>['box','violin'].includes(t.type)||t.meta?.barcodeDistribution);
+  const layout=figure.layout;
+  layout.shapes=(layout.shapes||[]).filter(s=>!String(s.name||'').startsWith('barcode-distribution-summary:'));
+  if(!groups.length)return figure;
+  const quantile=(values,p)=>{const index=(values.length-1)*p,low=Math.floor(index);return values[low]+(index-low)*((values[low+1]??values[low])-values[low]);};
+  groups.forEach((trace,index)=>{
+    Object.assign(trace,{type:'violin',points:'all',pointpos:0,jitter:.8,width:.85,
+      fillcolor:'rgba(0,0,0,0)',line:{color:'rgba(0,0,0,0)',width:0},
+      box:{visible:false},meanline:{visible:false},opacity:1,
+      marker:{color:'#ffffff',size:7,opacity:1,line:{color:'#299b37',width:1}}});
+    const values=(trace.y||[]).filter(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0).slice().sort((a,b)=>a-b);
+    if(values.length<2)return;
+    const q1=quantile(values,.25),median=quantile(values,.5),q3=quantile(values,.75);
+    const id=trace.customdata?.[0]?.[0]||trace.name;
+    const segment=(part,x0,x1,y0,y1)=>layout.shapes.push({
+      name:'barcode-distribution-summary:'+id+':'+part,type:'line',xref:'x',yref:'y',
+      x0,x1,y0,y1,line:{color:'#111111',width:3},layer:'above'});
+    segment('iqr',index,index,q1,q3);
+    segment('q1',index-.16,index+.16,q1,q1);
+    segment('q3',index-.16,index+.16,q3,q3);
+    segment('median',index-.3,index+.3,median,median);
+  });
+  layout.xaxis={...layout.xaxis,showgrid:false,showline:true,linecolor:'#111111',linewidth:2,
+    ticks:'outside',tickcolor:'#111111',tickwidth:2,zeroline:false};
+  layout.yaxis={...layout.yaxis,showgrid:true,gridcolor:'#777777',griddash:'dot',gridwidth:1,
+    showline:true,linecolor:'#111111',linewidth:2,ticks:'outside',tickcolor:'#111111',tickwidth:2,zeroline:false};
+  return figure;
+};
+
 // Function: window.reportBarcodeScaleUI.
 // Inputs: section (containing report section); graph (Plotly graph element)
 // Outputs: Attaches scale/view controls to the existing length chart.
@@ -63,7 +95,7 @@ window.reportBarcodeScaleUI=(section,graph)=>{
     buttons.push({button,type});controls.appendChild(button);
   }
   const bandwidthNote=document.createElement('span');
-  bandwidthNote.textContent='Shared bandwidth: 1 kb';bandwidthNote.style.cssText='font-size:13px;color:#52647a;margin-left:8px';
+  bandwidthNote.textContent='Black bars: median and IQR';bandwidthNote.title='Green circles: individual reads. Black bars: median and 25th–75th percentiles. Point spread uses a shared 1 kb bandwidth.';bandwidthNote.style.cssText='font-size:13px;color:#52647a;margin-left:8px';
   controls.appendChild(bandwidthNote);
   // Function: applyViolin.
   // Inputs: None; uses the current report/browser state.
@@ -89,6 +121,7 @@ window.reportBarcodeScaleUI=(section,graph)=>{
       const index=typeof a.x==='number'?Math.round(a.x):names.indexOf(a.x);
       a.x=names[index];
     }
+    window.reportBarcodeDistributionStyle({data,layout});
     await Plotly.react(graph,data,layout,{responsive:true,displaylogo:false});
     await Plotly.Plots.resize(graph);
     refresh();

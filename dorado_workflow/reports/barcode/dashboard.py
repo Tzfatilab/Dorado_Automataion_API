@@ -7,6 +7,7 @@ from dorado_workflow.reports.barcode.chromosomes import chromosome_section
 from dorado_workflow.reports.barcode.completeness import results_section
 from dorado_workflow.reports.reads.browser import reads_section, READ_SCRIPT
 from dorado_workflow.reports.reads.density import mismatch_enabled, tvr_enabled
+from dorado_workflow.reports.shared.repeat_categories import tsq_enabled, tsq_read_count, variants_enabled, variant_panel_title
 from dorado_workflow.reports.shared.organism import show_km
 from dorado_workflow.reports.shared.short_telomeres import short_summary_html, short_cutoff_bp
 
@@ -34,7 +35,9 @@ def barcode_views(run, icons, histograms=None, results_root=None, summary_only=F
     mismatch = mismatch_enabled(run.settings)
     mismatch_attribute = 'unknown' if mismatch is None else str(mismatch).lower()
     tvr = tvr_enabled(run.settings)
-    mismatch_panels = tvr is False and mismatch is True
+    tsq = tsq_enabled(run.settings)
+    repeats_requested = variants_enabled(run.settings)
+    mismatch_panels = repeats_requested is False and mismatch is True
     repeat_method = 'mismatch' if mismatch_panels else 'tvr_inclusive'
     repeat_composition = {
         row['barcode']: row for row in comparisons.get('mismatch_composition', [])
@@ -88,20 +91,27 @@ def barcode_views(run, icons, histograms=None, results_root=None, summary_only=F
                 number = None
             cards.append(f'<article class="stat stat-{index}"><svg aria-hidden="true" viewBox="0 0 48 48">{icon}</svg>'
                 f'<div><h3>{title}</h3><strong class="{"missing" if number is None else ""}">{display}</strong><p>{escape(note)}</p></div></article>')
+        if tsq is True:
+            tsq_reads = tsq_read_count(barcode, run.settings)
+            tsq_display = f'{tsq_reads:,}' if tsq_reads is not None else '\u2014'
+            cards.insert(-1, '<article class="stat stat-tsq"><svg aria-hidden="true" viewBox="0 0 48 48"><path d="M16 5h16M20 5v14L8 39q-1 4 4 4h24q5 0 4-4L28 19V5M14 31h20"/></svg><div><h3>Reads containing TSQ</h3><strong>'
+                         + tsq_display + '</strong><p>After filtering</p></div></article>')
+        if tvr is False and not mismatch_panels:
+            cards = [card for card in cards if '<h3>TVR motifs</h3>' not in card]
         cards.insert(3, short_summary_html(barcode, run.settings))
         cutoff = short_cutoff_bp(run.settings, barcode)
         cutoff_attribute = f'{cutoff:g}' if cutoff is not None else ''
         key_heading = '<span class="number">1</span>Key Statistics (' + escape(label) + ')'
-        pages.append(f'<div class="barcode-page" id="{barcode.id}" data-barcode-id="{escape(barcode.label, quote=True)}" data-short-cutoff-bp="{cutoff_attribute}" data-km-enabled="{str(km_enabled).lower()}" data-mismatch-enabled="{mismatch_attribute}" data-tvr-enabled="{tvr_attribute}" data-label="{escape(label, quote=True)}" data-chart-label="{escape(barcode.label.replace("barcode", "BC"), quote=True)}" hidden>'
+        pages.append(f'<div class="barcode-page" id="{barcode.id}" data-barcode-id="{escape(barcode.label, quote=True)}" data-short-cutoff-bp="{cutoff_attribute}" data-km-enabled="{str(km_enabled).lower()}" data-mismatch-enabled="{mismatch_attribute}" data-tvr-enabled="{tvr_attribute}" data-tsq-enabled="{str(tsq is True).lower()}" data-label="{escape(label, quote=True)}" data-chart-label="{escape(barcode.label.replace("barcode", "BC"), quote=True)}" hidden>'
             f'<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#/">All Barcodes</a> <span>› {escape(label)}</span></nav>'
             f'<section class="barcode-key-statistics"><h2>{key_heading}</h2><div class="stats barcode-stat-cards">{"".join(cards)}</div></section>'
             + ('<p class="note">One-mismatch analysis: repeat composition shows exported canonical and mismatch hits.</p>' if mismatch_panels else
-               '<p class="note">TVR analysis was not requested: no TVR patterns were selected.</p>' if tvr is False else
+               '<p class="note">TVR analysis was not requested: no TVR patterns were selected.</p>' if repeats_requested is False else
                '<p class="note">TVR counts use exported noncanonical matches overlapping TVR-inclusive telomere intervals of post-filtered reads. Missing details remain unavailable.</p>')
             + (results_section(barcode, results_root) if km_enabled else '') + histograms.get(barcode.id, '') + '<div class="charts">'
-            + composition_section(repeat_row, title='Mismatch patterns' if mismatch_panels else 'TVR patterns',
-                                  requested=True if mismatch_panels else tvr, method=repeat_method)
-            + positions_section(motifs, requested=tvr) + '</div>'
+            + composition_section(repeat_row, title='Mismatch patterns' if mismatch_panels else variant_panel_title(run.settings),
+                                  requested=True if mismatch_panels else repeats_requested, method=repeat_method)
+            + positions_section(motifs, requested=repeats_requested, title=variant_panel_title(run.settings).replace(' patterns', ' Position Along Telomeres')) + '</div>'
             + chromosome_section([c for c in comparisons['cells'] if c['barcode'] == barcode.label], cutoff_bp=short_cutoff_bp(run.settings, barcode))
             + reads_section(barcode, results_root, show_completeness=km_enabled,summary_only=summary_only) + '</div>')
     navigation = '<nav class="barcode-navigation" aria-label="Choose a barcode"><strong>Explore a barcode</strong>' + ''.join(links) + '</nav>'
@@ -121,13 +131,14 @@ def barcode_summary_section(run, comparisons):
     from ..shared.barcode_statistics import barcode_key_statistics, mismatch_statistics
     from ..shared.short_telomeres import short_table_summary_html
     composition={r['barcode']:r for r in comparisons['composition']}
-    mismatch_mode = tvr_enabled(run.settings) is False and mismatch_enabled(run.settings) is True
+    mismatch_mode = tvr_enabled(run.settings) is False and tsq_enabled(run.settings) is not True and mismatch_enabled(run.settings) is True
     mismatch_rows = {r['barcode']: r for r in comparisons.get('mismatch_composition', [])}
     headers = ['Barcode', 'Total number of reads', 'Number of telomeric reads after filtration',
                'Telomeric reads after filtration (%)',
                'Median telomere length after filtration (kb)',
                'Short telomeres (%)',
-               'Mismatch patterns' if mismatch_mode else 'TVR motifs',
+               *(['Mismatch patterns'] if mismatch_mode else ['TVR motifs'] if tvr_enabled(run.settings) is not False else []),
+               *(['Reads containing TSQ after filtration'] if tsq_enabled(run.settings) is True else []),
                'Number of Chromosomes end found']
     cells = comparisons['cells']; rows = []
     for barcode in run.barcodes:
@@ -140,7 +151,9 @@ def barcode_summary_section(run, comparisons):
                   and stats['post_filtered_reads'] <= stats['total_reads'] else None,
                   f"{stats['median_length_bp']/1000:.2f}" if stats['median_length_bp'] is not None else None,
                   None,  # Replaced by the shared three-method short-telomere cell below.
-                  motif_count, stats['chromosomes']]
+                  *([motif_count] if mismatch_mode or tvr_enabled(run.settings) is not False else []),
+                  *([tsq_read_count(barcode, run.settings)] if tsq_enabled(run.settings) is True else []),
+                  stats['chromosomes']]
         row = '<tr><td><a class="barcode-stat-link" href="#/barcode/'+barcode.id+'"><span class="barcode-stat-dot" aria-hidden="true"></span><span class="barcode-stat-name">'+escape(barcode.label.replace('barcode', 'Barcode '))+'</span></a></td>'
         for index, value in enumerate(values, 1):
             if index == 5:

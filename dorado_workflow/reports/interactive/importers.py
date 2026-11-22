@@ -235,7 +235,7 @@ class ResultImporter:
                 if row.get("schema_version") != "2" or row.get("read_id") not in lookup:
                     raise ValueError(f"Unsupported compact detail identity/schema: {path.name}")
                 methods = row.get("method", "").split("|")
-                if len(set(methods)) != len(methods) or not set(methods) <= {"exact", "mismatch", "tvr_inclusive"}:
+                if len(set(methods)) != len(methods) or not set(methods) <= {"exact", "mismatch", "tvr_inclusive", "tvr_only", "tsq_inclusive"}:
                     raise ValueError(f"Invalid compact method aliases: {path.name}")
                 for method in methods:
                     yield dict(row, Serial=row["read_id"], read_id=lookup[row["read_id"]], method=method), ev
@@ -607,6 +607,8 @@ class ResultImporter:
             restore_summary_sources(self,b)
             from .coverage import import_coverage
             import_coverage(self, b)
+            from ..shared.repeat_categories import separate_read_categories
+            separate_read_categories(self, b)
             from .repeat_summary import prepare_repeat_summaries
             prepare_repeat_summaries(self, b)
             import_statistics(self, b, number)
@@ -747,7 +749,7 @@ class ResultImporter:
             matching = index.find(rid, serial)
             record_id = matching[0].id if len(matching) == 1 else safe_id('r', 'filtered', barcode.id, rid, serial, occurrence)
             method_lengths = {}
-            for method, suffix in [('exact', ''), ('mismatch', '_mismatch'), ('tvr_inclusive', '_mismatch_tvr')]:
+            for method, suffix in [('exact', ''), ('mismatch', '_mismatch'), ('tvr_inclusive', '_mismatch_tvr'), ('tvr_only', '_tvr_only'), ('tsq_inclusive', '_tsq')]:
                 if 'Telomere_length' + suffix not in row:
                     continue
                 fact = number(row, 'Telomere_length' + suffix, ev, unit='bp')
@@ -853,7 +855,7 @@ class ResultImporter:
             metrics["_repeat_coverage_export"] = Fact(A.AVAILABLE, row["repeat_coverage"], evidence=[ev])
         calls = {}
         warnings = []
-        for method, suffix in (("exact", ""), ("mismatch", "_mismatch"), ("tvr_inclusive", "_mismatch_tvr")):
+        for method, suffix in (("exact", ""), ("mismatch", "_mismatch"), ("tvr_inclusive", "_mismatch_tvr"), ("tvr_only", "_tvr_only"), ("tsq_inclusive", "_tsq")):
             keys = ["Telomere_start" + suffix, "Telomere_end" + suffix]
             evidence = [Evidence(ev.source_id, ev.row, keys)]
             length = metrics["read_length"].value

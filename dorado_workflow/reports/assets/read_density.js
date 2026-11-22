@@ -115,7 +115,11 @@ window.renderReadTracks = (parent, read, options = {}) => {
   // Area layers retain the original exact, mismatch and TVR-inclusive series.
   // TVR-inclusive density is not a TVR-only density: overlaps forbid subtraction.
   const series = [
-    ['tvr_inclusive', 'Density + TVR', '#D5B800', 'rgba(213,184,0,0.10)'],
+    ...(options.tsqEnabled ? [
+      ...(options.ordinaryTvrEnabled ? [['tvr_only','Density + TVRs','#D5B800','rgba(213,184,0,0.10)']] : []),
+      ['tsq_inclusive','Density + TSQ','#005566','rgba(0,85,102,0.08)']
+    ] : [['tvr_inclusive', 'Density + TVR', '#D5B800', 'rgba(213,184,0,0.10)']]),
+    ...(options.tsqEnabled && options.ordinaryTvrEnabled && !data.density?.tsq_inclusive ? [['tvr_inclusive','Density + TVRs + TSQ (legacy combined)','#005566',null]] : []),
     ['exact', 'Telomere density' + (canonicalName ? ' (' + canonicalName + ')' : ''), '#3979CC', 'rgba(57,121,204,0.08)'],
     ['mismatch', 'Density with mismatches', '#E87524', null]
   ];
@@ -186,7 +190,7 @@ window.renderReadTracks = (parent, read, options = {}) => {
     shapes.push({type: 'line', xref: 'x', yref: 'y', x0: called[1] / 1000,
       x1: called[1] / 1000, y0: 0, y1: 1.05, line: {color: '#243750', width: 1.5, dash: 'dash'}});
     annotations.push({xref: 'x', yref: 'y', x: called[1] / 1000, y: 1.06,
-      text: 'Telomere end' + (inclusive ? ' (including TVRs)' : mismatch ? ' (1 mismatch)' : ' (canonical)') + '<br>' + (called[1] / 1000).toFixed(3) + ' kb',
+      text: 'Telomere end' + (inclusive ? (options.tsqEnabled ? (options.ordinaryTvrEnabled ? ' (including TVRs and TSQ)' : ' (including TSQ)') : ' (including TVRs)') : mismatch ? ' (1 mismatch)' : ' (canonical)') + '<br>' + (called[1] / 1000).toFixed(3) + ' kb',
       showarrow: false, xanchor: called[1] > read.length * 0.75 ? 'right' : 'left',
       xshift: called[1] > read.length * 0.75 ? -8 : 8, yanchor: 'bottom', font: {size: 12, color: '#243750'}});
     if (exact && called !== exact && exact[1] !== called[1]) {
@@ -453,5 +457,5 @@ window.renderReadTracks = (parent, read, options = {}) => {
     chart.textContent = 'The exported density graph could not be displayed.';
   });
   if (sequence) add('p', 'Sequence: analyzed NanoTel orientation. Zoom in to see A, C, G and T letters (green, blue, gold and red); ambiguous bases are gray.', panel).className = 'note';
-  add('p', 'NanoTel-exported window densities and call boundaries; no new detection. Density + TVR includes canonical and variant matches. Motif colors can overlap; toggle the legend to inspect them. Unmarked bases are not classified as genomic sequence.', panel).className = 'note';
+  add('p', 'NanoTel-exported window densities and call boundaries; no new detection. Variant-inclusive density includes canonical matches plus the named variant category (TVRs or TSQ). Motif colors can overlap; toggle the legend to inspect them. Unmarked bases are not classified as genomic sequence.', panel).className = 'note';
 };

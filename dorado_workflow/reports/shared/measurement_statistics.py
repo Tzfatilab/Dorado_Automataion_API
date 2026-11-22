@@ -3,10 +3,11 @@ from statistics import median
 
 from ..reads.density import mismatch_enabled, tvr_enabled
 from .short_telomeres import short_cutoff_bp
+from .repeat_categories import tsq_enabled, tsq_pattern, measurement_method
 
 METHODS = [('exact', 'Without mismatch or TVR'),
            ('mismatch', 'With mismatch, without TVR'),
-           ('tvr_inclusive', 'With mismatch and TVR')]
+           ('tvr_inclusive', 'With mismatch and TVR'), ('tsq_inclusive', 'With TSQ')]
 
 
 def selected_method(settings):
@@ -25,8 +26,9 @@ def population_reads(barcode, population):
 
 
 def method_statistics(barcode, settings, method, population):
-    requested = (True if method == 'exact' else mismatch_enabled(settings)
-                 if method == 'mismatch' else tvr_enabled(settings))
+    requested = {'exact': True, 'mismatch': mismatch_enabled(settings),
+                 'tsq_inclusive': tsq_enabled(settings), 'tvr_inclusive': tvr_enabled(settings)}.get(method)
+    method = measurement_method(settings, method)
     reads = population_reads(barcode, population)
     values = None
     if requested is not False and reads is not None:
@@ -62,7 +64,7 @@ def tvr_read_count(barcode, settings, population):
     for read in reads:
         summary = read.metrics.get('repeat_summary') if read else None
         if summary and summary.status == 'available':
-            count += bool(summary.value['tvr_motifs'])
+            count += bool(set(summary.value['tvr_motifs']) - {tsq_pattern(settings)})
             continue
         motifs = read.tracks.get('motifs') if read else None
         interval = read.calls.get('tvr_inclusive', {}).get('interval') if read else None
@@ -70,7 +72,7 @@ def tvr_read_count(barcode, settings, population):
             return None
         if not interval or interval.status != 'available':
             return None
-        count += any(hit['method'] == 'tvr_inclusive' and hit['role'] == 'tvr'
+        count += any(hit['method'] == 'tvr_inclusive' and hit['role'] == 'tvr' and hit['motif'] != tsq_pattern(settings)
                      and hit['end'] > interval.value['start'] and hit['start'] < interval.value['end']
                      for hit in motifs.value['matches'])
     return count
@@ -88,7 +90,10 @@ def barcode_table_statistics(barcode, settings):
     total = metric('total_reads')
     retained = population_reads(barcode, 'after')
     positive = tvr_read_count(barcode, settings, 'after')
-    return dict(sample_name=metric('sample_name') or '',
+    from .repeat_categories import tsq_read_count
+    tsq_positive = tsq_read_count(barcode, settings)
+    return dict(tsq_read_percent_after=100 * tsq_positive / len(retained) if tsq_positive is not None and retained else None,
+                sample_name=metric('sample_name') or '',
                 total_read_length_median_bp=metric('total_read_length_median_bp'),
                 detected_reads=detected,
                 detected_percent=100 * detected / total if detected is not None and total else None,

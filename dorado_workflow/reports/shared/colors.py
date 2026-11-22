@@ -32,6 +32,8 @@ def motif_color(label):
     Returns:
         Deterministic hexadecimal display color for the motif label.
     """
+    if label == 'TSQ':
+        return '#005566'
     if label.endswith(' (canonical)'):
         return '#7C3AED'
     # Mismatch sequences are combined into one presentation category.

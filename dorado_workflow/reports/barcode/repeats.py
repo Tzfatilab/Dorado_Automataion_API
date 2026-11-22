@@ -60,7 +60,7 @@ def composition_section(row, number=5, title="TVR patterns", requested=None, met
         return heading + '<p class="note">Unavailable: complete motif exports are required for all post-filtered reads.</p></section>'
     total = sum(row['base_counts'].values())
     if not total:
-        interval_name = 'mismatch-inclusive' if mismatch_mode else 'TVR-inclusive'
+        interval_name = 'mismatch-inclusive' if mismatch_mode else 'variant-inclusive'
         return heading + f'<p class="note">No positive-length {interval_name} intervals are available.</p></section>'
     import plotly.graph_objects as go
     counts = row['base_counts']
@@ -80,7 +80,7 @@ def composition_section(row, number=5, title="TVR patterns", requested=None, met
         font=dict(family='Segoe UI, Arial', color='#12203c'),
         annotations=[dict(x=.5,y=.5,xref='paper',yref='paper',showarrow=False,
             text=(f'{event_label}<br><b>{prevalence:.1f}%</b><br>{event_count:,} / {row["total"]:,} reads'
-                  if mismatch_mode else 'TVR-inclusive<br><b>Base composition</b><br>Post-filtered telomeres'),font=dict(size=15))])
+                  if mismatch_mode else 'Variant-inclusive<br><b>Base composition</b><br>Post-filtered telomeres'),font=dict(size=15))])
     payload = figure.to_json().replace('<', '\\u003c')
     def percent(value):
         """Formatted percentage text, retaining a visible marker for very small positive values.
@@ -93,7 +93,7 @@ def composition_section(row, number=5, title="TVR patterns", requested=None, met
         """
         return '&lt;0.1%' if 0 < 100*value/total < .1 else f'{100*value/total:.1f}%'
     legend = ''.join(f'<li><span class="motif-swatch" style="background:{color}"></span><span>{escape(label)}</span><strong>{percent(value)}</strong></li>' for label,color,value in zip(labels,colors,values))
-    interval_name = 'mismatch-inclusive' if mismatch_mode else 'TVR-inclusive'
+    interval_name = 'mismatch-inclusive' if mismatch_mode else 'variant-inclusive'
     method_note = (' The Mismatch category combines exported imperfect matches. '
                    'Partial matches are shown separately and excluded from mismatch-hit counts.' if mismatch_mode else '')
     return (heading + f'<p class="note">Base composition within {interval_name} telomeres of post-filtered reads</p>'
@@ -103,10 +103,10 @@ def composition_section(row, number=5, title="TVR patterns", requested=None, met
         '<p class="note">Slices and legend: percentage of pooled telomere bases, counted once. '
         'Unmatched bases are unassigned; bases matching different motifs form an overlap slice. '
         + ('Center: percentage of reads with exported mismatch hits.' if mismatch_mode else
-           'Center: percentage of reads containing TVRs.') + method_note + '</p></section>')
+           'Center: pooled base composition.') + method_note + '</p></section>')
 
 
-def positions_section(row, requested=None):
+def positions_section(row, requested=None, title='TVR Position Along Telomeres'):
     """Render source matches already selected by the shared comparison adapter.
 
     Each tick is one match start, pooled across reads. The analyzed sequence
@@ -121,7 +121,6 @@ def positions_section(row, requested=None):
     """
     if requested is not True:
         return ''
-    title = 'TVR Position Along Telomeres'
     heading = f'<section><div class="report-section-heading"><h2><span class="number">6</span>{title}</h2></div>'
     if row is None:
         return heading + ('<p class="note">Unavailable: this run does not contain complete per-read motif-position exports. '
@@ -163,6 +162,6 @@ def positions_section(row, requested=None):
     display_note = ('Dense view: all matches grouped into 0.5% position bins; color shows match count. ' if dense else 'Each tick marks one exported match start, clipped to the telomere boundary when the match crosses it. ')
     return (heading + '<div class="saved-histogram composition-plot"></div>'
         f'<script type="application/json" class="histogram-figure">{payload}</script>'
-        f'<p class="note">{display_note}Positions are pooled across post-filtered reads and normalized to each TVR-inclusive telomere interval. '
+        f'<p class="note">{display_note}Positions are pooled across post-filtered reads and normalized to each combined variant-inclusive telomere interval. '
         'Overlapping matches are retained. Canonical repeats are shown for context. '
         'Distal/proximal orientation is not established by these exports.</p></section>')

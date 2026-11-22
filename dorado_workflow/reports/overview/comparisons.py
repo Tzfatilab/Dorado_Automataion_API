@@ -6,6 +6,7 @@ import re
 from dorado_workflow.reports.shared.colors import motif_color
 from dorado_workflow.reports.barcode.repeats import motif_base_counts, composition_section
 from dorado_workflow.reports.reads.density import tvr_enabled, mismatch_enabled, motif_display_label
+from ..shared.repeat_categories import tsq_pattern, tsq_enabled, variants_enabled, variant_panel_title
 from ..shared.mapping_labels import chromosome_end_label, chromosome_sort_key
 
 
@@ -79,7 +80,7 @@ def comparison_data(run):
         TVR/mismatch composition, chromosome cells, omitted barcodes and panel mode.
     """
     composition, groups, omitted = [], defaultdict(list), []
-    mismatch_mode = tvr_enabled(run.settings) is False and mismatch_enabled(run.settings) is True
+    mismatch_mode = tvr_enabled(run.settings) is False and tsq_enabled(run.settings) is not True and mismatch_enabled(run.settings) is True
     mismatch_rows, mismatch_omitted = [], []
     observations = defaultdict(list)
     for barcode in run.barcodes:
@@ -109,8 +110,8 @@ def comparison_data(run):
                 covered += 1
                 base_counts.update(summary['base_counts'])
                 match_counts.update(summary['match_counts'])
-                with_tvr += bool(summary['tvr_motifs'])
-                motifs.update(summary['tvr_motifs'].keys())
+                with_tvr += bool(set(summary['tvr_motifs']) - {tsq_pattern(run.settings)})
+                motifs.update(set(summary['tvr_motifs']) - {tsq_pattern(run.settings)})
             track = read.tracks.get("motifs")
             interval = read.calls.get("tvr_inclusive", {}).get("interval")
             if (not (compact and compact.status == 'available') and not mismatch_mode and track and interval and track.status == "available" and interval.status == "available"
@@ -138,7 +139,7 @@ def comparison_data(run):
                 # Count each motif at most once per read; a multi-motif read may
                 # contribute to several motif percentages but only one stack class.
                 found = {hit["motif"] for hit in track.value["matches"]
-                         if hit["method"] == "tvr_inclusive" and hit["role"] == "tvr"
+                         if hit["method"] == "tvr_inclusive" and hit["role"] == "tvr" and hit["motif"] != tsq_pattern(run.settings)
                          and hit["end"] > interval.value["start"]
                          and hit["start"] < interval.value["end"]}
                 with_tvr += bool(found)
@@ -174,7 +175,7 @@ def comparison_data(run):
                           q1_kb=q1/1000, q3_kb=q3/1000, reads=len(values), observations=observations[(b,c)]))
     return dict(composition=composition, cells=cells, omitted=omitted,
                 mismatch_composition=mismatch_rows, mismatch_omitted=mismatch_omitted,
-                repeat_method='mismatch' if mismatch_mode else 'tvr_inclusive')
+                repeat_method='mismatch' if mismatch_mode else 'tvr_inclusive', repeat_title=variant_panel_title(run.settings))
 
 
 def overview_composition_section(data, requested=None):
@@ -199,7 +200,7 @@ def overview_composition_section(data, requested=None):
             bases.update(row['base_counts'])
         pooled = dict(base_counts=dict(bases), total=sum(row['total'] for row in rows))
         pooled[count_field] = sum(row[count_field] for row in rows)
-    title = 'Mismatch patterns' if mismatch_mode else 'TVR patterns'
+    title = 'Mismatch patterns' if mismatch_mode else data.get('repeat_title', 'TVR patterns')
     section = composition_section(pooled, number=4, title=title,
                                   method='mismatch' if mismatch_mode else 'tvr_inclusive')
     if pooled and 'class="histogram-figure"' in section:
@@ -245,6 +246,6 @@ def comparison_figures(run, data=None):
             colorbar=dict(title="Average telomere<br>length (kb)"),
             hovertemplate="%{y} / %{x}<br>Average: %{z:.3f} kb<br>%{customdata} reads<extra></extra>"))
     heatmap.update_layout(xaxis_title="Chromosome",yaxis_title="Barcode",yaxis_autorange="reversed")
-    return [(4,"Mismatch patterns" if data.get('repeat_method') == 'mismatch' else "TVR patterns",None,overview_composition_section(data, requested=tvr_enabled(run.settings))),
+    return [(4,"Mismatch patterns" if data.get('repeat_method') == 'mismatch' else variant_panel_title(run.settings),None,overview_composition_section(data, requested=variants_enabled(run.settings))),
             (5,"Average Telomere Length by Chromosome and Barcode",heatmap,
              "Post-filtered telomere lengths; explicit chromosome annotations or chrN/chrN_Head/chrN_Tail labels. Cross-chromosome ambiguous reads excluded; gaps mean unavailable.")]

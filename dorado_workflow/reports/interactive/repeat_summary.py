@@ -31,6 +31,11 @@ def validate_summary(data, read):
     for key in ('base_counts', 'match_counts', 'tvr_motifs'):
         if not isinstance(data.get(key), dict) or any(not isinstance(k, str) or type(v) is not int or v < 0 for k, v in data[key].items()):
             raise ValueError('invalid motif summary counts')
+    pattern = read.metrics.get('tsq_pattern')
+    if pattern and pattern.status == A.AVAILABLE:
+        for key in ('base_counts', 'match_counts'):
+            if pattern.value in data[key]:
+                data[key]['TSQ'] = data[key].get('TSQ', 0) + data[key].pop(pattern.value)
     if sum(data['base_counts'].values()) != data['end']-data['start']+1:
         raise ValueError('motif summary base counts disagree with interval')
     return data

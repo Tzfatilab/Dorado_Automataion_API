@@ -34,11 +34,8 @@ def tvr_enabled(settings):
     Returns:
         True or False for a recorded TVR selection; None when selection is unknown.
     """
-    if not settings or settings.status != 'available' or not isinstance(settings.value, dict):
-        return None
-    options = settings.value.get('nanotel_analysis', settings.value)
-    patterns = options.get('tvr_patterns') if isinstance(options, dict) else None
-    return bool(patterns) if isinstance(patterns, list) else None
+    from ..shared.repeat_categories import ordinary_tvr_enabled
+    return ordinary_tvr_enabled(settings)
 
 
 def saved_read_sequence(folder, serial, header, length):
@@ -96,6 +93,8 @@ def motif_display_label(hit):
         Exact motif label, shared Mismatch category, or explicit partial/missing label.
         The source role and scientific call remain unchanged.
     """
+    if hit.get('category') == 'tsq':
+        return 'TSQ'
     motif, role = hit['motif'], hit['role']
     observed = hit.get('matched_sequence')
     if not observed:
@@ -160,6 +159,9 @@ def read_track_data(read, folder=None):
                 role=role, color=motif_color(label),
                 positions=positions) for (motif, role, label), positions in sorted(groups.items())]
         result['motifs'] = result['motifs_by_method'].get('tvr_inclusive')
+    if read.metrics.get('tsq_requested') and read.metrics['tsq_requested'].value is True and read.metrics['ordinary_tvr_requested'].value is False:
+        if 'tsq_inclusive' not in result['density'] and 'tvr_inclusive' in result['density']:
+            result['density']['tsq_inclusive'] = result['density']['tvr_inclusive']
     # Reference mappings are shown as annotations, never projected onto read
     # coordinates without an exported query interval and transformation.
     if read.alignments.status == 'available':

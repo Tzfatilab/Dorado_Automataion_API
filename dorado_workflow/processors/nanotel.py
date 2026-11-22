@@ -560,11 +560,12 @@ class NanoTelProcessor(ProcessorBase):
                 / f"nanotel_{task['barcode']}.log"
             ),
             "--patterns", str(telomere_pattern),
+            "--tsq_pattern", str(nanotel_params.get("tsq1_pattern") or "AACCGC"),
             "--min_density", str(min_density),
             "--max_telomere_start", str(max_telomere_start),
             "--max_edge_distance", str(max_edge_distance),
-            # Use the checkbox value for both the regular telomere pattern
-            # and any selected TVR patterns.
+            # Apply the checkbox to canonical telomere patterns only.
+            # TVR and TSQ patterns always use exact matching in NanoTel.
             "--max_mismatch", str(max_mismatch),
             "--short_telomere_threshold_bp", str(short_threshold),
         ]

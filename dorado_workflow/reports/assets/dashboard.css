@@ -464,7 +464,7 @@ body[data-summary-only] .reads-table tr:focus{outline:2px solid #d59a15}
 
 /* Three measurements share one card; method-specific counts remain in tooltips. */
 :is(#run-overview,.barcode-page) .stats>.stat-short-compact{grid-column:span 2;grid-template-columns:minmax(0,1fr);gap:10px}
-:is(#run-overview,.barcode-page) .stats>.stat-short-compact>.short-method-values{display:grid;grid-column:1/-1;grid-row:2;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+:is(#run-overview,.barcode-page) .stats>.stat-short-compact>.short-method-values{display:grid;grid-column:1/-1;grid-row:2;grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:6px}
 .short-method-values>.short-telomere-stat{min-width:0;text-align:center;padding:2px 4px}
 .short-method-values>.short-telomere-stat+.short-telomere-stat{border-left:1px solid #e3e9f3}
 .short-method-values h4{font-size:11px;font-weight:500;color:#607087;margin:0 0 8px;line-height:1.35;white-space:nowrap}
@@ -486,7 +486,7 @@ body[data-summary-only] .reads-table tr:focus{outline:2px solid #d59a15}
 .barcode-statistics-table th.short-summary-heading .stat-column-heading{justify-content:center}
 .barcode-statistics-table td.short-summary-cell{min-width:280px;padding:20px 10px 14px;border-right:1px solid #dce4ef}
 .short-summary-card{padding:0;background:transparent;border:0;border-radius:0}
-.short-summary-methods{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
+.short-summary-methods{display:grid;grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);align-items:start}
 .short-summary-method{display:flex;flex-direction:column;align-items:center;gap:7px;min-width:0}
 .short-summary-method+.short-summary-method{border-left:1px solid #bacbe2}
 .short-summary-method>span{font-size:12px;font-weight:400;color:#70809d;white-space:normal;overflow-wrap:normal;word-break:normal;text-align:center}
@@ -510,7 +510,7 @@ body[data-summary-only] .reads-table tr:focus{outline:2px solid #d59a15}
 :is(#run-overview,.barcode-page) .barcode-stat-cards>.stat p{grid-column:1/-1;grid-row:3;align-self:start;text-align:center;margin:0;font-size:12px;font-weight:400;line-height:1.4;color:#53627f;border-top:1px solid #dfE8f6;padding-top:9px}
 :is(#run-overview,.barcode-page) .barcode-stat-cards>:is(.stat-short-compact,.stat-median-compact){border-color:#d6e3f3;box-shadow:none}
 :is(#run-overview,.barcode-page) .barcode-stat-cards>:is(.stat-short-compact,.stat-median-compact) h3{font-size:14px;align-self:start;margin-top:6px}
-:is(#run-overview,.barcode-page) .barcode-stat-cards>:is(.stat-short-compact,.stat-median-compact)>:is(.short-method-values,.median-method-values){display:grid;grid-column:1/-1;grid-row:2;grid-template-columns:repeat(3,minmax(0,1fr));align-self:center;gap:0}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>:is(.stat-short-compact,.stat-median-compact)>:is(.short-method-values,.median-method-values){display:grid;grid-column:1/-1;grid-row:2;grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);align-self:center;gap:0}
 .barcode-stat-cards :is(.short-method-values,.median-method-values)>:is(.short-telomere-stat,.median-method){padding:0 5px;display:flex;flex-direction:column;gap:9px}
 .barcode-stat-cards :is(.short-method-values,.median-method-values)>:is(.short-telomere-stat,.median-method)+:is(.short-telomere-stat,.median-method){border-left:1px solid #a9cdf8}
 .barcode-stat-cards :is(.short-method-values,.median-method-values) h4{font-size:12px;font-weight:400;color:#53627f;margin:0;white-space:nowrap}
@@ -547,3 +547,22 @@ main h2,:is(#run-overview,.barcode-page,#read-detail) h2{font-size:var(--report-
 .barcode-statistics-heading .report-workbook-controls{margin:0 0 0 auto!important;gap:8px!important}
 .barcode-statistics-heading .table-export-controls{margin:0!important;gap:8px!important}
 .barcode-statistics-heading .report-workbook-controls [role=status]:empty{display:none}
+
+/* Enabled repeat methods share the available space without fixed triplets. */
+.barcode-stat-cards :is(.short-method-values,.median-method-values) h4{white-space:normal;min-height:2.5em;line-height:1.25}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>:is(.stat-short-compact,.stat-median-compact) strong{font-size:clamp(16px,1.5vw,26px)}
+
+@media(min-width:1251px){:is(#run-overview,.barcode-page) .barcode-stat-cards:has(.stat-tsq):has(.stat-4){grid-template-columns:repeat(2,minmax(0,1fr)) repeat(2,minmax(0,1.8fr)) repeat(3,minmax(0,1fr))}}
+:is(#run-overview,.barcode-page) .barcode-stat-cards>.stat-tsq{--stat-tint:#eef9f8;--stat-accent:#d9eeeb;--stat-icon:#005566}
+
+:is(#run-overview,.barcode-page) .barcode-stat-cards>:is(.stat-short-compact,.stat-median-compact){container-type:inline-size}
+:is(#run-overview,.barcode-page) .barcode-stat-cards :is(.short-method-values,.median-method-values):has(>:nth-child(4)) strong{font-size:clamp(14px,6cqi,24px)}
+.short-summary-card{container-type:inline-size}
+.short-summary-methods:has(>:nth-child(4)) .short-summary-method>strong{font-size:clamp(14px,5cqi,19px)}
+.barcode-exclusion-notice:not([hidden]){display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:12px 0;padding:12px 16px;border:1px solid #e2bf7a;border-radius:10px;background:#fff7e8;color:#69420b;font-size:14px}
+.barcode-exclusion-notice>span{flex:1 1 400px;line-height:1.5}
+.barcode-exclusion-notice>button{padding:7px 10px;border:1px solid #cfae70;border-radius:6px;background:#fff;color:#69420b;cursor:pointer;white-space:nowrap}
+
+.short-cutoff-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:8px 0 12px;padding:10px 12px;border:1px solid #cbdaf0;border-radius:10px;background:#f5f8fd;color:#12203c;font-size:13px}.short-cutoff-controls label{display:flex;align-items:center;gap:8px;font-weight:600}.short-cutoff-controls input{width:85px;padding:6px 8px;border:1px solid #bccde8;border-radius:5px;background:white;color:#12203c}.short-cutoff-controls button{padding:6px 10px;border:1px solid #bccde8;border-radius:5px;background:white;color:#174978;cursor:pointer}.short-cutoff-controls [role=status]{color:#526582;font-size:12px}
+
+.short-cutoff-controls[aria-busy="true"]{border-color:#8babdf;background:#edf3ff}.short-cutoff-controls[aria-busy="true"] [role="status"]{color:#174978;font-weight:600}.short-cutoff-controls[aria-busy="true"] [role="status"]::before{content:"";display:inline-block;width:12px;height:12px;margin-right:7px;vertical-align:-2px;border:2px solid #bdcfee;border-top-color:#245bb5;border-radius:50%;animation:short-cutoff-spin .8s linear infinite}.short-cutoff-controls :disabled{cursor:wait;opacity:.7}@keyframes short-cutoff-spin{to{transform:rotate(360deg)}}

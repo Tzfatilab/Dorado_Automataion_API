@@ -77,6 +77,7 @@ dorado_workflow = [
     "reports/assets/graph_export.js",
     "reports/assets/table_export.js",
     "reports/assets/report_workbook.js",
+    "reports/assets/short_cutoff.js",
     "reports/assets/chromosome_spacing.js",
     "reports/assets/barcode_navigation.js",
     "reports/assets/barcode_names.js",

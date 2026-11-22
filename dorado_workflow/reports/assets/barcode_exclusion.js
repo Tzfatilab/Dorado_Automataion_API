@@ -52,7 +52,17 @@
       facts.set(page.id,fact);
     }
     const key='telomere-barcode-exclusion-v1:'+location.pathname+':'+pages.map(p=>p.id).join(',');
-    let excluded=new Set();try{excluded=new Set(JSON.parse(localStorage.getItem(key)||'[]').filter(id=>facts.has(id)));}catch{}
+    let excluded=new Set(),restoredSelection=false;
+    try{
+      const saved=JSON.parse(localStorage.getItem(key));
+      if(Array.isArray(saved)){
+        excluded=new Set(saved.filter(id=>facts.has(id)));
+        restoredSelection=true;
+      }
+    }catch{}
+    // Apply defaults only on first use; retain deliberate manual re-inclusion.
+    // Unavailable counts never establish that a barcode has zero reads.
+    if(!restoredSelection)for(const page of pages)if(facts.get(page.id).filtered===0)excluded.add(page.id);
     const inputs=new Map(),snapshots=new Map(),messages=new Map();
     // Function: label.
     // Inputs: id (stable barcode/read identity)
@@ -226,11 +236,23 @@
       page.querySelector('.barcode-name-editor,.breadcrumbs')?.after(banner);
     }
     overview.querySelector('.barcode-navigation')?.after(controls);
+    const notice=document.createElement('aside');notice.className='barcode-exclusion-notice';
+    notice.setAttribute('role','alert');notice.hidden=true;
+    const noticeText=document.createElement('span');notice.appendChild(noticeText);
+    const review=document.createElement('button');review.type='button';review.textContent='Review barcode selection';
+    review.onclick=()=>{location.hash='#/';controls.open=true;requestAnimationFrame(()=>controls.scrollIntoView({behavior:'smooth',block:'start'}));};
+    const dismiss=document.createElement('button');dismiss.type='button';dismiss.textContent='Dismiss';
+    const noticeKey=key+':notice-seen-v1';
+    let noticeDismissed=false,noticeShown=false;
+    try{noticeDismissed=localStorage.getItem(noticeKey)==='1';}catch{}
+    dismiss.onclick=()=>{noticeDismissed=true;notice.hidden=true;};
+    notice.append(review,dismiss);overview.before(notice);
     const style=document.createElement('style');style.textContent='.barcode-link[data-excluded="true"]{border-style:dashed;opacity:.75}.barcode-link[data-excluded="true"]::after{content:" · Excluded";font-weight:700;color:#9b4a16}.barcode-exclusion-controls button{padding:8px;margin:4px;border:1px solid #bdcde0;border-radius:6px;background:white;cursor:pointer}.barcode-exclusion-banner[data-excluded="true"]{background:#fff2de}.barcode-exclusion-banner span+span{margin-left:12px}';document.head.appendChild(style);
     // Function: persist.
     // Inputs: None; uses the current report/browser state.
     // Outputs: Saves excluded IDs to browser storage, or shows a storage-status note.
     const persist=()=>{try{localStorage.setItem(key,JSON.stringify([...excluded]));}catch{help.textContent='Browser storage is unavailable. Selection applies until this dashboard is closed.';}};
+    if(!restoredSelection)persist();
     let busy=false,again=false;
     // Function: apply.
     // Inputs: None; uses the current report/browser state.
@@ -246,6 +268,16 @@
           message.parentElement.dataset.excluded=String(out);
         }
         status.textContent=(pages.length-excluded.size)+' of '+pages.length+' barcodes included.'+(excluded.size?' Excluded: '+[...excluded].map(label).join(', ')+'.':' All barcodes are included.');
+        const emptyExcluded=[...excluded].filter(id=>facts.get(id).filtered===0).length;
+        noticeText.textContent=excluded.size+' of '+pages.length+' barcodes excluded from the overview.'+
+          (emptyExcluded?' '+emptyExcluded+' have 0 telomeric reads after filtering.':'')+
+          ' You can include them again in barcode selection. Individual barcode and read pages remain available.';
+        if(noticeShown&&excluded.size===0)noticeDismissed=true;
+        notice.hidden=noticeDismissed||excluded.size===0;
+        if(!notice.hidden&&!noticeShown){
+          noticeShown=true;
+          try{localStorage.setItem(noticeKey,'1');}catch{}
+        }
         summary.textContent='Include or exclude barcodes ('+(pages.length-excluded.size)+' / '+pages.length+' included)';
         excludeEmptyButton.disabled=!pages.some(page=>facts.get(page.id).filtered===0&&!excluded.has(page.id));
         selectAllButton.disabled=excluded.size===0;
@@ -277,6 +309,8 @@
             figure.layout.annotations.push({name:'barcode-selection-scope',text:(pages.length-excluded.size)+' / '+pages.length+' barcodes included',xref:'paper',yref:'paper',x:1,y:1,xanchor:'right',yanchor:'top',showarrow:false,bgcolor:'#fff6e8',font:{size:11,color:'#8b4619'}});
             if(!included().length)figure.layout.annotations.push({name:'barcode-selection-empty',text:'No barcodes selected',xref:'paper',yref:'paper',x:.5,y:.5,showarrow:false});
           }
+          window.reportBarcodeDistributionStyle?.(figure);
+          window.reportShortCutoff?.transform(figure);
           await Plotly.react(graph,figure.data,figure.layout,{responsive:true,displaylogo:false});
         }
       }finally{busy=false;if(again){again=false;await apply();}}

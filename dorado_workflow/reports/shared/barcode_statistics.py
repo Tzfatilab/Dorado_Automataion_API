@@ -7,7 +7,8 @@ def median_summary_html(barcode, settings, icon):
     """Show each enabled call's telomere median in the retained population."""
     from .measurement_statistics import method_statistics
     parts = []
-    for method, label in [('exact', 'Canonical'), ('mismatch', '+ Mismatch'), ('tvr_inclusive', '+ TVRs')]:
+    from .repeat_categories import displayed_methods
+    for method, label in displayed_methods(settings):
         result = method_statistics(barcode, settings, method, 'after')
         attributes = ''
         if result['requested'] is False:
@@ -67,7 +68,9 @@ def tvr_statistics(barcode, settings, composition=None):
         return dict(with_tvr=composition['with_tvr'],motifs=len(composition['motifs']))
     by_id={read.id:read for read in barcode.reads}
     options=settings.value.get('nanotel_analysis',settings.value) if settings and settings.status=='available' else {}
-    patterns=options.get('tvr_patterns')
+    from .repeat_categories import tsq_pattern
+    configured=options.get('tvr_patterns')
+    patterns=[p for p in configured if p != tsq_pattern(settings)] if isinstance(configured,list) else None
     single=patterns[0] if isinstance(patterns,list) and len(set(patterns))==1 else None
     count=0;motifs=set();complete_motifs=True
     for record in population.value:

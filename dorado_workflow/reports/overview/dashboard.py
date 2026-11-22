@@ -102,7 +102,7 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
         # horizontally and never changes a read's length.
         boxes.add_trace(go.Violin(name=item["label"].replace("barcode", "BC"), y=values,
             customdata=customdata, points="all", bandwidth=1.0 if len(set(values)) > 1 else 0, spanmode="hard", scalemode="width", box=dict(visible=False), pointpos=0, fillcolor="#a6d0f5", line_color="#214e78",
-            marker=dict(color="#3d83c9", size=5), hovertemplate="%{customdata[2]}<br>Telomere length: %{y:.3f} kb<br>Click to open read<extra>%{fullData.name}</extra>"))
+            marker=dict(color="#ffffff", size=7, line=dict(color="#299b37", width=1)), hovertemplate="%{customdata[2]}<br>Telomere length: %{y:.3f} kb<br>Click to open read<extra>%{fullData.name}</extra>"))
     boxes.update_layout(xaxis_title="Barcode", yaxis_title="Telomere length (kb)",
                         xaxis=dict(type='category',categoryorder='array',
                                    categoryarray=[trace.name for trace in boxes.data],
@@ -115,7 +115,7 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
     # Both panels share typography, dimensions and offline Plotly settings.
     panels = []
     for index, title, fig, note in sorted([(3, "Telomeric Reads by Barcode", bars, "Post-filtered telomeric reads."),
-                                    (2, "Telomere Length by Barcode", boxes, "Post-filtered reads. Choose Linear or Logarithmic scale; zero lengths cannot appear on a logarithmic axis. A single read appears as a point.")] + comparison_figures(run, data=comparisons), key=lambda panel: panel[0]):
+                                    (2, "Telomere Length by Barcode", boxes, "Post-filtered reads. Green circles: individual reads. Black bars: median and IQR (25th–75th percentiles). Choose Linear or Logarithmic scale; zero lengths cannot appear on a logarithmic axis. A single read appears as a point.")] + comparison_figures(run, data=comparisons), key=lambda panel: panel[0]):
         if fig is None:
             panels.append(note)
             continue
@@ -186,6 +186,7 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
     spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'barcode_exclusion.js').read_text(encoding='utf-8')
     spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'barcode_compact_controls.js').read_text(encoding='utf-8')
     spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'barcode_header_design.js').read_text(encoding='utf-8')
+    spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'short_cutoff.js').read_text(encoding='utf-8')
     spacing_script += '\n' + (Path(__file__).parents[1] / 'assets' / 'report_workbook.js').read_text(encoding='utf-8')
     html = html.removesuffix('</body></html>') + '<script>' + export_script + '</script><script>' + table_export_script + '</script><script>' + spacing_script + '</script></body></html>'
     if nanotel_population:

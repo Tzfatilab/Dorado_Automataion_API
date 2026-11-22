@@ -28,6 +28,7 @@
     const showCompleteness = page.dataset.kmEnabled === 'true';
     if(!showCompleteness)page.querySelectorAll('.barcode-results').forEach(panel=>panel.remove());
     const noTvr = page.dataset.tvrEnabled === 'false';
+    const withTsq = page.dataset.tsqEnabled === 'true';
     const withMismatch = page.dataset.mismatchEnabled === 'true';
     const tableHead=section.querySelector('.reads-table thead tr');
     // Saved dashboards can initialize again after a renderer update. Restore
@@ -102,6 +103,8 @@
       read.telomere_start = withMismatch ? read.mismatch_start : read.canonical_start;
       read.filter_reason = !read.excluded ? '-' : read.filtration_reason || (keys.some(key=>edgeRemoved.has(key)) ? 'Removed by the NanoTel edge filter: read length minus running median telomere length did not exceed the configured edge-distance threshold.' :
         (read.nanotel_filter_reason && read.nanotel_filter_reason!=='Passed NanoTel filters' ? read.nanotel_filter_reason : 'Outside the displayed filtered population; specific filter reason unavailable.'));
+      read.filter_reason_detail = read.filtration_reason_detail || read.nanotel_filter_reason_detail || read.filter_reason;
+      read.filter_reason = window.reportShortFilterReason(read.filter_reason);
     });
     browsers.set(page.id, {page, rows:detailRows});
     section.querySelector('.read-total').textContent = rows ? `(${rows.length.toLocaleString()} telomeric reads)` : '';
@@ -117,6 +120,14 @@
       const label=node('label','Search ',null),input=node('input','',label);
       input.className='read-search';input.type='search';input.placeholder='Search reads...';controls.prepend(label);
     }
+    document.addEventListener('short-cutoff-change',()=>{
+      let changed=false;
+      for(const filter of columnFilters.values())if(filter.preset==='short'){
+        filter.threshold=Number(page.dataset.shortCutoffBp)/1000;changed=true;
+      }
+      if(openMenu)openMenu();
+      if(changed){current=1;render();}
+    });
     let populationSelect=null;
     {
       const label=node('label','Population ',controls);populationSelect=node('select','',label);
@@ -157,17 +168,19 @@
     const columns = [column('label','Read number'), lengthColumn('length','Total read length (kb)'),
       column('telomere_start','Telomere start (bp)',formatCount,value=>value==null?'Unavailable':value),
       ...(!noTvr?[column('tvr','TVR%',pct)]:[]),
+      ...(withTsq?[column('tsq','TSQ%',pct)]:[]),
       lengthColumn('exact_length','Canonical telomere length (kb)'),
       ...(withMismatch?[lengthColumn('mismatch_length','Telomere length including mismatch (kb)')]:[]),
       ...(!noTvr?[lengthColumn('tvr_length','Telomere length including TVRs (kb)')]:[]),
-      ...(noTvr?[densityColumn('exact_density','Canonical repeat (%)')]:[column('canonical','Canonical repeat (%)',pct)]),
+      ...(withTsq?[lengthColumn('tsq_length','Telomere length including TSQ (kb)')]:[]),
+      ...(noTvr&&!withTsq?[densityColumn('exact_density','Canonical repeat (%)')]:[column('canonical','Canonical repeat (%)',pct)]),
       column('read_status','Status'),
       column('filter_reason','Filtration reason'),
       column('chromosomes','Chromosome',value=>value.join(', ')||'Unavailable',value=>value.join(', ')||'Unavailable'),
       ...(!noTvr?[column('tvr_patterns','TVR patterns',value=>Array.isArray(value)?value.join(', '):'Unavailable')]:[])];
     tableHead.replaceChildren(...columns.map(c=>{const th=node('th',c.title);th.dataset.columnKey=c.key;return th;}));
     const readTableNote =
-      (noTvr?'Canonical repeat % is the exported canonical repeat density within the canonical telomere call. ':'Canonical repeat % is the source-exported unique canonical base coverage within the TVR-inclusive telomere interval. ')+
+      (noTvr&&!withTsq?'Canonical repeat % is the exported canonical repeat density within the canonical telomere call. ':'Canonical repeat % is the source-exported unique canonical base coverage within the combined variant-inclusive telomere interval. ')+
       'Telomere start is 1-based and uses the '+(withMismatch?'mismatch-inclusive':'canonical')+' call. All reads shows included and excluded telomeric reads together, with their status and saved filtration reasons.';
     const columnKeys=columns.map(c=>c.key);
     const exportHeaders=[...section.querySelectorAll('.reads-table thead th')].map(th=>th.textContent.replace(/\s*[▾↕]$/,'').trim());
@@ -178,7 +191,7 @@
       const value=c.format(r[c.key]);
       return r.plot_only&&value==='Unavailable'?'\u2014':value;
     });
-    const numericKeys=new Set(['label','telomere','exact_length','mismatch_length','tvr_length','length','canonical','tvr','exact_density','mismatch_density','telomere_start']);
+    const numericKeys=new Set(['label','telomere','exact_length','mismatch_length','tvr_length','tsq_length','length','canonical','tvr','tsq','exact_density','mismatch_density','telomere_start']);
     // Size columns from the current filtered population, independently of
     // pagination. Long headings and text values wrap within compact columns.
     const readTable=section.querySelector('.reads-table');
@@ -275,7 +288,7 @@
           const operator=node('select','',label);operator.setAttribute('aria-label','Comparison for '+title);
           [['above','Above'],['below','Below']].forEach(([value,text])=>{const option=node('option',text,operator);option.value=value;});
           const cutoffBp=Number(page.dataset.shortCutoffBp);
-          const shortPreset=['exact_length','mismatch_length','tvr_length','telomere'].includes(columnKeys[index])&&Number.isFinite(cutoffBp)&&cutoffBp>0;
+          const shortPreset=['exact_length','mismatch_length','tvr_length','tsq_length','telomere'].includes(columnKeys[index])&&Number.isFinite(cutoffBp)&&cutoffBp>0;
           if(shortPreset){
             const option=node('option','Below '+(cutoffBp/1000).toLocaleString(undefined,{maximumFractionDigits:10})+' kb (short telomeres)',operator);
             option.value='short';
@@ -428,7 +441,7 @@
               item.style.whiteSpace='nowrap';
             });
           }
-          if(columns[index+1].key==='filter_reason')td.title=text;
+          if(columns[index+1].key==='filter_reason')td.title=r.filter_reason_detail||text;
         });
 
       });
@@ -553,7 +566,8 @@
     summaryCard('Canonical telomere length',read.exact_length == null ? 'Unavailable' : kb(read.exact_length)+' kb',exactNote,'read-summary-pink');
     const noTvr = source.page.dataset.tvrEnabled === 'false';
     const withMismatch = source.page.dataset.mismatchEnabled === 'true';
-    if (noTvr) {
+    const withTsq = source.page.dataset.tsqEnabled === 'true';
+    if (noTvr && !withTsq) {
       // Function: density.
       // Inputs: value (value to inspect or format)
       // Outputs: Formatted repeat-density value.
@@ -570,8 +584,14 @@
         summaryCard('TVR analysis','Off','No TVR patterns selected','read-summary-purple');
       }
     } else {
+    if (!noTvr) {
     summaryCard('Telomere length with TVRs',read.tvr_length == null ? 'Unavailable' : kb(read.tvr_length)+' kb','Includes detected variant repeats','read-summary-pink');
     summaryCard('TVR content',pct(read.tvr),bp(tvrBases)+' · Share of telomere bases','read-summary-blue');
+    }
+    if(withTsq){
+      summaryCard('Telomere length with TSQ',read.tsq_length==null?'Unavailable':kb(read.tsq_length)+' kb','Independent canonical + TSQ call','read-summary-pink');
+      summaryCard('TSQ content',pct(read.tsq),bp(read.tsq_bp)+' - Share of combined telomere interval','read-summary-blue');
+    }
     summaryCard('Canonical content',pct(read.canonical),'Share matching the standard repeat','read-summary-green');
     }
     // Keep separate assignments separate rather than invent chromosome-arm pairs.
@@ -592,7 +612,8 @@
       node('p','NanoTel marked this read as censored. Its observed telomere length is a lower bound: the full telomere may be longer. Censoring does not mean the read failed filtering. These observations are accounted for in the Kaplan-Meier estimate.',status);
     }
     window.renderReadTracks(detail, read, {mismatchEnabled: source.page.dataset.mismatchEnabled === 'true',
-      tvrEnabled: source.page.dataset.tvrEnabled === 'false' ? false : undefined});
+      tvrEnabled: noTvr && !withTsq ? false : undefined,
+      tsqEnabled:withTsq, ordinaryTvrEnabled:!noTvr});
     window.renderReadRepeats(detail, read);
     let tracks=read.track_data;
     if(!tracks){try{tracks=JSON.parse(document.getElementById('read-tracks-'+read.id)?.textContent||'null');}catch(_){tracks=null;}}
@@ -602,7 +623,7 @@
     const coordinateHead=node('tr','',node('thead','',coordinateTable));
     ['Telomere','Start (bp)','End (bp)'].forEach(label=>node('th',label,coordinateHead));
     const coordinateBody=node('tbody','',coordinateTable);
-    [['Canonical','exact'],...(withMismatch?[['Allowing one mismatch','mismatch']]:[]),...(!noTvr?[['Including TVRs','tvr_inclusive']]:[])].forEach(([label,key])=>{
+    [['Canonical','exact'],...(withMismatch?[['Allowing one mismatch','mismatch']]:[]),...(!noTvr?[['Including TVRs',withTsq?'tvr_only':'tvr_inclusive']]:[]),...(withTsq?[['Including TSQ','tsq_inclusive']]:[])].forEach(([label,key])=>{
       const interval=tracks?.intervals?.[key],row=node('tr','',coordinateBody);
       node('th',label,row).scope='row';
       node('td',interval?formatCount(interval[0]+1):'Unavailable',row);
@@ -638,10 +659,11 @@
         formatCount(alignment.query_interval.start+1)+'–'+formatCount(alignment.query_interval.end)+' bp (1-based inclusive)');
     });
 
-    const measurementNote = noTvr
+    const measurementNote = noTvr && !withTsq
       ? 'Lengths and repeat densities use the exported canonical repeat calls. Canonical and mismatch densities use their respective telomere intervals. No TVR patterns were selected for this run.'
-      : 'Lengths use exported post-filtered telomere records and source read lengths. Repeat percentages use the source-exported TVR-inclusive interval, which may differ from the filtered telomere length above. Overlapping categories are reported explicitly. Unavailable values are not inferred.';
+      : 'Lengths use exported post-filtered telomere records and source read lengths. Repeat percentages use the source-exported combined variant-inclusive interval, which may differ from the filtered telomere length above. Overlapping categories are reported explicitly. Unavailable values are not inferred.';
     node('p',read.plot_only ? 'Lengths shown here come from the saved pre-final-filter plot. This read is not added to the filtered table or summary statistics.' : measurementNote,detail).className='note';
+    if(withTsq)node('p','TSQ% and TVR% use the same combined telomere interval. TSQ-covered bases are excluded from TVR% to avoid double counting. TSQ and TVR lengths use independent canonical-inclusive calls.',detail).className='note';
     if (!noTvr && read.tvr == null && !read.plot_only) {
       node('p','TVR base coverage is unavailable for the TVR-inclusive interval. Older coverage exports may need regeneration; unavailable does not mean zero TVRs.',detail).className='note';
     }

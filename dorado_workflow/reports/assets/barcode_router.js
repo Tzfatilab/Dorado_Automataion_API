@@ -55,7 +55,7 @@
     plot.populationRender = (plot.populationRender || Promise.resolve()).then(async () => {
       const population = page.dataset.lengthPopulation || 'filtered';
       const selection=page.readLengthSelection;
-      const renderKey=population+(selection?':'+selection.key:'');
+      const renderKey=population+(selection?':'+selection.key:'')+':cutoff:'+page.dataset.shortCutoffBp;
       if (plot.dataset.population === renderKey && plot._fullLayout) {
         if (!page.hidden) Plotly.Plots.resize(plot);
         return;
@@ -67,6 +67,7 @@
       const figure = selected?.figure || {data:[], layout:{}};
       // Clone because Plotly mutates arrays and layout metadata during rendering.
       const copy = JSON.parse(JSON.stringify(figure));
+      window.reportShortCutoff?.transform(copy, page, section.dataset.lengthPopulationChart);
       const controls = section.querySelector('.histogram-controls');
       const oldUnit = controls.querySelector('button[aria-pressed="true"]')?.textContent || 'Read count';
       controls.replaceChildren();
@@ -102,6 +103,11 @@
       plot.closest('section').querySelector(':scope > p.note').textContent = 'This population could not be displayed. Select it again to retry.';
     });
   }
+  document.addEventListener('short-cutoff-change', event => {
+    for(const page of pages)if(!page.hidden)page.querySelectorAll('[data-length-population-chart] .saved-histogram').forEach(plot=>{
+      updateLengthPlot(plot,page);event.detail?.waitUntil(plot.populationRender);
+    });
+  });
   document.addEventListener('read-population-change', event => {
     const page = event.target.closest('.barcode-page');
     if (page && !page.hidden) page.querySelectorAll('[data-length-population-chart] .saved-histogram').forEach(plot => updateLengthPlot(plot, page));
@@ -167,6 +173,7 @@
           m.buttons.some(b => b.label === label && b.method === 'update')));
       const controls = plot.closest('section').querySelector('.histogram-controls');
       if (menu && controls) menu.visible = false;
+      window.reportShortCutoff?.transform(figure, page);
       Plotly.newPlot(plot, figure.data, figure.layout, {...figure.config, responsive:true})
         .then(() => {
           plot.on('plotly_click', event => {

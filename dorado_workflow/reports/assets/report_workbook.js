@@ -1,6 +1,6 @@
 /* Offline scientific workbook: complete filtered read tables, not table-page exports. */
 (() => {
-  if(window.reportWorkbook?.version===12)return;
+  if(window.reportWorkbook?.version===13)return;
   const installation={};window.reportWorkbookInstallation=installation;
   // Function: start.
   // Inputs: None; uses the current report/browser state.
@@ -24,6 +24,7 @@
     // Function: count.
     // Inputs: page (barcode page element); pattern (statistic-heading matcher)
     // Outputs: Parsed count from the matching barcode statistic card, or null.
+    const cutoffFor=page=>window.reportShortCutoff?.cutoffFor(page)??source.find(row=>row.id===page.id)?.cutoff;
     const count=(page,pattern)=>{
       const card=[...page.querySelectorAll('.stats>.stat')].find(el=>pattern.test(el.querySelector('h3')?.textContent.trim()||''));
       const text=card?.querySelector('strong')?.textContent.trim().replace(/,/g,'');
@@ -73,16 +74,17 @@
       // Inputs: v (value to inspect or format)
       // Outputs: Percentage converted to an Excel fractional value, or the missing marker.
       const kb=v=>valid(v)?v/1000:unavailable,pct=v=>valid(v)?v/100:unavailable;
-      const noTVR=page.dataset.tvrEnabled==='false',mismatch=page.dataset.mismatchEnabled==='true';
+      const noTVR=page.dataset.tvrEnabled==='false',withTSQ=page.dataset.tsqEnabled==='true',mismatch=page.dataset.mismatchEnabled==='true';
       const retained=new Set(filtered.map(row=>row.id));
       const columns=[['Read number',r=>r.label||unavailable],['Read ID',r=>r.header||unavailable],
         ['Total read length (kb)',r=>kb(r.length),'decimal'],
         ['Telomere start (bp)',r=>scalar(mismatch?r.mismatch_start:r.canonical_start),'integer'],
         ['Filtration status',r=>rowsFor(page)==null?'Unavailable':retained.has(r.id)?'Passed':'Filtered out'],
-        ['Filtration reason',r=>retained.has(r.id)?'-':r.filtration_reason||r.filter_reason||unavailable],
+        ['Filtration reason',r=>retained.has(r.id)?'-':window.reportShortFilterReason(r.filtration_reason||r.filter_reason||unavailable)],
         ['Canonical telomere length (kb)',r=>kb(r.exact_length),'decimal'],
         ...(mismatch?[[ 'Telomere length including mismatch (kb)',r=>kb(r.mismatch_length),'decimal']]:[]),
         ...(!noTVR?[[ 'Telomere length including TVRs (kb)',r=>kb(r.tvr_length),'decimal']]:[]),
+        ...(withTSQ?[[ 'Telomere length including TSQ (kb)',r=>kb(r.tsq_length),'decimal'],['TSQ content (%)',r=>pct(r.tsq),'percent']]:[]),
         ['Canonical repeat density (%)',r=>scalar(r.exact_density),'percent'],
         ...(mismatch?[[ 'Repeat density including mismatch (%)',r=>scalar(r.mismatch_density),'percent']]:[]),
         ...(!noTVR?[
@@ -98,8 +100,8 @@
     const sheets=(scope='all')=>{
       const selected=pages.filter(p=>scope!=='included'||!excluded(p.id));
       if(!selected.length)throw Error('No included barcodes to export. Include a barcode or choose All barcodes.');
-      const cutoffs=new Set(selected.map(page=>source.find(row=>row.id===page.id)?.cutoff).filter(valid));
-      const cutoffDefinition=cutoffs.size===1?'Recorded cutoff: '+[...cutoffs][0]+' bp.':'Per-barcode recorded cutoffs are used.';
+      const cutoffs=new Set(selected.map(page=>cutoffFor(page)).filter(valid));
+      const cutoffDefinition=cutoffs.size===1?'Dashboard cutoff: '+[...cutoffs][0]+' bp.':'Per-barcode recorded cutoffs are used.';
       // Function: cardValue.
       // Inputs: page (barcode page element); title (displayed heading)
       // Outputs: Displayed statistic value from the matching barcode card.
@@ -111,11 +113,13 @@
       };
       const methods=[['exact','Canonical']];
       if(selected.some(page=>page.dataset.mismatchEnabled==='true'))methods.push(['mismatch','Including mismatch']);
+      const includeTSQ=selected.some(page=>page.dataset.tsqEnabled==='true');
       const includeTVR=selected.some(page=>page.dataset.tvrEnabled!=='false');
       if(includeTVR)methods.push(['tvr_inclusive',
         selected.every(page=>page.dataset.mismatchEnabled==='false')?'Including TVRs (without mismatch)':
         selected.every(page=>page.dataset.mismatchEnabled==='true')?'Including TVRs (with mismatch)':'Including TVRs (run matching settings)']);
-      const cutoffTitle=cutoffs.size===1&&selected.every(page=>valid(source.find(row=>row.id===page.id)?.cutoff))?
+      if(selected.some(page=>page.dataset.tsqEnabled==='true'))methods.push(['tsq_inclusive','Including TSQ']);
+      const cutoffTitle=cutoffs.size===1&&selected.every(page=>valid(cutoffFor(page)))?
         'telomere length < '+[...cutoffs][0]+' bp':'per-barcode cutoff; see Definitions';
       const methodFields=[['Median telomere length after filtration (kb)','median_bp',1000],
         ['Short telomeres after filtration (%, '+cutoffTitle+')','short_percent',100]];
@@ -123,7 +127,7 @@
         'Telomeric reads before filtration','Telomeric reads before filtration (%)',
         'Median total read length of telomeric reads before filtration (kb)','Number of telomeric reads after filtration',
         ...methodFields.flatMap(([title])=>methods.map(([,label])=>title+' - '+label)),
-        ...(includeTVR?['Telomeric reads containing TVRs after filtration (%)']:[]),'Number of chromosome ends'];
+        ...(includeTVR?['Telomeric reads containing TVRs after filtration (%)']:[]),...(includeTSQ?['Telomeric reads containing TSQ after filtration (%)']:[]),'Number of chromosome ends'];
       const topHeaders=[...headers],subHeaders=headers.map(()=>null),merges=[];
       const groupedEnd=8+2*methods.length;
       for(let c=0;c<headers.length;c++)if(c<8||c>=groupedEnd)merges.push([c,0,c,1]);
@@ -135,7 +139,7 @@
       const widths=headers.map((title,i)=>i>=8&&i<groupedEnd?26:Math.min(44,Math.max(15,title.length+2)));
       const formats=[null,null,null,'decimal',null,'percent','decimal',null,
         ...methodFields.flatMap(([,key])=>methods.map(()=>key==='median_bp'?'decimal':'percent')),
-        ...(includeTVR?['percent']:[]),null];
+        ...(includeTVR?['percent']:[]),...(includeTSQ?['percent']:[]),null];
       const rows=selected.map(page=>{
         const fact=source.find(row=>row.id===page.id)||{},stats=fact.table_statistics||{};
         const scaled=(v,scale=1)=>valid(v)?v/scale:v==='Not requested'?v:unavailable;
@@ -143,20 +147,22 @@
         return [identity(page).id,identity(page).name||stats.sample_name||'',scalar(fact.total),
           scaled(stats.total_read_length_median_bp,1000),scalar(stats.detected_reads),scaled(stats.detected_percent,100),
           scaled(stats.detected_read_length_median_bp,1000),scalar(fact.filtered),
-          ...methodFields.flatMap(([,key,scale])=>methods.map(([method])=>number(fact.measurements?.[method]?.after,key,scale))),
+          ...methodFields.flatMap(([,key,scale])=>methods.map(([method])=>number(key==='short_percent'&&window.reportShortCutoff?{...fact.measurements?.[method]?.after,short_percent:window.reportShortCutoff.percentage(fact.measurements?.[method]?.after,cutoffFor(page))}:fact.measurements?.[method]?.after,key,scale))),
           ...(includeTVR?[scaled(stats.tvr_read_percent_after,100)]:[]),
+          ...(includeTSQ?[scaled(stats.tsq_read_percent_after,100)]:[]),
           Array.isArray(fact.chromosomes)&&(fact.chromosomes.length||fact.filtered===0)?fact.chromosomes.length:unavailable];
       });
       const definitions={name:'Definitions',headers:['Field','Definition'],widths:[38,110],rows:[
         ['Export scope',scope==='included'?'Included barcodes only.':'All barcodes, including excluded barcodes.'],
         ['Barcode sheets','Barcode summary contains barcode-level Key Statistics. Each barcode sheet combines detected source reads with their filtration status; these are not necessarily every input read.'],
+        ['TSQ and TVR separation','Independent canonical-inclusive telomere calls. TSQ% and TVR% share the combined telomere interval; TSQ-covered bases are excluded from ordinary TVR base coverage. Legacy combined lengths are not split by inference.'],
         ['Telomere statistics','Median telomere lengths use after-filtration source measurements only. Canonical, mismatch and TVR-inclusive methods are distinct recorded calls.'],
         ['Short telomeres',cutoffDefinition+' Telomere length is strictly less than the cutoff. After-filtration percentages use the non-missing measured telomere lengths for that method and population as denominator. No additional filtering or repeat search is performed.'],
         ['Units','Telomere lengths: kb. Percent cells store fractions with Excel percentage formatting. Counts are integers.'],
         ['Unavailable and empty populations','Unavailable means a required value is missing or the population is incomplete. Not applicable means a statistic has no defined value, for example a median or percentage with zero reads. Zero counts remain numeric zero.'],
         ['TVR-positive reads (%)','Retained telomeric reads containing at least one TVR divided by all retained telomeric reads. This is a read percentage, not a base percentage.'],
         ['Total read length medians','All input reads for Median total read length; detected telomeric reads before filtration for Median total read length of telomeric reads.'],
-        ...selected.map(page=>['Short cutoff - '+identity(page).id,String(source.find(row=>row.id===page.id)?.cutoff??unavailable)+' bp']),
+        ...selected.map(page=>['Short cutoff - '+identity(page).id,String(cutoffFor(page)??unavailable)+' bp']),
         ['TVR columns','TVR statistics are marked Not requested when TVR analysis was not requested. Missing measurements remain unavailable.'],
         ['Workbook snapshot','Values reflect the dashboard data and barcode names/selection when exported. Export again after changing the dashboard. Editing workbook values does not recalculate this snapshot.'],
         ['Source','Embedded read-data and barcode source-count/cutoff exports in this standalone NanoTel dashboard. Original barcode IDs are preserved.']
@@ -170,7 +176,7 @@
       if(!window.reportTableExportFormats?.workbook)throw Error('Excel export is not ready. Reload the dashboard.');
       return window.reportTableExportFormats.workbook(sheets(scope));
     };
-    window.reportWorkbook={version:12,sheets,workbook};
+    window.reportWorkbook={version:13,sheets,workbook};
     const controls=document.createElement('div');controls.className='report-workbook-controls';
     controls.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0';
     const select=document.createElement('select');select.setAttribute('aria-label','Excel workbook barcode scope');

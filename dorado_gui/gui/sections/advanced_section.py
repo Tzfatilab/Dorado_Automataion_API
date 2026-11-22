@@ -562,7 +562,7 @@ class AdvancedSection:
         return self.nanotel_mapping
 
     def _build_tvr_mismatch_option(self):
-        """Build the shared telomere/TVR mismatch toggle.
+        """Build the canonical telomere mismatch toggle.
 
         Inputs:
             None; uses instance state.
@@ -573,7 +573,7 @@ class AdvancedSection:
         self.allow_mismatch = QCheckBox("Allow 1 mismatch")
         self.allow_mismatch.setChecked(False)
         self.allow_mismatch.setToolTip(
-            "Allow one mismatch for telomere and TVR patterns. Preset uses exact matching."
+            "Allow one mismatch for canonical telomere patterns only. TVR and TSQ patterns always match exactly. Preset uses exact matching."
         )
         self.allow_mismatch.setStyleSheet(self.nanotel_mapping.styleSheet())
         self._mismatch_before_preset = False
@@ -875,9 +875,6 @@ class AdvancedSection:
         self.selected_tvr_modes.add(selected_mode)
         selected_btn.setStyleSheet(active_style)
         self.selected_tvr_mode = set(self.selected_tvr_modes)
-        # TSQ1 starts with mismatch enabled, but the user may clear the checkbox.
-        if selected_btn == self.tsq1_btn and "Use Preset" not in self.selected_tvr_modes:
-            self.allow_mismatch.setChecked(True)
         self._sync_tvr_mismatch_state()
 
     def _sync_tvr_mismatch_state(self):

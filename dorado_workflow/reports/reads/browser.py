@@ -7,6 +7,7 @@ from html import escape
 from collections import Counter
 from dorado_workflow.reports.shared.colors import motif_color
 from pathlib import Path
+from ..shared.filter_reasons import short_filter_reason, FILTER_REASON_JAVASCRIPT
 from dorado_workflow.reports.reads.density import read_track_data, READ_TRACK_SCRIPT, motif_display_label
 
 
@@ -91,6 +92,9 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
                              if hit['method'] == 'tvr_inclusive' and hit['role'] == 'tvr'
                              and hit['end'] > interval.value['start'] and hit['start'] < interval.value['end']})
                         if motif_counts is not None else None)
+        pattern = measurement('tsq_pattern') or 'AACCGC'
+        if tvr_patterns is not None:
+            tvr_patterns = [motif for motif in tvr_patterns if motif != pattern]
         def call_length(method):
             """Exported length for the selected calling method, or None when unavailable.
 
@@ -116,12 +120,15 @@ def read_rows(barcode, include_unfiltered=False, plot_folder=None, include_track
         def call_start(method):
             interval = read.calls.get(method, {}).get('interval') if read else None
             return interval.value['start'] + 1 if interval and interval.status == 'available' else None
-        rows.append(dict(source_note=('Saved NanoTel read details. This read is outside the displayed filtered population and is excluded from filtered summary statistics.' if include_unfiltered and record['read_id'] not in retained else None), motifs=motif_counts, tvr_patterns=tvr_patterns, exact_length=call_length('exact'), mismatch_length=call_length('mismatch'), exact_density=call_density('exact'), mismatch_density=call_density('mismatch'), tvr_length=call_length('tvr_inclusive'), canonical=measurement('canonical_pct'), tvr=measurement('tvr_pct'),
+        rows.append(dict(source_note=('Saved NanoTel read details. This read is outside the displayed filtered population and is excluded from filtered summary statistics.' if include_unfiltered and record['read_id'] not in retained else None),
+                         motifs=motif_counts, tvr_patterns=tvr_patterns, exact_length=call_length('exact'), mismatch_length=call_length('mismatch'), exact_density=call_density('exact'), mismatch_density=call_density('mismatch'), tvr_length=call_length('tvr_only' if measurement('tsq_requested') is True else 'tvr_inclusive'),
+                         tsq_length=call_length('tsq_inclusive'), tsq=measurement('tsq_pct'), tsq_bp=measurement('tsq_bp'), canonical=measurement('canonical_pct'), tvr=measurement('tvr_pct'),
                          tvr_bp=measurement('tvr_bp'), overlap=measurement('repeat_overlap_bp'),
                          unassigned=measurement('repeat_unassigned_bp'), id=read.id if read else None,
                          header=read.original_id if read else record['original_id'],
                          label=label, canonical_start=call_start('exact'), mismatch_start=call_start('mismatch'),
-                         filtration_reason='-' if record['read_id'] in retained else measurement('filter_reason'),
+                         filtration_reason='-' if record['read_id'] in retained else short_filter_reason(measurement('filter_reason')),
+                         filtration_reason_detail='-' if record['read_id'] in retained else measurement('filter_reason'),
                          telomere=record['length_bp'],
                          length=length.value if length and length.status == 'available' else None,
                          chromosomes=sorted(chromosomes),
@@ -246,7 +253,8 @@ def reads_section(barcode, results_root=None, show_completeness=True, summary_on
     for row in (rows or []) + extra_rows:
         if show_completeness:
             row['completeness'] = completeness.get(row['header'])
-        row['nanotel_filter_reason'] = filter_reasons.get(row['header'])
+        row['nanotel_filter_reason_detail'] = filter_reasons.get(row['header'])
+        row['nanotel_filter_reason'] = short_filter_reason(row['nanotel_filter_reason_detail'])
         data = row.pop('track_data', None)
         if data is not None:
             encoded = json.dumps(data, ensure_ascii=True, separators=(',', ':')).replace('<', '\\u003c')
@@ -272,4 +280,4 @@ def reads_section(barcode, results_root=None, show_completeness=True, summary_on
 
 # Browser code is packaged separately but embedded for offline navigation.
 READ_REPEAT_SCRIPT = '<script>\n' + (Path(__file__).parents[1] / 'assets' / 'read_repeats.js').read_text(encoding='utf-8') + '\n</script>'
-READ_SCRIPT = READ_TRACK_SCRIPT + READ_REPEAT_SCRIPT + '<script>\n' + (Path(__file__).parents[1] / 'assets' / 'read_browser.js').read_text(encoding='utf-8') + '\n</script>'
+READ_SCRIPT = READ_TRACK_SCRIPT + READ_REPEAT_SCRIPT + '<script>\n' + FILTER_REASON_JAVASCRIPT + '\n' + (Path(__file__).parents[1] / 'assets' / 'read_browser.js').read_text(encoding='utf-8') + '\n</script>'
