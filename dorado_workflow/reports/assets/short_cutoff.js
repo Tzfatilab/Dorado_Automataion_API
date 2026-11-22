@@ -95,7 +95,9 @@
       return figure;
     };
     const toolbar=document.createElement('form');toolbar.className='short-cutoff-controls';
-    toolbar.innerHTML='<label>Short telomere cutoff (kb) <input type="number" min="0.001" step="any" required aria-label="Short telomere cutoff (kb)"></label><button type="submit">Apply</button><button type="button" class="short-cutoff-reset">Reset to run settings</button><span role="status"></span>';
+    // Anchor native arrow increments at whole kb; positive-value validation below
+    // still rejects zero, while step="any" allows manually entered decimals.
+    toolbar.innerHTML='<label>Short telomere cutoff (kb) <input type="number" min="0" step="any" required aria-label="Short telomere cutoff (kb)"></label><button type="submit">Apply</button><button type="button" class="short-cutoff-reset">Reset to run settings</button><span role="status"></span>';
     document.querySelector('main')?.prepend(toolbar);
     const input=toolbar.querySelector('input'),status=toolbar.querySelector('[role="status"]');
     const defaults=[...new Set(facts.map(f=>f.cutoff).filter(positive))];
@@ -141,7 +143,7 @@
       if(!Object.keys(patch).length&&!colored.length)return Promise.resolve();
       const task=Promise.resolve().then(()=>colored.length?Plotly.update(graph,{
         selectedpoints:colored.map(index=>copy.data[index].selectedpoints),
-        'selected.marker.color':'#ef4444','selected.marker.opacity':1,
+        'selected.marker.color':'#7c3aed','selected.marker.opacity':1,
         'unselected.marker.color':'#ffffff','unselected.marker.opacity':1
       },patch,colored):Plotly.relayout(graph,patch)).finally(()=>pending.delete(graph));
       pending.set(graph,task);return task;

@@ -9,7 +9,7 @@ window.reportBarcodeShortColors=(figure,cutoffForTrace=trace=>{
     const cutoff=cutoffForTrace(trace);
     trace.selectedpoints=(trace.y||[]).flatMap((value,index)=>
       typeof value==='number'&&Number.isFinite(value)&&value>=0&&Number.isFinite(cutoff)&&cutoff>0&&value<cutoff/1000?[index]:[]);
-    trace.selected={marker:{color:'#ef4444',opacity:1}};
+    trace.selected={marker:{color:'#7c3aed',opacity:1}};
     trace.unselected={marker:{color:'#ffffff',opacity:1}};
   }
   return figure;
@@ -18,15 +18,17 @@ window.reportBarcodeShortColors=(figure,cutoffForTrace=trace=>{
 // Hollow read points with an explicit median and interquartile interval.
 // Only presentation changes: observations and read-link identities stay intact.
 window.reportBarcodeDistributionStyle=figure=>{
+  figure.data=figure.data.filter(t=>!t.meta?.barcodeDistributionLegend);
   const groups=figure.data.filter(t=>['box','violin'].includes(t.type)||t.meta?.barcodeDistribution);
   const layout=figure.layout;
+  layout.showlegend=groups.length>0;
   layout.shapes=(layout.shapes||[]).filter(s=>!String(s.name||'').startsWith('barcode-distribution-summary:'));
   if(!groups.length)return figure;
   const quantile=(values,p)=>{const index=(values.length-1)*p,low=Math.floor(index);return values[low]+(index-low)*((values[low+1]??values[low])-values[low]);};
   groups.forEach((trace,index)=>{
     Object.assign(trace,{type:'violin',points:'all',pointpos:0,jitter:.8,width:.85,
       fillcolor:'rgba(0,0,0,0)',line:{color:'rgba(0,0,0,0)',width:0},
-      box:{visible:false},meanline:{visible:false},opacity:1,
+      box:{visible:false},meanline:{visible:false},opacity:1,showlegend:false,
       marker:{color:'#ffffff',size:7,opacity:1,line:{color:'#299b37',width:1}}});
     const values=(trace.y||[]).filter(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0).slice().sort((a,b)=>a-b);
     if(values.length<2)return;
@@ -44,6 +46,15 @@ window.reportBarcodeDistributionStyle=figure=>{
     ticks:'outside',tickcolor:'#111111',tickwidth:2,zeroline:false};
   layout.yaxis={...layout.yaxis,showgrid:true,gridcolor:'#777777',griddash:'dot',gridwidth:1,
     showline:true,linecolor:'#111111',linewidth:2,ticks:'outside',tickcolor:'#111111',tickwidth:2,zeroline:false};
+  const legend=(name,mode,marker={},line={})=>({type:'scatter',x:[null],y:[null],name,mode,
+    marker,line,showlegend:true,hoverinfo:'skip',meta:{barcodeDistributionLegend:true}});
+  figure.data.push(
+    legend('Below short-telomere cutoff','markers',{color:'#7c3aed',size:9,line:{color:'#299b37',width:1}}),
+    legend('At or above cutoff','markers',{color:'#ffffff',size:9,line:{color:'#299b37',width:1}}),
+    legend('Median and interquartile range','lines',undefined,{color:'#111111',width:3}));
+  layout.legend={...layout.legend,orientation:'h',x:0,y:1.22,xanchor:'left',yanchor:'bottom',
+    itemclick:false,itemdoubleclick:false,font:{size:12,color:'#20324c'}};
+  layout.margin={...layout.margin,t:Math.max(135,layout.margin?.t||0)};
   return window.reportBarcodeShortColors(figure);
 };
 
@@ -112,7 +123,7 @@ window.reportBarcodeScaleUI=(section,graph)=>{
     buttons.push({button,type});controls.appendChild(button);
   }
   const bandwidthNote=document.createElement('span');
-  bandwidthNote.textContent='Red fill: below cutoff · Black bars: median and IQR';bandwidthNote.title='Red-filled circles: telomere length below the selected short cutoff. Other reads: hollow green circles. Black bars: median and 25th–75th percentiles. Point spread uses a shared 1 kb bandwidth.';bandwidthNote.style.cssText='font-size:13px;color:#52647a;margin-left:8px';
+  bandwidthNote.textContent='Point spread: 1 kb bandwidth';bandwidthNote.title='Point spread uses a shared 1 kb bandwidth. The legend explains the read colors and summary bars.';bandwidthNote.style.cssText='font-size:13px;color:#52647a;margin-left:8px';
   controls.appendChild(bandwidthNote);
   // Function: applyViolin.
   // Inputs: None; uses the current report/browser state.
@@ -138,8 +149,8 @@ window.reportBarcodeScaleUI=(section,graph)=>{
       const index=typeof a.x==='number'?Math.round(a.x):names.indexOf(a.x);
       a.x=names[index];
     }
-    window.reportBarcodeDistributionStyle({data,layout});
-    await Plotly.react(graph,data,layout,{responsive:true,displaylogo:false,modeBarButtonsToRemove:['select2d','lasso2d']});
+    const figure=window.reportBarcodeDistributionStyle({data,layout});
+    await Plotly.react(graph,figure.data,figure.layout,{responsive:true,displaylogo:false,modeBarButtonsToRemove:['select2d','lasso2d']});
     await Plotly.Plots.resize(graph);
     refresh();
   };

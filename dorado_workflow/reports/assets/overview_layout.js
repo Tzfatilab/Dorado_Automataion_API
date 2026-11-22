@@ -36,14 +36,16 @@
     `;
     const sections=[...grid.children].filter(n=>n.tagName==='SECTION');
     const specs=[['Telomere Length by Barcode',2,'Telomere Length by Barcode'],
-      ['Telomeric Reads by Barcode',3,'Telomeric Reads by Barcode'],['TVR patterns',4,'TVR patterns'],
+      ['Telomeric Reads by Barcode',3,'Telomeric Reads by Barcode'],['TVR patterns',4,null],
       ['Telomere Length by Chromosome',5,'Average Telomere Length by Chromosome']];
     for(const [match,number,title] of specs){
-      const section=sections.find(s=>s.querySelector('h2')?.textContent.includes(match));if(!section)continue;
+      // Panel identity survives TSQ-only, mismatch-only and combined titles.
+      const section=sections.find(s=>Number(s.querySelector('h2 .number')?.textContent)===number)
+        ||sections.find(s=>s.querySelector('h2')?.textContent.includes(match));if(!section)continue;
       section.style.gridColumn='auto';section.style.minWidth='0';grid.appendChild(section);
       section.classList.toggle('overview-full-width',number===2||number===5);
       const heading=section.querySelector('h2');
-      const text=title||(section.dataset.tvrRequested==='false'?'TVR patterns':heading.textContent.includes('Available Barcodes')?'TVR patterns - Available Barcodes':'TVR patterns - All Barcodes');
+      const text=title||[...heading.childNodes].filter(node=>!node.classList?.contains('number')).map(node=>node.textContent).join('').trim();
       const badge=document.createElement('span');badge.className='number';badge.textContent=number;
       heading.replaceChildren(badge,document.createTextNode(text));
       let header=section.querySelector('.overview-panel-header');
@@ -76,7 +78,7 @@
           const width=Math.floor(graph.getBoundingClientRect().width);
           if(width<200||(width===lastWidth&&graph.layout.width===width&&graph.layout.height===height))return;lastWidth=width;
           const updates={autosize:false,width,height};
-          if(number===2)updates['margin.t']=88;
+          if(number===2)updates['margin.t']=graph.data.some(trace=>trace.meta?.barcodeDistributionLegend)?135:88;
           if(number===5)Object.assign(updates,{'margin.l':75,'margin.r':95,'margin.t':35,'margin.b':85,
             'xaxis.tickangle':-45,'xaxis.tickfont.size':12,'yaxis.tickfont.size':12});
           Plotly.relayout(graph,updates);
