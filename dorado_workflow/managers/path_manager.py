@@ -952,6 +952,7 @@ class PathManager:
 
             "mapping_analysis": {
                 "alignment_summary_path": str(self.get_alignment_summary_path()),
+                "nanotel_input_dir": str(self.get_nanotel_output_dir_path()),
                 "filtered_nanotel_dir": str(self.get_r_nanotel_output_dir_path()),
                 "bam_dir": str(self.get_aligned_dir_path()),
                 "output_dir": str(self.get_r_mapping_output_dir_path())

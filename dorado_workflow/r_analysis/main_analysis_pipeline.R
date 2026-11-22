@@ -132,6 +132,7 @@ main_r_analysis_pipeline <- function(config_file, trial_name = NULL) {
     tryCatch({
       # Update mapping config with NanoTel results if available
       mapping_config <- config$mapping_analysis
+      mapping_config$nanotel_input_dir <- config$nanotel_analysis$input_dir
       if (!is.null(results$nanotel)) {
         mapping_config$filtered_nanotel_dir <- config$nanotel_analysis$output_dir
       }

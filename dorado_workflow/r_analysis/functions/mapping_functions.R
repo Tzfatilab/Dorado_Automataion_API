@@ -81,7 +81,7 @@ load_alignment_summary <- function(alignment_summary_path) {
 
 # Process alignment and NanoTel data for a single barcode
 # Inputs: alignment_summary_path (Tab-separated exported alignment summary); filtered_nanotel_path
-# (Post-filtered NanoTel read table); bam_file_path (Existing aligned BAM path); output_dir
+# (NanoTel read table; legacy argument name, now before filtration); bam_file_path (Existing aligned BAM path); output_dir
 # (Directory for generated outputs); barcode_name (Original barcode label); min_mapq (Minimum
 # accepted alignment mapping quality); head_max_start (Maximum accepted Head alignment start
 # coordinate); tail_min_end (Minimum accepted Tail alignment end coordinate);
@@ -95,22 +95,29 @@ process_barcode_mapping <- function(alignment_summary_path,
                                     min_mapq = 10,
                                     head_max_start = 5000,
                                     tail_min_end = 35000,
-                                    alignment_data = NULL) {
+                                    alignment_data = NULL,
+                                    retained_nanotel_path = NULL) {
 
   log_message(paste("Processing mapping for barcode:", barcode_name))
   log_message("Mapping filter mode: MAPQ + Head/Tail position; strand is diagnostic only")
 
   # Validate input files
   validate_file_exists(alignment_summary_path, "Alignment summary")
-  validate_file_exists(filtered_nanotel_path, "Filtered NanoTel data")
+  validate_file_exists(filtered_nanotel_path, "NanoTel detection summary")
   validate_file_exists(bam_file_path, "BAM file")
 
   ensure_directory_exists(output_dir)
 
   minimap <- if (is.null(alignment_data)) load_alignment_summary(alignment_summary_path) else alignment_data
 
-  # Read filtered NanoTel data
+  # Map all detected telomeric reads independently of telomere filtration.
   nanotel_data <- safe_read_csv(filtered_nanotel_path, col_types = cols())
+  if (!"read_id" %in% names(nanotel_data) && "sequence_ID" %in% names(nanotel_data)) {
+    names(nanotel_data)[names(nanotel_data) == "sequence_ID"] <- "read_id"
+  }
+  if (!"read_id" %in% names(nanotel_data)) {
+    stop("NanoTel summary has no read_id or sequence_ID column: ", filtered_nanotel_path)
+  }
 
   # Remove unwanted columns
   unwanted_nanotel_cols <- c("...1", "telo_density", "Telomere_start",
@@ -120,7 +127,7 @@ process_barcode_mapping <- function(alignment_summary_path,
 
   log_message(paste("Loaded NanoTel data:", nrow(nanotel_data), "reads"))
   diagnostic_counts <- data.frame(
-    step = c("alignment_summary_rows", "nanotel_filtered_rows"),
+    step = c("alignment_summary_rows", "nanotel_detection_rows"),
     count = c(nrow(minimap), nrow(nanotel_data)),
     stringsAsFactors = FALSE
   )
@@ -214,6 +221,15 @@ process_barcode_mapping <- function(alignment_summary_path,
 
   # Extract read IDs for BAM filtering (use original read_id from minimap)
   filtered_read_ids <- unique(merged_data$read_id.x)  # from minimap
+  # Methylation continues to use retained telomeric reads. This restriction
+  # applies only to its BAM input, never to the exported mapping records.
+  if (!is.null(retained_nanotel_path)) {
+    retained <- safe_read_csv(retained_nanotel_path, col_types = cols())
+    id_column <- if ("read_id" %in% names(retained)) "read_id" else "sequence_ID"
+    if (!id_column %in% names(retained)) stop("Retained NanoTel summary has no read identifier column")
+    retained_ids <- sub("[[:space:]].*$", "", as.character(retained[[id_column]]))
+    filtered_read_ids <- filtered_read_ids[sub("[[:space:]].*$", "", filtered_read_ids) %in% retained_ids]
+  }
 
   return(list(
     mapped_data = merged_data,

@@ -63,11 +63,17 @@ process_barcode_multiple_bams <- function(barcode_configs_list, alignment_data =
         min_mapq = config$min_mapq,
         head_max_start = config$head_max_start,
         tail_min_end = config$tail_min_end,
-        alignment_data = alignment_data
+        alignment_data = alignment_data,
+        retained_nanotel_path = config$retained_nanotel_path
       )
 
-      if (length(mapping_result$filtered_ids) == 0) {
+      if (nrow(mapping_result$mapped_data) == 0) {
         log_message(paste("No reads remain after mapping filters for BAM file", i, "of", barcode_name), "WARNING")
+        next
+      }
+      if (length(mapping_result$filtered_ids) == 0) {
+        all_mapped_data[[i]] <- mapping_result$mapped_data
+        log_message(paste("Mappings saved for all detected reads; no retained reads for methylation in", barcode_name), "WARNING")
         next
       }
 
@@ -179,7 +185,7 @@ main_mapping_analysis <- function(config_file) {
   config <- read_config(config_file)
 
   # Validate configuration
-  required_params <- c("alignment_summary_path", "filtered_nanotel_dir",
+  required_params <- c("alignment_summary_path",
                        "bam_dir", "output_dir")
   missing_params <- required_params[!(required_params %in% names(config))]
   if (length(missing_params) > 0) {
@@ -198,19 +204,26 @@ main_mapping_analysis <- function(config_file) {
 
   log_message("Configuration loaded successfully")
   log_message(paste("Alignment summary:", config$alignment_summary_path))
-  log_message(paste("Filtered NanoTel dir:", config$filtered_nanotel_dir))
+  nanotel_input_dir <- config$nanotel_input_dir %||% config$filtered_nanotel_dir
+  if (is.null(nanotel_input_dir)) stop("Missing NanoTel detection summary directory")
+  log_message(paste("NanoTel mapping input directory:", nanotel_input_dir))
   log_message(paste("BAM directory:", config$bam_dir))
   log_message(paste("Output directory:", config$output_dir))
 
-  # Find filtered NanoTel files
-  nanotel_files <- find_files_by_pattern(config$filtered_nanotel_dir,
-                                         "filtered_summary.*\\.csv$", recursive = TRUE)
+  # Use complete detection summaries, including reads excluded by filtration.
+  nanotel_files <- find_files_by_pattern(nanotel_input_dir,
+                                         "^barcode[0-9]+_summary\\.csv$", recursive = TRUE)
+  # Standalone legacy configurations may supply only filtered summaries.
+  if (!length(nanotel_files) && is.null(config$nanotel_input_dir)) {
+    nanotel_files <- find_files_by_pattern(nanotel_input_dir, "filtered_summary.*\\.csv$", recursive = TRUE)
+    if (length(nanotel_files)) log_message("Only legacy filtered summaries are available; excluded reads cannot be recovered from these inputs.", "WARNING")
+  }
 
   if (length(nanotel_files) == 0) {
     log_message(
       paste(
-        "No filtered NanoTel files found in:",
-        config$filtered_nanotel_dir,
+        "No NanoTel detection summaries found in:",
+        nanotel_input_dir,
         "- mapping will be reported as empty."
       ),
       "WARNING"
@@ -218,8 +231,7 @@ main_mapping_analysis <- function(config_file) {
     write_empty_mapping_report(
       config,
       reason_lines = c(
-        "No filtered NanoTel summary files were produced.",
-        "NanoTel filtering may have removed all reads for this run."
+        "No NanoTel detection summary files were found."
       ),
       failed_barcodes = character()
     )
@@ -237,7 +249,7 @@ main_mapping_analysis <- function(config_file) {
     stop("No barcode BAM files found in: ", config$bam_dir)
   }
 
-  log_message(paste("Found", length(nanotel_files), "filtered NanoTel files"))
+  log_message(paste("Found", length(nanotel_files), "NanoTel summaries for mapping"))
   log_message(paste("Found", nrow(bam_info), "BAM files"))
 
   # Create grouped barcode configurations (multiple BAM files per barcode)
@@ -255,6 +267,18 @@ main_mapping_analysis <- function(config_file) {
     modkit_timeout_seconds = modkit_timeout_seconds,
     run_modkit_pileup = run_modkit_pileup
   )
+  if (run_modkit_pileup) {
+    retained_files <- find_files_by_pattern(config$filtered_nanotel_dir,
+      "filtered_summary.*\\.csv$", recursive = TRUE)
+    for (barcode in names(grouped_barcode_configs)) {
+      matching <- retained_files[vapply(retained_files, function(path)
+        identical(normalize_barcode_name(extract_barcode_from_path(path)), barcode), logical(1))]
+      if (length(matching) != 1L) stop("Methylation requires one retained NanoTel summary for ", barcode)
+      for (i in seq_along(grouped_barcode_configs[[barcode]])) {
+        grouped_barcode_configs[[barcode]][[i]]$retained_nanotel_path <- matching[[1]]
+      }
+    }
+  }
 
   if (length(grouped_barcode_configs) == 0) {
     stop("No matching barcode configurations found")
@@ -308,7 +332,7 @@ main_mapping_analysis <- function(config_file) {
     log_message(
       paste(
         "Mapping analysis produced no mapped barcodes.",
-        "All NanoTel-filtered reads were unmapped or failed mapping filters."
+        "All detected telomeric reads were unmapped or failed mapping filters."
       ),
       "WARNING"
     )
@@ -316,7 +340,7 @@ main_mapping_analysis <- function(config_file) {
       config,
       reason_lines = c(
         "No mapped barcodes were produced.",
-        "All NanoTel-filtered reads were unmapped, did not match alignment read IDs,",
+        "All detected telomeric reads were unmapped, did not match alignment read IDs,",
         "or failed the configured mapping filters."
       ),
       failed_barcodes = failed_barcodes,
