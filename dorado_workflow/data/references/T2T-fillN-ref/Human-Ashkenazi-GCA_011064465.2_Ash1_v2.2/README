@@ -1,0 +1,16 @@
+The Ashkenazi Human Reference Genome:
+This is the path for T2THuman:
+ https://www.ncbi.nlm.nih.gov/datasets/genome/GCA_011064465.2/
+ 
+ 
+ 
+ 
+3' end: 1, 4, 5 ,9, 10, 13, 16 , 17 , 21, 22
+I have found a repeated pattern before the start of the telomeric region at the 3' end.
+	- Chromosomes  1, 4, 17, 21, 22  pattern is "GTCGCAACTCAAATGCAGCATTCCTAATGCACACATGACACCCAAAATATAACAGACATATTACTCATGGAGGG".
+	- Chromosomes 5,10, 16 pattern is: "AAATGCAGCATTCCTAATGCACACATGACACCCTAAATATAACAGGCATATTACTCATGGAGGG"
+		- There is a shorter version of this pattern( "ACATGACACCCTAAATATAACAGGCATATTACTCATGGAGGG" ) which is shared with 5, 9, 10, 13, 16.
+
+
+
+

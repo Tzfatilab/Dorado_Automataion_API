@@ -136,25 +136,33 @@ run_nanotel <- function(nanotel_path, input_path, save_path, pattern, min_densit
 #' @param genome_path: A path to a genome referrence.
 #' @param indices_path: A path to a data frame which contains the folllowing columns: 
 #'  1.chrom: The chromosome name
-#'  2.chrom_length: The length of the chromosome
-#'  3.subtelo_Head_start_index: The start of the sub-Telomere to the left.
-#'  4.subtelo_Tail_end_index: The end of the sub-Telomere to the right.
+#'  2.alignment_genome: A shortcut for the name.( no white spaces in the strings)  
+#'  3.chrom_length: The length of the chromosome
+#'  4.subtelo_Head_start_index: The start of the sub-Telomere to the left.
+#'  5.subtelo_Tail_end_index: The end of the sub-Telomere to the right.
 #' @param output_path: A path to save the new reference: Make sure t give a fasta/fa/fna extension or fasta.gz if it compressed .
 #' @param subtelo_length: The length of the subtelomre which we want to save, all but the subtelomres 
 #'  with this given length will become Ns.
 #' @param compress: If true the new reference will be compressed. (gz extension)   
+#' @param ref_names; The names for the reference file (should be equal to the names of the data frame from the chrom or alignment_genome colunn)
 #' @return The new reference as a DNAStringset object.   
-fill_n <- function(genome_path, indices_path, output_path, subtelo_length, compress=TRUE)
+fill_n <- function(genome_path, indices_path, output_path, subtelo_length, compress=TRUE, ref_names = c("chrom", "alignment_genome"))
 {
+  # Automatically defaults to the first item ("chrom") if omitted
+  ref_names <- match.arg(ref_names)
   
-  indices_df <- read_csv(file = indices_path, col_types = c("c", "i", "i", "i"))
+  indices_df <- read_csv(file = indices_path, col_types = c("c","c", "i", "i", "i"))
   
   N_ref <- DNAStringSet()
   i <- 1
   while(i <= nrow(indices_df)) {
     curr_chr <- readDNAStringSet(filepath = open_input_files(genome_path), nrec = 1, skip = i - 1)
     
+    
     curr_row <- indices_df %>% dplyr::filter(chrom == names(curr_chr))
+    if(ref_names == "alignment_genome") {
+      curr_row <- indices_df %>% dplyr::filter(alignment_genome == names(curr_chr))
+    }
     assert::assert(fact = width(curr_chr) == curr_row$chrom_length)
     
     # need to create 2 Iranges for Telomere CCCTAA  middle and  Telomere TTAGGG
@@ -337,27 +345,33 @@ chr_Y <- readDNAStringSet(filepath = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_geno
 
 # Tails indices - the end of th subtelomere 
 subtelo_tail_index <- integer()
-# index ~ telomere_start_mismatch - 1
-subtelo_tail_index <-c(subtelo_tail_index, chr_1 = 46790) #  46797
+
+
+# there is the GTCGCAACTCAAATGCAGCATTCCTAATGCACACATGACACCCAAAATATAACAGACATATTACTCATGGAGGG pattern at the  start of the telomere
+subtelo_tail_index <-c(subtelo_tail_index, chr_1 = 46797) #  46797
 
 subtelo_tail_index <-c(subtelo_tail_index, chr_2 = 47358) #  47378
 
 subtelo_tail_index <-c(subtelo_tail_index, chr_3 = 45406) #  45406
 
-# there is the TGGAGGG pattern at tje start of the telomere
-subtelo_tail_index <-c(subtelo_tail_index, chr_4 = 47685) #  47692
+# there is the GTCGCAACTCAAATGCAGCATTCCTAATGCACACATGACACCCAAAATATAACAGACATATTACTCATGGAGGG pattern at the  start of the telomere
+subtelo_tail_index <-c(subtelo_tail_index, chr_4 = 47692) #  47692
 
-# there is the TGGAGGG pattern at tje start of the telomere
-subtelo_tail_index <-c(subtelo_tail_index, chr_5 = 48439) #  48446 
+
+
+# there is the "AAATGCAGCATTCCTAATGCACACATGACACCCTAAATATAACAGGCATATTACTCATGGAGGG" pattern at tje start of the telomere
+subtelo_tail_index <-c(subtelo_tail_index, chr_5 = 48446) #  48446 
+
 
 subtelo_tail_index <-c(subtelo_tail_index, chr_6 =  47231) #  47232 
+
 
 subtelo_tail_index <-c(subtelo_tail_index, chr_7 = 47778) #  47778 
 
 subtelo_tail_index <-c(subtelo_tail_index, chr_8 = 47378 ) #  47378 
 
-# there is the TGGAGGG pattern at tje start of the telomere
-subtelo_tail_index <-c(subtelo_tail_index, chr_9 = 47021) #  47028 
+# there is the ACATGACACCCTAAATATAACAGGCATATTACTCATGGAGGG pattern at tje start of the telomere
+subtelo_tail_index <-c(subtelo_tail_index, chr_9 = 47028 ) #  47028 
 
 subseq(x =  chr_10, start = 46811 - 46 , width = 32)
 subseq(x =  chr_5, start = 48446 - 46 , width = 32)
@@ -366,8 +380,58 @@ subseq(x =  chr_5, start = 48446 - 46 , width = 32)
 # another sub p attern of this "ACATGACACCCTAAATATAACAGGCATATTACTCATGGAGGG"
 all_tails <- readDNAStringSet(filepath = dir("~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/TTAGGG/reads", all.files = TRUE, full.names = TRUE) )
 
-v2 <- vmatchPattern(pattern = "ACATGACACCCTAAATATAACAGGCATATTACTCATGGAGGG", subject = all_tails)
+pat1 <- "AAATGCAGCATTCCTAATGCACACATGACACCCTAAATATAACAGGCATATTACTCATGGAGGG"
+v1 <- vmatchPattern(pattern = pat1, subject = all_tails)
+v1_ranges <- v1[ifelse(is.na(as.logical(width(v1) > 0)), yes = FALSE, no = TRUE)] 
 
+
+############# Check special patterns at the start of the telomere ######################################
+
+v2 <- vmatchPattern(pattern = "ACATGACACCCTAAATATAACAGGCATATTACTCATGGAGGG", subject = all_tails)
+for( i in seq_along(v2)) { # 5, 9, 10, 13, 16 , 
+  if(length(v2[[i]]) > 0) {
+    print(i)
+    print(v2[[i]])
+  }
+}
+v2_ranges <- v2[c(3, 8, 21, 25 , 26)]
+
+
+v3 <- vmatchPattern(pattern = "GACATATTACTCATGGAGGG", subject = all_tails)
+for( i in seq_along(v3)) { # 1, 4 , 17 , 21, 22
+  if(length(v3[[i]]) > 0) {
+    print(i)
+    print(v3[[i]])
+  }
+}
+
+v3_ranges <- v3[c(4, 5, 11, 18 ,24)]
+pattern_width <- 20
+all_eq <- TRUE
+while(all_eq) {
+  seq1 <- toString(subseq(chr_1, end = 46797, width = pattern_width) ) 
+  seq4 <- toString(subseq(chr_4, end = 47692, width = pattern_width)) 
+  seq17 <- toString(subseq(chr_17, end = 46984, width = pattern_width))
+  seq21 <- toString(subseq(chr_21, end = 45440, width = pattern_width))
+  seq22 <- toString(subseq(chr_22, end = 47059, width = pattern_width))
+  
+  all_eq <- all.equal(seq1, seq4, seq17, seq21, seq22)
+  if(is.logical(all_eq) ) {
+    pattern_width = pattern_width + 1
+    
+  } else {
+    pattern_width <- pattern_width - 1
+    break
+    }
+}
+
+seq1 <- toString(subseq(chr_1, end = 46797, width = 74) ) 
+seq4 <- toString(subseq(chr_4, end = 47692, width = 74)) 
+seq17 <- toString(subseq(chr_17, end = 46984, width = 74))
+seq21 <- toString(subseq(chr_21, end = 45440, width = 74))
+seq22 <- toString(subseq(chr_22, end = 47059, width = 74))
+
+all_eq <- all.equal(seq1, seq4, seq17, seq21, seq22)      
 
 
 # search big similarity 
@@ -379,11 +443,11 @@ for(i in 20:20000) {
     break
   }
 }
+############# End of Check special patterns at the start of the telomere ######################################
 
 
-
-
-subtelo_tail_index <-c(subtelo_tail_index, chr_10 = 46804) # 46811 
+# there is the "AAATGCAGCATTCCTAATGCACACATGACACCCTAAATATAACAGGCATATTACTCATGGAGGG" pattern at the start of the telomere
+subtelo_tail_index <-c(subtelo_tail_index, chr_10 = 46811) # 46811 
 
 
 
@@ -391,30 +455,70 @@ subtelo_tail_index <-c(subtelo_tail_index, chr_11 = 47414) #  47414
 
 subtelo_tail_index <-c(subtelo_tail_index, chr_12 = 47626) #  47682 
 
+# there is the ACATGACACCCTAAATATAACAGGCATATTACTCATGGAGGG pattern at tje start of the telomere
+subtelo_tail_index <-c(subtelo_tail_index, chr_13 = 46492) #  46492 
 
-subtelo_tail_index <-c(subtelo_tail_index, chr_13 = ) #  46492 
+subtelo_tail_index <-c(subtelo_tail_index, chr_14 = 48397) #  48397 
 
-subtelo_tail_index <-c(subtelo_tail_index, chr_14 = ) #  48397 
+# It has TCRs of TCGGG, TCAGGG
+subtelo_tail_index <-c(subtelo_tail_index, chr_15 = 47037) #  47079 
 
-subtelo_tail_index <-c(subtelo_tail_index, chr_15 = ) #  47079 
+# there is the "AAATGCAGCATTCCTAATGCACACATGACACCCTAAATATAACAGGCATATTACTCATGGAGGG" pattern at tje start of the telomere
+subtelo_tail_index <-c(subtelo_tail_index, chr_16 = 47332) #  47332 
 
-subtelo_tail_index <-c(subtelo_tail_index, chr_16 = ) #  47332 
 
-subtelo_tail_index <-c(subtelo_tail_index, chr_17 = ) #  46984 
+# there is the GTCGCAACTCAAATGCAGCATTCCTAATGCACACATGACACCCAAAATATAACAGACATATTACTCATGGAGGG pattern at the  start of the telomere
+subtelo_tail_index <-c(subtelo_tail_index, chr_17 = 46984) #  46984 
 
-subtelo_tail_index <-c(subtelo_tail_index, chr_18 = ) #  46524 
 
-subtelo_tail_index <-c(subtelo_tail_index, chr_19 = ) #  47062 
+subtelo_tail_index <-c(subtelo_tail_index, chr_18 = 46524) #  46524 
 
-subtelo_tail_index <-c(subtelo_tail_index, chr_20 = ) #  46951 
+subtelo_tail_index <-c(subtelo_tail_index, chr_19 = 47061) #  47062 
 
-subtelo_tail_index <-c(subtelo_tail_index, chr_21 = ) #  45440 
+# There are TGGGG and CTGGGG TGAGGG TVRs
+subtelo_tail_index <-c(subtelo_tail_index, chr_20 = 46862) #  46951 
 
-subtelo_tail_index <-c(subtelo_tail_index, chr_22 = ) #  47066 
+# there is the GTCGCAACTCAAATGCAGCATTCCTAATGCACACATGACACCCAAAATATAACAGACATATTACTCATGGAGGG pattern at the  start of the telomere
+subtelo_tail_index <-c(subtelo_tail_index, chr_21 = 45440) #  45440 
 
-subtelo_tail_index <-c(subtelo_tail_index, chr_X = ) #   44002 
+# there is the GTCGCAACTCAAATGCAGCATTCCTAATGCACACATGACACCCAAAATATAACAGACATATTACTCATGGAGGG pattern at the  start of the telomere
+subtelo_tail_index <-c(subtelo_tail_index, chr_22 = 47059) #  47066 
 
-subtelo_tail_index <-c(subtelo_tail_index, chr_Y = ) #   43611
+subtelo_tail_index <-c(subtelo_tail_index, chr_X = 44002) #   44002 
+
+subtelo_tail_index <-c(subtelo_tail_index, chr_Y = 43611) #   43611
+
+genome <- genome[1:24]
+
+subseq_size <- 50000
+chrom_length <- tibble(chrom = names(genome), chrom_length = width(genome))
+
+chrom_length <- chrom_length %>%
+  mutate(subtelo_Tail_end_index = subtelo_tail_index + chrom_length - subseq_size) %>%
+  mutate(subtelo_Head_start_index = subtelo_head_index) %>%
+  mutate(chrom_short = names(subtelo_tail_index),.before = chrom_length)
+
+
+chrom_length <- chrom_length %>%
+  rename(alignment_genome = chrom_short)
+
+names(genome) <- chrom_length$alignment_genome
+
+
+save_path <- "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/subtelo_indices-Human-T2T-GCA_011064465.2_Ash1_v2.2_genomic.csv"
+genome_path <- "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/Human-T2T-GCA_011064465.2_Ash1_v2.2_genomic.fasta.gz"
+
+
+write_csv(x = chrom_length, file = save_path ) # use csv for data 
+
+
+# rewrite genome with short name (full chr only)
+Biostrings::writeXStringSet(x = genome, filepath = genome_path, compress = TRUE)
+
+ref_check <- fill_n(genome_path = genome_path, indices_path = save_path, 
+       output_path = "~/Human-ref/GCA_011064465.2_Ash1_v2.2_genomic/ncbi_dataset/data/GCA_011064465.2/Human-T2T-GCA_011064465.2_Ash1_v2.2_genomic-200k-subtelos-N.fasta.gz" , 
+       subtelo_length = 2e5, compress = TRUE,ref_names = "alignment_genome")
+
 
 ################### End of Ashkenazi Human Reference Genome    #################
 

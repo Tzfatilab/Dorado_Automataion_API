@@ -1,0 +1,25 @@
+chrom,subtelo_Head_start_index,chrom_length,subtelo_Tail_end_index,alignment_genome
+"CM021568.2 Homo sapiens isolate NA24385 chromosome 1, whole genome shotgun sequence",2684,249932541,249929338,chr_1
+"CM021569.2 Homo sapiens isolate NA24385 chromosome 2, whole genome shotgun sequence",3626,242681487,242678845,chr_2
+"CM021570.2 Homo sapiens isolate NA24385 chromosome 3, whole genome shotgun sequence",2662,200930272,200925678,chr_3
+"CM021571.2 Homo sapiens isolate NA24385 chromosome 4, whole genome shotgun sequence",3357,193567215,193564907,chr_4
+"CM021572.2 Homo sapiens isolate NA24385 chromosome 5, whole genome shotgun sequence",2364,181993881,181992327,chr_5
+"CM021573.2 Homo sapiens isolate NA24385 chromosome 6, whole genome shotgun sequence",2897,172048152,172045383,chr_6
+"CM021574.2 Homo sapiens isolate NA24385 chromosome 7, whole genome shotgun sequence",3391,160402684,160400462,chr_7
+"CM021575.2 Homo sapiens isolate NA24385 chromosome 8, whole genome shotgun sequence",2508,146266741,146264119,chr_8
+"CM021576.2 Homo sapiens isolate NA24385 chromosome 9, whole genome shotgun sequence",3701,150154455,150151483,chr_9
+"CM021577.2 Homo sapiens isolate NA24385 chromosome 10, whole genome shotgun sequence",2658,134598001,134594812,chr_10
+"CM021578.2 Homo sapiens isolate NA24385 chromosome 11, whole genome shotgun sequence",1998,134959473,134956887,chr_11
+"CM021579.2 Homo sapiens isolate NA24385 chromosome 12, whole genome shotgun sequence",3104,133349155,133346781,chr_12
+"CM021580.2 Homo sapiens isolate NA24385 chromosome 13, whole genome shotgun sequence",2546,113854012,113850504,chr_13
+"CM021581.2 Homo sapiens isolate NA24385 chromosome 14, whole genome shotgun sequence",2117,101252837,101251234,chr_14
+"CM021582.2 Homo sapiens isolate NA24385 chromosome 15, whole genome shotgun sequence",3335,100063229,100060266,chr_15
+"CM021583.2 Homo sapiens isolate NA24385 chromosome 16, whole genome shotgun sequence",2319,96402991,96400323,chr_16
+"CM021584.2 Homo sapiens isolate NA24385 chromosome 17, whole genome shotgun sequence",2238,83977505,83974489,chr_17
+"CM021585.2 Homo sapiens isolate NA24385 chromosome 18, whole genome shotgun sequence",2038,80314204,80310728,chr_18
+"CM021586.2 Homo sapiens isolate NA24385 chromosome 19, whole genome shotgun sequence",2290,61576862,61573923,chr_19
+"CM021587.2 Homo sapiens isolate NA24385 chromosome 20, whole genome shotgun sequence",2688,66010062,66006924,chr_20
+"CM021588.2 Homo sapiens isolate NA24385 chromosome 21, whole genome shotgun sequence",8532,44899981,44895421,chr_21
+"CM021589.2 Homo sapiens isolate NA24385 chromosome 22, whole genome shotgun sequence",4392,51454416,51451475,chr_22
+"CM021590.2 Homo sapiens isolate NA24385 chromosome X, whole genome shotgun sequence",5575,154349815,154343817,chr_X
+"CM021591.2 Homo sapiens isolate NA24385 chromosome Y, whole genome shotgun sequence",5660,62460029,62453640,chr_Y
