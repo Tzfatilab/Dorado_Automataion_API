@@ -253,6 +253,7 @@ h2 {
 .barcode-page .stat-5 { background:#effafa; color:#32777e; }
 .saved-histogram { display:block; width:100%; min-height:620px; background:white; }
 .saved-histogram.composition-plot { min-height:350px; }
+.saved-histogram.tsq-tandem-plot { min-height:410px; }
 .histogram-heading { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
 .histogram-heading h2 { margin-bottom:0; }
 .histogram-controls { display:flex; gap:8px; }

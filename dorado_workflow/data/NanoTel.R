@@ -738,6 +738,36 @@ report_repeat_coverage <- function(read_id, boundary, hits) {
       hits$end >= start(boundary) & hits$start <= end(boundary)]))))
 }
 
+# Compact TSQ tandem-array counts, shared by Full and Summary. Only complete,
+# exact copies inside the TSQ-inclusive call enter maximal adjacent-copy runs.
+report_tsq_tandems <- function(boundary, hits) {
+  if (length(boundary) != 1L || start(boundary) < 1L || width(boundary) <= 0L) return(NULL)
+  size <- nchar(global_tsq_pattern)
+  starts <- sort(unique(hits$start[hits$role == "tvr" & hits$motif == global_tsq_pattern &
+    hits$matched_sequence == global_tsq_pattern & hits$end-hits$start+1L == size &
+    hits$start >= start(boundary) & hits$end <= end(boundary)]))
+  runs <- data.frame(start=integer(), copies=integer())
+  for (phase in split(starts, starts %% size)) {
+    groups <- split(phase, cumsum(c(TRUE, diff(phase) != size)))
+    for (group in groups) if (length(group) >= 2L)
+      runs <- rbind(runs, data.frame(start=min(group), copies=length(group)))
+  }
+  # Self-overlapping motifs can produce alternative phases for the same array.
+  # Count a physical span once: longest array first, then earliest start.
+  accepted_start <- integer(); accepted_end <- integer(); counts <- list()
+  if (nrow(runs)) for (i in order(-runs$copies, runs$start)) {
+    lo <- runs$start[i]; hi <- lo+runs$copies[i]*size-1L
+    if (any(lo <= accepted_end & hi >= accepted_start)) next
+    accepted_start <- c(accepted_start, lo); accepted_end <- c(accepted_end, hi)
+    key <- as.character(runs$copies[i])
+    counts[[key]] <- if (is.null(counts[[key]])) 1L else counts[[key]]+1L
+  }
+  bins <- lapply(sort(as.integer(names(counts))), function(n)
+    list(repeats=n, count=counts[[as.character(n)]]))
+  list(schema_version=1L, motif=global_tsq_pattern, start=as.integer(start(boundary)),
+    end=as.integer(end(boundary)), counts=bins)
+}
+
 # Summary-mode motif aggregates: no per-hit coordinates or sequences are saved.
 report_repeat_summary <- function(boundary, hits) {
   if (length(boundary) != 1L || width(boundary) <= 0L) return(NULL)
@@ -1710,6 +1740,7 @@ empty_telomere_summary <- function(tvr_patterns = NULL, summary_only = FALSE) {
   }
 
   if (!is.null(tvr_patterns) && global_tsq_pattern %in% unlist(tvr_patterns)) {
+    df$tsq_tandem_counts <- character()
     for (suffix in c("_tsq", "_tvr_only")) {
       df[[paste0("telo_density", suffix)]] <- double()
       for (field in c("Telomere_start", "Telomere_end", "Telomere_length"))
@@ -1919,6 +1950,12 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
     df[[paste0("Telomere_end", suffix)]] <- if (valid) end(boundary) else NA_integer_
     df[[paste0("Telomere_length", suffix)]] <- if (valid) width(boundary) else NA_integer_
     df[[paste0("telo_density", suffix)]] <- if (valid) get_sub_density(boundary, call$analysis[[2]][[2]]) else NA_real_
+  }
+  tsq_call <- separate_calls[["tsq_inclusive"]]
+  if (!is.null(tsq_call)) {
+    tandems <- report_tsq_tandems(tsq_call$boundary, tsq_call$analysis[[2]]$motif_matches)
+    if (!is.null(tandems)) df$tsq_tandem_counts <- as.character(jsonlite::toJSON(
+      tandems, auto_unbox=TRUE, digits=NA))
   }
   if (summary_only && !is.null(tvr_patterns) && !is.na(telo_start3) && telo_start3 > 0) {
     coverage <- report_repeat_coverage(current_fastq_name, telo_position3,

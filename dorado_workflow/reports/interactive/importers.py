@@ -853,6 +853,8 @@ class ResultImporter:
             metrics["_repeat_summary_export"] = Fact(A.AVAILABLE, row["repeat_summary"], evidence=[ev])
         if row.get("repeat_coverage") not in (None, "", "NA", "Unavailable"):
             metrics["_repeat_coverage_export"] = Fact(A.AVAILABLE, row["repeat_coverage"], evidence=[ev])
+        if row.get("tsq_tandem_counts") not in (None, "", "NA", "Unavailable"):
+            metrics["tsq_tandem_counts"] = Fact(A.AVAILABLE, row["tsq_tandem_counts"], evidence=[ev])
         calls = {}
         warnings = []
         for method, suffix in (("exact", ""), ("mismatch", "_mismatch"), ("tvr_inclusive", "_mismatch_tvr"), ("tvr_only", "_tvr_only"), ("tsq_inclusive", "_tsq")):

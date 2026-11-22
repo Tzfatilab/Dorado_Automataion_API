@@ -4,6 +4,7 @@ from pathlib import Path
 from dorado_workflow.reports.overview.comparisons import comparison_data
 from dorado_workflow.reports.barcode.repeats import composition_section, positions_section
 from dorado_workflow.reports.barcode.chromosomes import chromosome_section
+from dorado_workflow.reports.barcode.tsq_tandems import tsq_tandem_section
 from dorado_workflow.reports.barcode.completeness import results_section
 from dorado_workflow.reports.reads.browser import reads_section, READ_SCRIPT
 from dorado_workflow.reports.reads.density import mismatch_enabled, tvr_enabled
@@ -113,7 +114,8 @@ def barcode_views(run, icons, histograms=None, results_root=None, summary_only=F
                                   requested=True if mismatch_panels else repeats_requested, method=repeat_method)
             + positions_section(motifs, requested=repeats_requested, title=variant_panel_title(run.settings).replace(' patterns', ' Position Along Telomeres')) + '</div>'
             + chromosome_section([c for c in comparisons['cells'] if c['barcode'] == barcode.label], cutoff_bp=short_cutoff_bp(run.settings, barcode))
-            + reads_section(barcode, results_root, show_completeness=km_enabled,summary_only=summary_only) + '</div>')
+            + reads_section(barcode, results_root, show_completeness=km_enabled,summary_only=summary_only)
+            + tsq_tandem_section(barcode, run.settings) + '</div>')
     navigation = '<nav class="barcode-navigation" aria-label="Choose a barcode"><strong>Explore a barcode</strong>' + ''.join(links) + '</nav>'
     return navigation, ''.join(pages)
 

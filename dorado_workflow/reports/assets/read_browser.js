@@ -251,12 +251,20 @@
       const value=c.exportValue(read[c.key]);
       return typeof value==='number'&&Number.isFinite(value)?value:null;
     };
+    // Chromosome choices represent individual assignments, not the displayed
+    // comma-joined combination. Other categorical columns keep exact-cell matching.
+    const columnFilterValues=(read,index)=>{
+      if(columns[index].key!=='chromosomes')return [columnValues(read)[index]];
+      const values=(Array.isArray(read.chromosomes)?read.chromosomes:[])
+        .map(value=>String(value).trim()).filter(Boolean);
+      return values.length?[...new Set(values)]:['Unavailable'];
+    };
     // Function: matchesColumnFilter.
     // Inputs: read (embedded read record); index (zero-based index); filter (selected
     // categorical/numeric filter)
     // Outputs: True when the read satisfies the selected categorical or numeric filter.
     const matchesColumnFilter=(read,index,filter)=>{
-      if(filter instanceof Set)return filter.has(columnValues(read)[index]);
+      if(filter instanceof Set)return columnFilterValues(read,index).some(value=>filter.has(value));
       const value=numericValue(read,index);
       return value!==null&&(filter.operator==='above'?value>filter.threshold:value<filter.threshold);
     };
@@ -320,11 +328,12 @@
           input.oninput=()=>input.setCustomValidity('');
           focusInput=input;
         }else{
-        const values=[...new Set(rows.map(r=>columnValues(r)[index]))].sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true}));
+        const values=[...new Set(rows.flatMap(r=>columnFilterValues(r,index)))].sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true}));
         const chosen=new Set(columnFilters.has(index)?columnFilters.get(index):values);
         const searchInput=node('input','',menu);searchInput.type='search';searchInput.placeholder='Search values';searchInput.setAttribute('aria-label','Search '+title);
         if (isStatus) searchInput.hidden=true;
         const actions=node('div','',menu),list=node('div','',menu);list.className='read-filter-values';
+        if(columnKeys[index]==='chromosomes')node('p','Matches any selected chromosome, including reads with additional mappings.',menu).className='note';
         // Function: draw.
         // Inputs: None; uses the current report/browser state.
         // Outputs: Rebuilds the visible filter choices from the current search text.
