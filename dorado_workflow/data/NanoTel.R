@@ -1773,7 +1773,7 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
 
   # Now check with TVR's
   if(!is.null(tvr_patterns)) {
-    # Canonical and TVR searches share the same user-selected mismatch value.
+    # The mismatch option applies to canonical repeats; TVR and TSQ matches are exact.
     analyze_list3 <- analyze_subtelos(dna_seq = current_seq_unlist, patterns =
                 pattern_list, min_density = min_density, sub_length = global_subseq_length, with_mismatch = global_max_mismatch > 0, tvr_patterns = tvr_patterns)
     telo_position3 <- find_telo_position_wraper(read = current_seq_unlist, patterns = pattern_list, with_mismatch = global_max_mismatch > 0, tvr_patterns = tvr_patterns,
@@ -1789,11 +1789,11 @@ analyze_read <- function(current_seq, current_serial, pattern_list, min_density,
   separate_calls <- list()
   if (!is.null(tvr_patterns) && global_tsq_pattern %in% unlist(tvr_patterns)) {
     groups <- list(tsq_inclusive=global_tsq_pattern,
-                   tvr_only=setdiff(unlist(tvr_patterns), global_tsq_pattern))
+                   tvr_only=base::setdiff(unlist(tvr_patterns), global_tsq_pattern))
     for (method in names(groups)) {
       group <- groups[[method]]
       if (!length(group)) next
-      if (setequal(group, unlist(tvr_patterns))) {
+      if (base::setequal(group, unlist(tvr_patterns))) {
         analysis <- analyze_list3; boundary <- telo_position3
       } else {
         selected <- if (length(group) > 1L) as.list(group) else group

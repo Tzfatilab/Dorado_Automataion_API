@@ -38,6 +38,7 @@
     };
     const transform=(figure,page=null,kind=null)=>{
       const layout=figure.layout||(figure.layout={}),data=figure.data||[];
+      if(!page)window.reportBarcodeShortColors?.(figure,trace=>groupCutoff(data,trace.name,page));
       const cutoff=cutoffFor(page),kb=cutoff/1000;
       const groups=(layout.annotations||[]).some(a=>a.name==='group-statistics-labels'&&/Short/.test(a.text));
       if((kind||groups)&&positive(cutoff)&&!(layout.shapes||[]).some(s=>s.name==='short-telomere-cutoff')){
@@ -133,10 +134,16 @@
       if(pending.has(graph))return pending.get(graph);
       if(!graph.layout||!graph.data)return Promise.resolve();
       if(!(graph.layout.shapes||[]).some(s=>s.name==='short-telomere-cutoff')&&!(graph.layout.annotations||[]).some(a=>a.name==='group-statistics-labels'&&/Short/.test(a.text)))return Promise.resolve();
-      const copy=transform({data:graph.data,layout:JSON.parse(JSON.stringify(graph.layout))},graph.closest('.barcode-page'),graph.closest('[data-length-population-chart]')?.dataset.lengthPopulationChart);
+      const copy=transform({data:graph.data.map(trace=>({...trace})),layout:JSON.parse(JSON.stringify(graph.layout))},graph.closest('.barcode-page'),graph.closest('[data-length-population-chart]')?.dataset.lengthPopulationChart);
       const patch={};for(const field of ['shapes','annotations'])if(JSON.stringify(copy.layout[field])!==JSON.stringify(graph.layout[field]))patch[field]=copy.layout[field];
-      if(!Object.keys(patch).length)return Promise.resolve();
-      const task=Promise.resolve().then(()=>Plotly.relayout(graph,patch)).finally(()=>pending.delete(graph));
+      const colored=copy.data.map((trace,index)=>Array.isArray(trace.selectedpoints)&&
+        JSON.stringify(trace.selectedpoints)!==JSON.stringify(graph.data[index].selectedpoints)?index:-1).filter(index=>index>=0);
+      if(!Object.keys(patch).length&&!colored.length)return Promise.resolve();
+      const task=Promise.resolve().then(()=>colored.length?Plotly.update(graph,{
+        selectedpoints:colored.map(index=>copy.data[index].selectedpoints),
+        'selected.marker.color':'#ef4444','selected.marker.opacity':1,
+        'unselected.marker.color':'#ffffff','unselected.marker.opacity':1
+      },patch,colored):Plotly.relayout(graph,patch)).finally(()=>pending.delete(graph));
       pending.set(graph,task);return task;
     };
     const scan=()=>Promise.all([...document.querySelectorAll('.js-plotly-plot')].map(graph=>{

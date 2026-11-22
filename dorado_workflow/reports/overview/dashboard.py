@@ -115,7 +115,7 @@ def render_screen(run, results_root=None, summary_only=False, comparisons=None):
     # Both panels share typography, dimensions and offline Plotly settings.
     panels = []
     for index, title, fig, note in sorted([(3, "Telomeric Reads by Barcode", bars, "Post-filtered telomeric reads."),
-                                    (2, "Telomere Length by Barcode", boxes, "Post-filtered reads. Green circles: individual reads. Black bars: median and IQR (25th–75th percentiles). Choose Linear or Logarithmic scale; zero lengths cannot appear on a logarithmic axis. A single read appears as a point.")] + comparison_figures(run, data=comparisons), key=lambda panel: panel[0]):
+                                    (2, "Telomere Length by Barcode", boxes, "Post-filtered reads. Blue-filled circles: telomere length below the selected short cutoff. Hollow green circles: other reads. Black bars: median and IQR (25th–75th percentiles). Choose Linear or Logarithmic scale; zero lengths cannot appear on a logarithmic axis. A single read appears as a point.")] + comparison_figures(run, data=comparisons), key=lambda panel: panel[0]):
         if fig is None:
             panels.append(note)
             continue

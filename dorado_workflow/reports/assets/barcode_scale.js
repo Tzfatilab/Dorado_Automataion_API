@@ -1,3 +1,20 @@
+// Violin markers do not support per-point color arrays. Their explicit
+// selection styling colors points without splitting/recomputing the density.
+window.reportBarcodeShortColors=(figure,cutoffForTrace=trace=>{
+  const id=trace.customdata?.[0]?.[0];
+  return window.reportShortCutoff?.cutoffFor(id)??Number(document.getElementById(id)?.dataset.shortCutoffBp);
+})=>{
+  for(const trace of figure.data){
+    if(!['box','violin'].includes(trace.type)&&!trace.meta?.barcodeDistribution)continue;
+    const cutoff=cutoffForTrace(trace);
+    trace.selectedpoints=(trace.y||[]).flatMap((value,index)=>
+      typeof value==='number'&&Number.isFinite(value)&&value>=0&&Number.isFinite(cutoff)&&cutoff>0&&value<cutoff/1000?[index]:[]);
+    trace.selected={marker:{color:'#ef4444',opacity:1}};
+    trace.unselected={marker:{color:'#ffffff',opacity:1}};
+  }
+  return figure;
+};
+
 // Hollow read points with an explicit median and interquartile interval.
 // Only presentation changes: observations and read-link identities stay intact.
 window.reportBarcodeDistributionStyle=figure=>{
@@ -27,7 +44,7 @@ window.reportBarcodeDistributionStyle=figure=>{
     ticks:'outside',tickcolor:'#111111',tickwidth:2,zeroline:false};
   layout.yaxis={...layout.yaxis,showgrid:true,gridcolor:'#777777',griddash:'dot',gridwidth:1,
     showline:true,linecolor:'#111111',linewidth:2,ticks:'outside',tickcolor:'#111111',tickwidth:2,zeroline:false};
-  return figure;
+  return window.reportBarcodeShortColors(figure);
 };
 
 // Function: window.reportBarcodeScaleUI.
@@ -95,7 +112,7 @@ window.reportBarcodeScaleUI=(section,graph)=>{
     buttons.push({button,type});controls.appendChild(button);
   }
   const bandwidthNote=document.createElement('span');
-  bandwidthNote.textContent='Black bars: median and IQR';bandwidthNote.title='Green circles: individual reads. Black bars: median and 25th–75th percentiles. Point spread uses a shared 1 kb bandwidth.';bandwidthNote.style.cssText='font-size:13px;color:#52647a;margin-left:8px';
+  bandwidthNote.textContent='Red fill: below cutoff · Black bars: median and IQR';bandwidthNote.title='Red-filled circles: telomere length below the selected short cutoff. Other reads: hollow green circles. Black bars: median and 25th–75th percentiles. Point spread uses a shared 1 kb bandwidth.';bandwidthNote.style.cssText='font-size:13px;color:#52647a;margin-left:8px';
   controls.appendChild(bandwidthNote);
   // Function: applyViolin.
   // Inputs: None; uses the current report/browser state.
@@ -122,7 +139,7 @@ window.reportBarcodeScaleUI=(section,graph)=>{
       a.x=names[index];
     }
     window.reportBarcodeDistributionStyle({data,layout});
-    await Plotly.react(graph,data,layout,{responsive:true,displaylogo:false});
+    await Plotly.react(graph,data,layout,{responsive:true,displaylogo:false,modeBarButtonsToRemove:['select2d','lasso2d']});
     await Plotly.Plots.resize(graph);
     refresh();
   };
