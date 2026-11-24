@@ -102,7 +102,7 @@ class ExecutionLogSection:
                 self._recalculate_log = 'post_analysis' in getattr(self, 'selected_workflows', set())
                 self._recalculation_formatter = RecalculationLog()
                 self._barcode_progress_stage = None
-            if line.strip().startswith('Recalculate:'):
+            if line.strip().startswith(('Reanalyze:', 'Re-filter:', 'Recalculate:')):
                 self._recalculate_log = True
             recalculate = getattr(self, '_recalculate_log', False)
             self._update_progress_from_log(line.strip())

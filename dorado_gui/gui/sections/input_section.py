@@ -60,8 +60,8 @@ class InputSection:
             "<p>Barcode folders are used directly. If the reads have not been "
             "split by barcode, Dorado demultiplexes them first using the "
             "configured kit.</p>"
-            "<h3>Existing project</h3>"
-            "<p>Choose the original project or results folder. Recalculate results reads the original "
+            "<h3>NanoTel results</h3>"
+            "<p>Choose the original project or results folder. Reanalyze reads the original "
             "before-filter NanoTel tables from CSV or the source worksheets in Excel. Mapping also needs "
             "saved aligned BAMs or FASTQ reads. The original project is not overwritten.</p>"
             "<hr><p>Results are saved in the <b>Output Path</b> selected below.</p>",
@@ -74,7 +74,7 @@ class InputSection:
             ("pod5", "POD5 (Raw Signals)", "Start from raw POD5 signals."),
             ("bam", "BAM (Basecalled)", "Analyze basecalled BAM reads."),
             ("fastq", "FASTQ", "Use existing FASTQ files."),
-            ("project", "Existing project", "Recalculate saved results."),
+            ("project", "NanoTel results", "Use a saved project or results folder."),
         ]:
             card = SelectCard(key, label, desc, theme="blue")
             card.mousePressEvent = lambda e, k=key: self._select_input(k)
@@ -100,6 +100,7 @@ class InputSection:
         layout.addLayout(path_row)
         self._select_input("pod5")
         self.input_path.editingFinished.connect(self._load_post_analysis_source)
+        self.input_path.textChanged.connect(self._suggest_post_analysis_output)
 
         return box
 
@@ -208,6 +209,33 @@ class InputSection:
         btn.clicked.connect(lambda: callback())
         return btn
 
+    def _suggest_post_analysis_output(self):
+        """Suggest an output folder independently of saved-settings loading."""
+        if self.selected_input != "project" or not hasattr(self, "output_input"):
+            return
+        from pathlib import Path
+        from dorado_workflow.utils.source_discovery import RECALCULATED_FOLDER
+
+        path = self.input_path.text().strip()
+        if not path:
+            return
+        try:
+            root = Path(path).expanduser().resolve()
+            if not root.is_dir():
+                return
+        except (OSError, ValueError):
+            return
+        if root.name == "results":
+            root = root.parent
+        suggested = str(root / RECALCULATED_FOLDER)
+        if suggested == getattr(self, "_post_default_output", None):
+            return
+        output = self.output_input["edit"]
+        if not getattr(self, "_post_default_output", None):
+            self._output_before_post = output.text()
+        self._post_default_output = suggested
+        output.setText(suggested)
+
     def _load_post_analysis_source(self):
         """Preview original detection settings without editing the project.
 
@@ -217,6 +245,7 @@ class InputSection:
         Returns:
             None.
         """
+        self._suggest_post_analysis_output()
         if self.selected_input != "project" or not hasattr(self, "nanotel_mapping"):
             return
         path = self.input_path.text().strip()
@@ -244,20 +273,13 @@ class InputSection:
                 index = next((i for i in range(self.organism.count())
                               if (self.organism.itemData(i) or {}).get('organism') == source.organism), -1)
                 self.organism.setCurrentIndex(index)
-                self.organism.setToolTip("Organism is inherited from the original run and cannot be changed in Recalculate.")
+                self.organism.setToolTip("Organism is inherited from the original run and cannot be changed in Reanalyze.")
             params = source.params
             for name, key in (("read_length", "min_read_length"), ("max_telomere_start", "max_telomere_start"),
                               ("min_density_threshold", "density_threshold"), ("short_telomere_threshold", "short_telomere_threshold_bp")):
                 value = params.get(key)
                 if value is not None:
                     getattr(self, name).setText(format(value*100, '.6g') if name == 'min_density_threshold' else str(value))
-            from dorado_workflow.utils.source_discovery import RECALCULATED_FOLDER
-            if hasattr(self, "output_input"):
-                output = self.output_input["edit"]
-                if not getattr(self, "_post_default_output", None):
-                    self._output_before_post = output.text()
-                self._post_default_output = str(source.root / RECALCULATED_FOLDER)
-                output.setText(self._post_default_output)
         except (OSError, ValueError, KeyError):
             # Input validation reports errors when Run is pressed; do not
             # display backend error messages inside the options panel.

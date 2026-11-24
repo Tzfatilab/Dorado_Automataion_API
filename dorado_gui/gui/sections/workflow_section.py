@@ -52,7 +52,7 @@ class WorkflowSection:
             ),
             (
                 "post_analysis",
-                "Recalculate results",
+                "Reanalyze",
                 "Refilter saved NanoTel data and rebuild reports."
             ),
         ]
@@ -80,8 +80,8 @@ class WorkflowSection:
             "<b>Process:</b> measures telomeres, filters reads, and calculates statistics.<br>"
             "<b>Output:</b> per-barcode results and a combined summary.</p>"
             "<p>For raw POD5 through telomere results, select both steps.</p>"
-            "<h3>Recalculate results</h3>"
-            "<p>Select an <b>Existing project</b> to rerun filtering and automatically refilter saved alignments "
+            "<h3>Reanalyze</h3>"
+            "<p>Select <b>NanoTel results</b> to rerun filtering and automatically refilter saved alignments "
             "when the original run included mapping, "
             "then rebuild Excel and a Summary dashboard without rerunning NanoTel. TVR and mismatch settings "
             "are loaded from the original run. Mapping requires the original unfiltered BAMs and alignment summary; "

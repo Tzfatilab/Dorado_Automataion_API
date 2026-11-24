@@ -915,8 +915,8 @@ def _run_post_analysis(*, project_path, output_dir, organism, summary_only, read
     # Recalculate preserves the original analysis stages. The fresh-run mapping
     # checkbox cannot enable alignment or disable refiltering saved mapping.
     mapping = bool(source.settings.get("run_mapping_analysis", False))
-    log("Recalculate: refiltering saved alignments; no new alignment will run."
-        if mapping else "Recalculate: telomere filtering only; the original run had no mapping stage.")
+    log("Reanalyze: refiltering saved alignments; no new alignment will run."
+        if mapping else "Reanalyze: telomere filtering only; the original run had no mapping stage.")
     organism = source.organism
     if organism.startswith('reference_'):
         from copy import deepcopy

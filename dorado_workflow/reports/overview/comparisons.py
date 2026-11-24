@@ -128,13 +128,15 @@ def comparison_data(run):
                             and hit["start"] < interval.value["end"]):
                         label = motif_display_label(hit)
                         match_counts[label] += 1
-                        # Normalize exported match starts within the TVR-inclusive call.
+                        # Align exported matches at the interval start in base pairs.
                         # This is a presentation axis, not inferred biological polarity.
                         span = interval.value['end'] - interval.value['start']
                         serial = read.metrics.get('read_number')
                         read_label = (f'Read {int(serial.value)}' if serial and serial.status == 'available'
                                       else read.original_id.split()[0])
-                        positions.append(dict(motif=label, percent=100*(max(hit['start'],interval.value['start'])-interval.value['start'])/span,
+                        positions.append(dict(motif=label,
+                            offset_bp=max(hit['start'],interval.value['start'])-interval.value['start'],
+                            telomere_length_bp=span,
                             start=hit['start']+1, end=hit['end'], read=read_label))
                 # Count each motif at most once per read; a multi-motif read may
                 # contribute to several motif percentages but only one stack class.

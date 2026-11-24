@@ -128,40 +128,44 @@ def positions_section(row, requested=None, title='TVR Position Along Telomeres')
     positions = row.get('positions', [])
     if not positions:
         return heading + '<p class="note">No exported motif matches inside the called telomere intervals.</p></section>'
+    import math
     import plotly.graph_objects as go
+    maximum_bp = max(p['telomere_length_bp'] for p in positions)
     labels = sorted({p['motif'] for p in positions}, key=lambda label:(not label.endswith(' (canonical)'),label))
     figure = go.Figure()
     dense = len(positions) > 20000
     if dense:
-        # Aggregate every source match into 0.5%-wide display bins. No random
-        # sampling, motif calling or scientific filtering: counts are conserved.
-        bins = 200
+        # Fixed-width base-pair bins preserve absolute positions and all matches.
+        bin_width_bp = max(100, math.ceil(maximum_bp / 200000) * 100)
+        bins = max(1, math.ceil(maximum_bp / bin_width_bp))
         counts = {label: [0]*bins for label in labels}
         for hit in positions:
-            counts[hit['motif']][min(bins-1, int(hit['percent']*bins/100))] += 1
-        figure.add_trace(go.Heatmap(x=[(i+.5)*100/bins for i in range(bins)],
+            counts[hit['motif']][min(bins-1, int(hit['offset_bp']/bin_width_bp))] += 1
+        figure.add_trace(go.Heatmap(x=[(i+.5)*bin_width_bp/1000 for i in range(bins)],
             y=[escape(label) for label in labels],z=[counts[label] for label in labels],
             colorscale='Blues',colorbar=dict(title=dict(text='Matches',side='top'),
                 x=1.02,xanchor='left',thickness=16,len=.9,tickfont=dict(size=12)),
-            hovertemplate='%{y}<br>Position bin centered at %{x:.2f}% (width 0.5%)<br>%{z} exported matches<extra></extra>'))
+            hovertemplate=('%{y}<br>Distance from telomere start: %{x:.3f} kb '
+                f'(bin width {bin_width_bp:,} bp)<br>'
+                '%{z} exported matches<extra></extra>')))
     else:
         for label in labels:
             hits = [p for p in positions if p['motif'] == label]
             color = motif_color(label)
             # Retain exact motif names instead of concealing multiple motifs as Other.
-            figure.add_trace(go.Scatter(x=[p['percent'] for p in hits], y=[escape(label)]*len(hits),
+            figure.add_trace(go.Scatter(x=[p['offset_bp']/1000 for p in hits], y=[escape(label)]*len(hits),
                 mode='markers', name=escape(label), marker=dict(symbol='line-ns',size=20,color=color,
                     line=dict(color=color,width=1.5),opacity=.65),
-                customdata=[[escape(p['read']),p['start'],p['end']] for p in hits],
-                hovertemplate='%{y}<br>%{customdata[0]}<br>Match start: %{x:.2f}% of telomere<br>Read positions: %{customdata[1]}–%{customdata[2]} bp (1-based inclusive)<extra></extra>'))
+                customdata=[[escape(p['read']),p['start'],p['end'],p['telomere_length_bp']/1000] for p in hits],
+                hovertemplate='%{y}<br>%{customdata[0]}<br>Distance from telomere start: %{x:.3f} kb<br>Telomere length: %{customdata[3]:.3f} kb<br>Read positions: %{customdata[1]}–%{customdata[2]} bp (1-based inclusive)<extra></extra>'))
     figure.update_layout(template='plotly_white',height=max(320,55*len(labels)+110),showlegend=False,
         margin=dict(l=180,r=120 if dense else 30,t=45 if dense else 20,b=80,autoexpand=True),font=dict(family='Segoe UI, Arial',color='#12203c'),
-        xaxis=dict(title='Relative position within TVR-inclusive telomere (analyzed sequence start → end)',range=[0,100],dtick=20,ticksuffix='%'),
+        xaxis=dict(title='Distance from telomere start (kb; analyzed sequence)',range=[0,maximum_bp/1000]),
         yaxis=dict(categoryorder='array',categoryarray=[escape(label) for label in labels],autorange='reversed',automargin=True))
     payload=figure.to_json().replace('<','\\u003c')
-    display_note = ('Dense view: all matches grouped into 0.5% position bins; color shows match count. ' if dense else 'Each tick marks one exported match start, clipped to the telomere boundary when the match crosses it. ')
+    display_note = (f'Dense view: all matches grouped into {bin_width_bp:,} bp position bins; color shows match count. ' if dense else 'Each tick marks one exported match start, clipped to the telomere boundary when the match crosses it. ')
     return (heading + '<div class="saved-histogram composition-plot"></div>'
         f'<script type="application/json" class="histogram-figure">{payload}</script>'
-        f'<p class="note">{display_note}Positions are pooled across post-filtered reads and normalized to each combined variant-inclusive telomere interval. '
+        f'<p class="note">{display_note}Positions are pooled across post-filtered reads, aligned at the start of each combined variant-inclusive telomere interval. Distances use actual lengths without normalization; the axis extends to the longest represented telomere. '
         'Overlapping matches are retained. Canonical repeats are shown for context. '
         'Distal/proximal orientation is not established by these exports.</p></section>')

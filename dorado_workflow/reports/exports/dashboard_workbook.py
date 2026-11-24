@@ -345,7 +345,7 @@ def build_dashboard_workbook(run, results_root=None, workbook=None, comparisons=
     wb.move_sheet(summary, offset=-wb.index(summary))
     wb.active = 0
     if results_root is not None:
-        progress('Excel: retaining source data for future Recalculate')
+        progress('Excel: retaining source data for future reanalysis')
         from ..storage.analysis_metadata import retain_analysis_sheet
         retain_analysis_sheet(wb, results_root, include_km=include_km, check_cancelled=check_cancelled)
         from ..storage.source_tables import retain_source_tables

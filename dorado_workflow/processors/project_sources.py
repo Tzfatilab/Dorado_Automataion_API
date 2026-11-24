@@ -143,7 +143,7 @@ class ProjectSources:
         target.mkdir(parents=True, exist_ok=True)
         reuse_km = self.includes_km
         if not reuse_km:
-            context.logger.info("KM disabled for recalculation; saved KM tables are not copied.")
+            context.logger.info("KM disabled for reanalysis; saved KM tables are not copied.")
         book = load_workbook(self.workbook, read_only=True, data_only=True) if self.workbook else None
         referenced_folders = {}
         try:
@@ -292,7 +292,7 @@ class ProjectSources:
             break
         if selected is None:
             raise ValueError(
-                'Mapping recalculation requires the original unfiltered BAMs and alignment summary '
+                'Mapping reanalysis requires the original unfiltered BAMs and alignment summary '
                 'under processing/aligned. Filtered mapping outputs and Excel alone are insufficient. '
                 'No alignment was rerun. ' + '; '.join(problems)
             )

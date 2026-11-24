@@ -97,7 +97,7 @@ class RecalculationLog:
             r'Generating (?:summary statistics|NanoTel analysis report|mapping analysis report|comprehensive pipeline report)|'
             r'(?:Summary statistics|Analysis report|Mapping report|Complete pipeline report) saved to:|'
             r'(?:NanoTel|Mapping) batch analysis completed|Batch processing complete|Processed \d+ barcodes|'
-            r'Skipping methylation analysis|Output directories initialized|KM disabled for recalculation|'
+            r'Skipping methylation analysis|Output directories initialized|KM disabled for (?:reanalysis|recalculation|re-filtering)|'
             r'Post-analysis(?:$| steps:|: restoring)|Running post-analysis pipeline|'
             r'(?:OK\s+)?(?:.*NanoTel analysis completed successfully|Analysis completed successfully)|'
             r'Mapping filter mode:)', line, re.I):
