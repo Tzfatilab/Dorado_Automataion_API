@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 
 class AlignmentProcessor(ProcessorBase):
     """
@@ -105,7 +106,8 @@ class AlignmentProcessor(ProcessorBase):
 
     def execute(self, input_dir: str, organism: str = "mouse",
                 input_type: str = "auto",
-                use_existing_alignment: bool = False, link_inputs_only: bool = False) -> ProcessorResult:
+                use_existing_alignment: bool = False, link_inputs_only: bool = False,
+                nanotel_sources=None) -> ProcessorResult:
         """Execute the alignment process.
 
         Args:
@@ -136,7 +138,14 @@ class AlignmentProcessor(ProcessorBase):
                 input_type = self._detect_input_type(Path(input_dir))
                 self.context.logger.info(f"Auto-detected input type: {input_type}")
 
-            if use_existing_alignment:
+            if nanotel_sources is not None:
+                # Fresh non-methylation workflows supply the exact successful
+                # NanoTel tasks. Saved-project reanalysis supplies no tasks and
+                # continues through the existing BAM-linking path below.
+                if use_existing_alignment or link_inputs_only:
+                    raise ValueError("Fresh subtelomeric mapping cannot reuse whole-read alignments.")
+                aligned_bams = self._run_subtelomeric_alignment(nanotel_sources, organism)
+            elif use_existing_alignment:
                 self.context.logger.info("Preparing existing aligned BAM files")
                 aligned_bams = self._stage_existing_aligned_bams(Path(input_dir), link_inputs_only=link_inputs_only)
             else:
@@ -316,7 +325,115 @@ class AlignmentProcessor(ProcessorBase):
         command = format_command(["samtools", "index", str(bam_path)])
         self.context.command_executor.execute(command, capture_output=True)
 
-    def _write_alignment_summary(self, bam_paths: list[Path]) -> Path:
+    def _run_subtelomeric_alignment(self, sources, organism):
+        """Map NanoTel's before-filter subtelomeric exports, one barcode at a time.
+
+        NanoTel supplies exact source paths, so barcode identity and input files
+        are not rediscovered from report folders. NanoTel owns sequence cutting;
+        Python only validates the export and restores alignment coordinates.
+        """
+        from ..utils.subtelomeric_inputs import prepare_subtelomeric_inputs
+
+        if not sources or len({source['barcode'] for source in sources}) != len(sources):
+            raise ValueError("Unique successful NanoTel barcode sources are required.")
+        params = self.context.config_manager.get_nanotel_params()
+        # Use the boundary method actually requested for this fresh detection:
+        # combined canonical + variants (including TSQ), otherwise canonical
+        # with mismatch, otherwise exact canonical. This selects saved columns;
+        # it neither recalculates boundaries nor changes filtering thresholds.
+        method = ('variant_inclusive' if params.get('tvr_patterns') else
+                  'mismatch' if int(params.get('max_mismatch', 0)) else 'exact')
+        bams = []
+        for source in sources:
+            self.context.command_executor.check_cancelled()
+            prepared = prepare_subtelomeric_inputs(source['summary_csv'], source['subtelomeric_fasta'],
+                boundary_method=method, check_cancelled=self.context.command_executor.check_cancelled)
+            if prepared.barcode != source['barcode']:
+                raise ValueError("NanoTel source barcode disagrees with the mapping task.")
+            self.context.logger.info(f"{prepared.barcode}: {prepared.queries} subtelomeric queries; "
+                f"{prepared.no_subtelomere} without a flank; {prepared.missing_boundary} without a boundary")
+            directory = self.align_prepared_subtelomeric(prepared, organism)
+            bams.extend(sorted(directory.glob('*.bam')))
+        return bams
+
+    def align_prepared_subtelomeric(self, prepared, organism: str) -> Path:
+        """Map a prepared barcode and save alignments on the original-read axis.
+
+        Original full-read and methylation BAMs are never edited or reused as output.
+        Publish a new barcode directory only after mapping, projection, sorting,
+        indexing and summary generation succeed.
+        """
+        from ..utils.subtelomeric_alignments import validate_query_coordinates, project_subtelomeric_sam
+        from ..utils.subtelomeric_inputs import PreparedSubtelomericInputs
+
+        executor = self.context.command_executor
+        executor.check_cancelled()
+        if not isinstance(prepared, PreparedSubtelomericInputs):
+            raise TypeError("Pass the in-memory result of prepare_subtelomeric_inputs.")
+        barcode = prepared.barcode
+        if not re.fullmatch(r"barcode\d+", barcode):
+            raise ValueError("Invalid subtelomeric preparation barcode.")
+        queries = prepared.coordinates
+        validate_query_coordinates(queries)
+        if not self.context.validate_tools(["minimap2", "samtools"]):
+            raise RuntimeError("Minimap2 and samtools are required for subtelomeric alignment.")
+        config = self.context.config_manager
+        reference = Path(config.get_reference_path(organism))
+        if not reference.is_file():
+            raise ValueError(f"Reference genome not found: {reference}")
+        preset = config.get_alignment_params().get("minimap_preset", "map-ont")
+        destination = self.output_dir / "subtelomeric" / barcode
+        if destination.exists():
+            raise FileExistsError(f"Subtelomeric alignment output already exists: {destination}")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        self.context.logger.info(f"Subtelomeric alignment: {barcode}, {len(queries)} prepared queries")
+        with tempfile.TemporaryDirectory(prefix=".subtelomeric-alignment-", dir=destination.parent) as temporary:
+            staged = Path(temporary) / barcode
+            staged.mkdir()
+            bams = []
+            counts = dict(mapped=0, unmapped=0)
+            if queries:
+                # Minimap2 sees only the extracted flank. Project its SAM back
+                # to full-read coordinates before sorting/indexing, so R and
+                # the dashboard can keep using their existing coordinate code.
+                raw_sam = staged / "query.sam"
+                projected_sam = staged / "original_read.sam"
+                executor.execute_pipeline([["minimap2", "-ax", preset, "-o", raw_sam,
+                    reference, prepared.fasta]],
+                    gui_output_filter=self._show_minimap_gui_line)
+                counts = project_subtelomeric_sam(raw_sam, projected_sam, queries, executor.check_cancelled)
+                bam = staged / f"aligned_{barcode}.bam"
+                executor.execute_pipeline([["samtools", "sort", "-o", bam, projected_sam]])
+                executor.execute(format_command(["samtools", "quickcheck", bam]), capture_output=True)
+                self._index_bam(bam)
+                bams.append(bam)
+                # SAM intermediates are not retained; the indexed BAM and
+                # alignment summary are sufficient for later re-filtering.
+                raw_sam.unlink()
+                projected_sam.unlink()
+            else:
+                self.context.logger.warning(f"{barcode}: no available subtelomeric queries to align.")
+                # A real empty BAM preserves this barcode in saved mapping inputs
+                # and lets reanalysis distinguish zero reads from missing files.
+                empty_sam = staged / 'empty.sam'
+                empty_sam.write_text('@HD\tVN:1.6\tSO:coordinate\n'
+                    '@CO\tmapping_mode=subtelomeric; no available queries\n', encoding='utf-8')
+                bam = staged / f'aligned_{barcode}.bam'
+                executor.execute_pipeline([['samtools', 'view', '-b', '-o', bam, empty_sam]])
+                executor.execute(format_command(['samtools', 'quickcheck', '-u', bam]), capture_output=True)
+                self._index_bam(bam)
+                bams.append(bam)
+                empty_sam.unlink()
+            self._write_alignment_summary(bams, output_dir=staged)
+            executor.check_cancelled()
+            if destination.exists():
+                raise FileExistsError(f"Subtelomeric alignment output already exists: {destination}")
+            os.rename(staged, destination)
+        self.context.logger.info(f"Subtelomeric alignment saved: {destination} "
+            f"({counts['mapped']} mapped and {counts['unmapped']} unmapped alignment records)")
+        return destination
+
+    def _write_alignment_summary(self, bam_paths: list[Path], output_dir: Optional[Path] = None) -> Path:
         """Path to the tab-separated alignment summary.
 
         Args:
@@ -325,7 +442,7 @@ class AlignmentProcessor(ProcessorBase):
         Returns:
             Path to the tab-separated alignment summary.
         """
-        summary_path = self.output_dir / "alignment_summary.txt"
+        summary_path = Path(output_dir if output_dir is not None else self.output_dir) / "alignment_summary.txt"
         header = [
             "read_id",
             "alignment_direction",
@@ -523,10 +640,16 @@ class AlignmentProcessor(ProcessorBase):
         Returns:
             Optional[str]: Formatted text for the requested output.
         """
-        match = re.search(r"(?:barcode|bc)(\d+)", str(path), re.IGNORECASE)
-        if not match:
-            return None
-        return f"barcode{int(match.group(1)):02d}"
+        # Prefer explicit barcode labels over abbreviated labels anywhere in
+        # the path. A run ID such as bc29e4db is not barcode29.
+        parts = re.split(r"[\\/]", str(path))
+        for pattern in (r"(?<![A-Za-z0-9])barcode(\d+)(?![A-Za-z0-9])",
+                        r"(?<![A-Za-z0-9])bc(\d+)(?![A-Za-z0-9])"):
+            for part in reversed(parts):
+                match = re.search(pattern, part, re.IGNORECASE)
+                if match:
+                    return f"barcode{int(match.group(1)):02d}"
+        return None
 
     @staticmethod
     def _is_skipped_bam(path: Path) -> bool:

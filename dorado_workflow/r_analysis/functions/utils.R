@@ -115,7 +115,7 @@ find_files_by_pattern <- function(directory, pattern, recursive = TRUE) {
 extract_barcode_from_path <- function(file_path) {
   # First try filename - look for barcode pattern with zero-padding
   barcode_match <- stringr::str_extract(basename(file_path),
-                                        "(?i)(bc|barcode)(\\d+)")
+                                        "(?i)(?<![A-Za-z0-9])(?:barcode|bc)\\d+(?![A-Za-z0-9])")
 
   if (!is.na(barcode_match)) {
     number <- as.integer(stringr::str_extract(barcode_match, "\\d+"))
@@ -125,7 +125,7 @@ extract_barcode_from_path <- function(file_path) {
   # If filename doesn't have barcode, try parent directory
   parent_dir <- basename(dirname(file_path))
   barcode_match <- stringr::str_extract(parent_dir,
-                                        "(?i)(bc|barcode)(\\d+)")
+                                        "(?i)(?<![A-Za-z0-9])(?:barcode|bc)\\d+(?![A-Za-z0-9])")
 
   if (!is.na(barcode_match)) {
     number <- as.integer(stringr::str_extract(barcode_match, "\\d+"))

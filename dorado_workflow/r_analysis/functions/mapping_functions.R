@@ -52,7 +52,7 @@ load_alignment_summary <- function(alignment_summary_path) {
     )
   }
   minimap$alignment_mapq <- suppressWarnings(as.numeric(minimap[[mapq_col]]))
-  if (all(is.na(minimap$alignment_mapq))) {
+  if (nrow(minimap) > 0 && all(is.na(minimap$alignment_mapq))) {
     stop("MAPQ column '", mapq_col, "' could not be converted to numeric values")
   }
   required_cols <- c(
@@ -100,7 +100,7 @@ process_barcode_mapping <- function(alignment_summary_path,
                                     analyzed_read_reverse_complemented = NULL) {
 
   log_message(paste("Processing mapping for barcode:", barcode_name))
-  log_message("Mapping: MAPQ + reference position, then subtelomeric coverage/boundary proximity; ties remain ambiguous")
+  log_message("Mapping: MAPQ, then subtelomeric coverage/boundary proximity; legacy full-read alignments also use reference-position limits")
 
   # Validate input files
   validate_file_exists(alignment_summary_path, "Alignment summary")
@@ -146,7 +146,11 @@ process_barcode_mapping <- function(alignment_summary_path,
 
   # The summary spans all BAM shards. Restrict this invocation to molecules
   # actually present in this BAM before combining per-BAM mapping results.
-  bam_read_ids <- sub("[[:space:]].*$", "", get_bam_read_ids(bam_file_path))
+  bam_read_ids <- get_bam_read_ids(bam_file_path)
+  # The BAM header records how its queries were made. Reading that internal
+  # marker also works after Reanalyze links the original BAM into a new run.
+  subtelomeric_query <- isTRUE(attr(bam_read_ids, "subtelomeric_query"))
+  bam_read_ids <- sub("[[:space:]].*$", "", bam_read_ids)
   minimap_filtered <- minimap_filtered %>%
     filter(read_id_clean %in% bam_read_ids)
 
@@ -174,7 +178,11 @@ process_barcode_mapping <- function(alignment_summary_path,
     data.frame(step = "after_mapq_filtering", count = nrow(mapq_filtered))
   )
 
-  position_filtered <- mapq_filtered %>%
+  # New queries already exclude the telomere: fixed reference positions do not
+  # define their relevance. Preserve the old behavior for saved full-read BAMs.
+  # Only the 5,000/35,000 reference-position gate is bypassed here. MAPQ above
+  # and coverage/boundary candidate selection below still apply as before.
+  position_filtered <- if (subtelomeric_query) mapq_filtered else mapq_filtered %>%
     filter(
       (grepl("Tail", alignment_genome, ignore.case = TRUE) & alignment_genome_end >= tail_min_end) |
         (grepl("Head", alignment_genome, ignore.case = TRUE) & alignment_genome_start <= head_max_start)
@@ -185,19 +193,7 @@ process_barcode_mapping <- function(alignment_summary_path,
     data.frame(step = "after_position_filtering", count = nrow(position_filtered))
   )
 
-  strand_position_filtered <- mapq_filtered %>%
-    filter(
-      (grepl("Tail", alignment_genome, ignore.case = TRUE) & alignment_direction == "-") |
-        (grepl("Head", alignment_genome, ignore.case = TRUE) & alignment_direction == "+"),
-      (grepl("Tail", alignment_genome, ignore.case = TRUE) & alignment_genome_end >= tail_min_end) |
-        (grepl("Head", alignment_genome, ignore.case = TRUE) & alignment_genome_start <= head_max_start)
-    )
-
   log_message(paste("After MAPQ/position filtering:", nrow(position_filtered), "alignments"))
-  diagnostic_counts <- rbind(
-    diagnostic_counts,
-    data.frame(step = "after_strand_position_filtering", count = nrow(strand_position_filtered))
-  )
   minimap_filtered <- position_filtered
   orientation <- analyzed_read_reverse_complemented
   if (is.null(orientation)) orientation <- mapping_read_orientation(filtered_nanotel_path)
@@ -267,7 +263,7 @@ get_bam_read_ids <- function(bam_file_path) {
   sam_file <- tempfile("mapping-read-ids-", fileext = ".sam")
   err_file <- tempfile("mapping-read-ids-", fileext = ".stderr")
   on.exit(unlink(c(sam_file, err_file)), add = TRUE)
-  status <- system2("samtools", c("view", shQuote(bam_file_path)),
+  status <- system2("samtools", c("view", "-h", shQuote(bam_file_path)),
                     stdout = sam_file, stderr = err_file)
   if (status != 0L) {
     stop("Failed to extract read IDs from BAM: ", paste(readLines(err_file, warn = FALSE), collapse = " "))
@@ -275,13 +271,22 @@ get_bam_read_ids <- function(bam_file_path) {
   stream <- file(sam_file, open = "r")
   on.exit(close(stream), add = TRUE, after = FALSE)
   batches <- list()
+  subtelomeric_query <- FALSE
   repeat {
     lines <- readLines(stream, n = 100000L, warn = FALSE)
     if (!length(lines)) break
-    batches[[length(batches) + 1L]] <- unique(sub("\\t.*$", "", lines))
+    # Read the existing BAM header during the same scan, without an extra
+    # summary column, sidecar file or repeated BAM read.
+    subtelomeric_query <- subtelomeric_query || any(grepl(
+      "^@CO\tmapping_mode=subtelomeric(;|$)", lines))
+    # Header lines must not enter the read-ID list, including in an empty BAM
+    # that has a valid header but no records to map or refilter.
+    records <- lines[!startsWith(lines, "@")]
+    batches[[length(batches) + 1L]] <- unique(sub("\\t.*$", "", records))
   }
   read_ids <- unique(unlist(batches, use.names = FALSE))
   if (is.null(read_ids)) read_ids <- character()
+  if (subtelomeric_query) attr(read_ids, "subtelomeric_query") <- TRUE
   log_message(paste("Extracted", length(read_ids), "unique read IDs from BAM"))
   read_ids
 }

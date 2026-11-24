@@ -6,6 +6,8 @@ Routes fresh inputs and saved projects through shared processors and analysis.
 """
 
 from pathlib import Path
+from contextlib import nullcontext
+import tempfile
 from typing import Any, Dict, Optional, Tuple
 
 from ..processors.aligner import AlignmentProcessor
@@ -358,27 +360,14 @@ class WorkflowOperator:
             return False
         demuxed_dir, fastq_dir = prep
 
-        # NanoTel analysis
-        if self._run_step('nanotel', 'NanoTel analysis',
-                          self.nanotel, str(fastq_dir)) is None:
-            return False
-
         do_mapping = run_mapping or align_during_basecalling or methylation_enabled
-        if do_mapping:
-            alignment_kwargs = {}
-            if align_during_basecalling:
-                self.context.logger.info(
-                    "Using BAM alignment produced during basecalling"
-                )
-                alignment_kwargs = {
-                    "input_type": "bam",
-                    "use_existing_alignment": True,
-                }
-
-            if self._run_step('aligner', 'Alignment',
-                              self.aligner, str(demuxed_dir), organism,
-                              **alignment_kwargs) is None:
-                return False
+        alignment_kwargs = ({"input_type": "bam", "use_existing_alignment": True}
+                            if methylation_enabled and align_during_basecalling else {})
+        if not self._run_detection_and_alignment(str(fastq_dir), organism,
+                do_mapping=do_mapping, subtelomeric=do_mapping and not methylation_enabled,
+                alignment_input=str(demuxed_dir if methylation_enabled else fastq_dir),
+                alignment_kwargs=alignment_kwargs):
+            return False
 
         # Post-analysis (filtration, plus mapping when requested and methylation when enabled)
         result = self.run_post_analysis(
@@ -448,29 +437,15 @@ class WorkflowOperator:
             and any(original_input.rglob("*.bam"))
         )
 
-        # NanoTel analysis
         total_steps = 3 if do_mapping else 2
-        if self._run_step('nanotel', 'NanoTel analysis',
-                          self.nanotel, fastq_input,
-                          step=f"Step 1/{total_steps}") is None:
+        alignment_kwargs = ({"input_type": "bam", "use_existing_alignment": True}
+                            if has_methylation and use_existing_bam_alignment else {})
+        if not self._run_detection_and_alignment(fastq_input, organism,
+                do_mapping=do_mapping, subtelomeric=do_mapping and not has_methylation,
+                alignment_input=path_input if has_methylation and use_existing_bam_alignment else fastq_input,
+                alignment_kwargs=alignment_kwargs,
+                nanotel_step=f"Step 1/{total_steps}", alignment_step=f"Step 2/{total_steps}"):
             return False
-
-        # Alignment
-        if do_mapping:
-            self.context.logger.info("NanoTel mapping selected")
-            alignment_input = path_input if use_existing_bam_alignment else fastq_input
-            alignment_kwargs = {}
-            if use_existing_bam_alignment:
-                self.context.logger.info("Using existing BAM alignment for mapping")
-                alignment_kwargs = {
-                    "input_type": "bam",
-                    "use_existing_alignment": True,
-                }
-            if self._run_step('aligner', 'Alignment',
-                                self.aligner, alignment_input, organism,
-                                step=f"Step 2/{total_steps}",
-                                **alignment_kwargs) is None:
-                return False
 
         final_step = total_steps
         run_methylation = has_methylation and do_mapping
@@ -485,6 +460,42 @@ class WorkflowOperator:
             self._log_methylation_outputs(result)
 
         return self._finish_success()
+
+    def _run_detection_and_alignment(self, fastq_input, organism, *, do_mapping,
+                                     subtelomeric, alignment_input,
+                                     alignment_kwargs=None, nanotel_step=None,
+                                     alignment_step=None):
+        """Share detection/export/alignment and temporary-file ownership.
+
+        Only fresh mapping without methylation requests cut FASTA from NanoTel.
+        Full-read methylation BAMs keep their existing path and modification
+        tags. All temporary cut sequences are removed on success, failure or
+        cancellation, after Minimap2 has consumed them.
+        """
+        scratch = None
+        if subtelomeric:
+            scratch = self.context.path_manager.get_processing_dir_path() / 'subtelomeric_input'
+            scratch.mkdir(parents=True, exist_ok=True)
+        lifetime = (tempfile.TemporaryDirectory(prefix='mapping-', dir=scratch)
+                    if subtelomeric else nullcontext(None))
+        with lifetime as query_dir:
+            detector_kwargs = {'subtelomeric_output_dir': query_dir} if subtelomeric else {}
+            if nanotel_step is not None:
+                detector_kwargs['step'] = nanotel_step
+            if self._run_step('nanotel', 'NanoTel analysis', self.nanotel,
+                              str(fastq_input), **detector_kwargs) is None:
+                return False
+            if do_mapping:
+                # Existing full-read alignments cannot replace a fresh cut-query
+                # alignment. Reanalyze bypasses this helper and links saved BAMs.
+                kwargs = ({'nanotel_sources': self.nanotel.mapping_sources} if subtelomeric
+                          else dict(alignment_kwargs or {}))
+                if alignment_step is not None:
+                    kwargs['step'] = alignment_step
+                if self._run_step('aligner', 'Alignment', self.aligner,
+                                  str(alignment_input), organism, **kwargs) is None:
+                    return False
+        return True
 
     # ------------------------------ Single-step workflows ------------------------------
 

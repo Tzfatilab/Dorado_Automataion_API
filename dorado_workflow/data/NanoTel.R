@@ -42,6 +42,9 @@ option_list = list(
               default = NULL,
               help = "Optional log file path. Defaults to save_path/log/run.log.",
               metavar = "log file path"),
+  make_option("--subtelomeric_output", action = "store", type = "character",
+              default = NULL,
+              help = "Optional temporary FASTA of before-filter subtelomeric queries for mapping."),
 
   # format( fastq/fasta)
   make_option("--format", action = "store",
@@ -83,7 +86,7 @@ option_list = list(
   make_option("--include_km", action = "store_true", default = FALSE,
               help = "Opt in to Kaplan-Meier fitting and exports for any organism."),
   make_option("--summary_only", action = "store_true", default = FALSE,
-              help = "Summary-only mode: keep numeric CSV/JSON/KM analysis; skip FASTA, tracks, per-read and aggregate plots.",
+              help = "Summary-only mode: keep numeric analysis; skip detailed read FASTA, tracks and plots. Optional mapping FASTA remains temporary.",
               metavar = "Skip detailed per-read output files"),
   make_option("--tsq_pattern", action = "store", default = "AACCGC", type = "character",
               help = "TSQ1 search motif, reported separately from other TVRs."),
@@ -2064,6 +2067,56 @@ make_barcode_read_stem <- function(serial_num) {
   paste0(prefix, "read", serial_num)
 }
 
+# Cut once, while NanoTel still has the analyzed sequence and its saved call.
+# Both Full and Summary use this function before any analysis filtration.
+export_subtelomeric_query <- function(sequence, row, connection, method,
+                                     right_edge, analyzed_reversed) {
+  suffix <- switch(method, exact="", mismatch="_mismatch", variant_inclusive="_mismatch_tvr",
+                   stop("Unknown subtelomeric boundary method"))
+  lo <- row[[paste0("Telomere_start", suffix)]]
+  hi <- row[[paste0("Telomere_end", suffix)]]
+  if (is.na(lo) || is.na(hi)) return(invisible(FALSE))
+  sequence <- unlist(sequence)
+  size <- length(sequence)
+  if (lo < 1L || hi < lo || hi > size) stop("Invalid exported telomere boundary")
+  a <- if (right_edge) 0L else hi
+  b <- if (right_edge) lo-1L else size
+  if (a == b) return(invisible(FALSE))
+  query <- Biostrings::subseq(sequence, start=a+1L, end=b)
+  if (right_edge) query <- Biostrings::reverseComplement(query)
+  # Preserve the original FASTQ axis in the temporary FASTA header. Minimap2
+  # uses only the first token; Python reads these offsets without recutting DNA.
+  original_a <- if (analyzed_reversed) size-b else a
+  original_b <- if (analyzed_reversed) size-a else b
+  writeLines(c(sprintf(">subtelo_%d start=%d end=%d length=%d", row$Serial,
+                       original_a, original_b, size), as.character(query)), connection)
+  invisible(TRUE)
+}
+
+merge_subtelomeric_batches <- function(directory, destination, method, right_edge, analyzed_reversed) {
+  if (file.exists(destination)) stop("Subtelomeric FASTA already exists: ", destination)
+  temporary <- tempfile(".subtelomeric-", tmpdir=dirname(destination))
+  on.exit(unlink(temporary), add=TRUE)
+  output <- file(temporary, "wb")
+  tryCatch({
+    # A FASTA comment carries run-level orientation even when no reads were
+    # exported. No extra JSON, table columns or full-read copies are needed.
+    writeBin(charToRaw(sprintf(";nanotel_subtelomeric_v1 rc=%d right_edge=%d method=%s\n",
+      as.integer(analyzed_reversed), as.integer(right_edge), method)), output)
+    for (path in sort(list.files(directory, full.names=TRUE))) {
+      input <- file(path, "rb")
+      tryCatch(repeat {
+        block <- readBin(input, "raw", n=1024L*1024L)
+        if (!length(block)) break
+        writeBin(block, output)
+      }, finally=close(input))
+    }
+  }, finally=close(output))
+  if (file.exists(destination) || !file.rename(temporary, destination)) {
+    stop("Could not publish subtelomeric FASTA: ", destination)
+  }
+}
+
 ############## Running functions ###############################################
 
 # Inputs: sample_telomeres (Candidate reads selected for detailed motif analysis); pattern_list
@@ -2075,7 +2128,16 @@ make_barcode_read_stem <- function(serial_num) {
 # Outputs: Detailed candidate-read analysis table.
 search_patterns <- function(sample_telomeres, pattern_list,
      output_dir, serial_start = 1, min_density, tvr_patterns, right_edge = FALSE,
-     summary_only = FALSE, report_batch_dir = NULL) {
+     summary_only = FALSE, report_batch_dir = NULL,
+     subtelomeric_batch_dir = NULL, analyzed_reverse_complemented = FALSE) {
+  subtelomeric_sink <- NULL
+  if (!is.null(subtelomeric_batch_dir)) {
+    # Each worker owns a separate file; workers never append to a shared FASTA.
+    subtelomeric_sink <- file(tempfile("batch-", tmpdir=subtelomeric_batch_dir), "wt")
+    on.exit(close(subtelomeric_sink), add=TRUE)
+  }
+  boundary_method <- if (!is.null(tvr_patterns)) "variant_inclusive" else
+    if (global_max_mismatch > 0) "mismatch" else "exact"
   if (!is.null(report_batch_dir)) {
     sink <- open_report_batch(report_batch_dir)
     previous <- options(nanotel.report_batch=sink)
@@ -2121,6 +2183,9 @@ search_patterns <- function(sample_telomeres, pattern_list,
       next
 
     } else {
+      if (!is.null(subtelomeric_sink)) export_subtelomeric_query(
+        sample_telomeres[i], curr_df, subtelomeric_sink, boundary_method,
+        right_edge, analyzed_reverse_complemented)
       df <- dplyr::rows_append(df, curr_df)
     }
 
@@ -2305,7 +2370,16 @@ set_nanotel_parallel_plan <- function(workers = 8) {
 # Outputs: Collected chunk-worker results and saved barcode artifacts.
 run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta","fastq"), nrec = 10000,
                                       patterns, do_rc, use_filter = FALSE, right_edge = TRUE, tvr_patterns,
-                                      summary_only = FALSE) {
+                                      summary_only = FALSE, subtelomeric_output = NULL) {
+
+  subtelomeric_batch_dir <- NULL
+  if (!is.null(subtelomeric_output)) {
+    if (file.exists(subtelomeric_output)) stop("Subtelomeric FASTA already exists: ", subtelomeric_output)
+    dir.create(dirname(subtelomeric_output), recursive=TRUE, showWarnings=FALSE)
+    subtelomeric_batch_dir <- tempfile("nanotel-subtelomeric-batches-")
+    dir.create(subtelomeric_batch_dir)
+    on.exit(unlink(subtelomeric_batch_dir, recursive=TRUE), add=TRUE)
+  }
 
   report_batch_dir <- NULL
   if (!summary_only) {
@@ -2353,21 +2427,21 @@ run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta
     seq_over_length <- seq.int(from = 1, by = 1, length.out = length(dna_reads))
     if( length(seq_over_length) < groups_length) {
       plan(sequential)
-      curr_df <- search_patterns(sample_telomeres = dna_reads, pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = serial_start , tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
+      curr_df <- search_patterns(sample_telomeres = dna_reads, pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = serial_start , tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir, subtelomeric_batch_dir = subtelomeric_batch_dir, analyzed_reverse_complemented = do_rc)
       df_summary <- union_all(df_summary, curr_df)
     } else {
 
       groups <- 1:groups_length
       split_seq <- suppressWarnings(split(x = seq_over_length, f = groups))
 
-      df1 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`1`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir )
-      df2 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`2`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(split_seq$`1`) + serial_start , tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
-      df3 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`3`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:2])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
-      df4 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`4`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:3])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
-      df5 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`5`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:4])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
-      df6 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`6`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:5])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
-      df7 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`7`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:6])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
-      df8 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`8`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:7])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir)
+      df1 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`1`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir, subtelomeric_batch_dir = subtelomeric_batch_dir, analyzed_reverse_complemented = do_rc )
+      df2 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`2`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(split_seq$`1`) + serial_start , tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir, subtelomeric_batch_dir = subtelomeric_batch_dir, analyzed_reverse_complemented = do_rc)
+      df3 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`3`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:2])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir, subtelomeric_batch_dir = subtelomeric_batch_dir, analyzed_reverse_complemented = do_rc)
+      df4 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`4`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:3])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir, subtelomeric_batch_dir = subtelomeric_batch_dir, analyzed_reverse_complemented = do_rc)
+      df5 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`5`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:4])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir, subtelomeric_batch_dir = subtelomeric_batch_dir, analyzed_reverse_complemented = do_rc)
+      df6 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`6`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:5])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir, subtelomeric_batch_dir = subtelomeric_batch_dir, analyzed_reverse_complemented = do_rc)
+      df7 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`7`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:6])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir, subtelomeric_batch_dir = subtelomeric_batch_dir, analyzed_reverse_complemented = do_rc)
+      df8 %<-% search_patterns(sample_telomeres = dna_reads[split_seq$`8`], pattern_list = patterns, output_dir = output_path, min_density = global_min_density, serial_start = length(unlist(split_seq[1:7])) + serial_start, tvr_patterns = tvr_patterns, right_edge = right_edge, summary_only = summary_only, report_batch_dir = report_batch_dir, subtelomeric_batch_dir = subtelomeric_batch_dir, analyzed_reverse_complemented = do_rc)
 
       df_summary <- Reduce(union_all , list(df_summary, df1,df2,df3, df4, df5, df6, df7, df8))
       # end of parallel try
@@ -2381,6 +2455,10 @@ run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta
 
   plan(sequential)
   if (!is.null(report_batch_dir)) merge_report_batches(report_batch_dir, output_path, get_barcode_file_prefix(input_path))
+  if (!is.null(subtelomeric_batch_dir)) merge_subtelomeric_batches(
+    subtelomeric_batch_dir, subtelomeric_output,
+    if (!is.null(tvr_patterns)) "variant_inclusive" else if (global_max_mismatch > 0) "mismatch" else "exact",
+    right_edge, do_rc)
   ans_list <- list(df_summary, dna_length)
   names(ans_list) <- c("df_summary", "all_reads_length_vec")
 
@@ -2393,7 +2471,6 @@ run_future_worker_chuncks <- function(input_path, output_path, format = c("fasta
 # todo:
 #' 2. Make a package
 #' 3. upload to git
-#' 4. Add a subtelo- only reads (Telomers are trimmed off)
 #' 5. Give trimm barcode option (length of nt to trimm..1300/30)
 #' 7. Create  a log file : https://cran.r-project.org/web/packages/logr/vignettes/logr.html
 #' 8. Use the suppressMessages or suppressPackageStartupMessages(library_wich give as saving 7*7....) : https://campus.datacamp.com/courses/defensive-r-programming/early-warning-systems?ex=5
@@ -2526,7 +2603,8 @@ log_print(base::paste("Resolved barcode file prefix:", barcode_name),
 ans_list <- run_future_worker_chuncks(input_path = opt$input_path, output_path = opt$save_path,
     format = opt$format, nrec = opt$nrec, patterns = cur_patterns, do_rc = opt$rc,
     use_filter = opt$use_filter, right_edge = opt$check_right_edge,
-    tvr_patterns = cur_tvr_patterns, summary_only = opt$summary_only)
+    tvr_patterns = cur_tvr_patterns, summary_only = opt$summary_only,
+    subtelomeric_output = opt$subtelomeric_output)
 
 global_total_length <- length(ans_list$all_reads_length_vec)
 

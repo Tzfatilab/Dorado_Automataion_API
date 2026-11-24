@@ -58,6 +58,9 @@ class NanoTelProcessor(ProcessorBase):
         self._pending_result_file = None
         self._hiding_environment_details = False
         self._shown_result_dirs = set()
+        # In-memory handoff to fresh subtelomeric mapping; no source manifest
+        # file is created. Reset at each execute() to avoid reusing an old run.
+        self.mapping_sources = []
 
     def validate_inputs(self, fastq_dir: str) -> bool:
         """
@@ -110,18 +113,22 @@ class NanoTelProcessor(ProcessorBase):
         self.context.logger.info("OK All NanoTel prerequisites validated")
         return True
     
-    def execute(self, fastq_dir: str, parallel: bool = False) -> ProcessorResult:
+    def execute(self, fastq_dir: str, parallel: bool = False,
+                subtelomeric_output_dir=None) -> ProcessorResult:
         """
         Execute the NanoTel telomere analysis.
 
         Args:
             fastq_dir: Path to directory containing FASTQ files (with barcode subdirs)
             parallel: Run barcode processing in parallel (currently not implemented)
+            subtelomeric_output_dir: Workflow-owned temporary folder for optional
+                direct NanoTel mapping FASTA; None creates no cut sequences.
 
         Returns:
             ProcessorResult with success status, output directories, and statistics
         """
         self.log_start()
+        self.mapping_sources = []
 
         # Validate inputs first
         if not self.validate_inputs(fastq_dir):
@@ -144,6 +151,12 @@ class NanoTelProcessor(ProcessorBase):
             }, indent=2), encoding="utf-8")
             # Discover barcode directories
             barcode_tasks = self._create_barcode_tasks(fastq_dir)
+            if subtelomeric_output_dir is not None:
+                # The workflow owns this temporary directory until alignment
+                # finishes. NanoTel writes the already-oriented flanks directly.
+                for task in barcode_tasks:
+                    task['subtelomeric_fasta'] = (Path(subtelomeric_output_dir)
+                        / task['barcode'] / 'subtelomeric.fasta')
 
             if not barcode_tasks:
                 result = ProcessorResult(
@@ -382,6 +395,16 @@ class NanoTelProcessor(ProcessorBase):
                 duration = self._last_command_duration()
 
                 self._retain_original_reads(task)
+                # Hand off the unfiltered summary and already-cut FASTA before
+                # report cleanup moves/removes intermediate NanoTel artifacts.
+                # Full and Summary use the same mapping sources; filtration
+                # status is not used to decide which reads can be mapped.
+                if task.get('subtelomeric_fasta') is not None:
+                    self.mapping_sources.append({
+                        'barcode': barcode,
+                        'summary_csv': Path(task['output_dir']) / f'{barcode}_summary.csv',
+                        'subtelomeric_fasta': task['subtelomeric_fasta'],
+                    })
 
                 # Mark as successful in barcode manager
                 self.context.barcode_manager.register_success(barcode, 'nanotel')
@@ -573,6 +596,8 @@ class NanoTelProcessor(ProcessorBase):
         # Numeric analysis belongs in both modes; KM requires an explicit opt-in.
         # NanoTel's summary flag suppresses plots and per-read artifacts only.
         command_arguments.append("--analysis")
+        if task.get('subtelomeric_fasta') is not None:
+            command_arguments.extend(['--subtelomeric_output', str(task['subtelomeric_fasta'])])
         organism = config.get_current_organism()
         if organism:
             command_arguments.extend(["--organism", str(organism)])
